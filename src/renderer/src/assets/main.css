@@ -1,0 +1,287 @@
+:root {
+  /* 米白底、黑字 */
+  --bg: #faf6ee;
+  --bg-side: #f2ecdf;
+  --fg: #111111;
+  --muted: #5c5750;
+  --border: #e2dacb;
+  --hover: #ebe3d3;
+  --accent: #5b4bdb;
+  --selected: #e3dccb;
+  --danger: #b42318;
+  --banner: #fbefc4;
+  --drop: #e6e0f7;
+  --font-ui: 16px;
+  --font-editor: 18px;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Noto Sans TC',
+    'PingFang TC',
+    'Microsoft JhengHei',
+    sans-serif;
+  font-size: var(--font-ui);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  padding: 8px 18px;
+}
+
+.layout {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--bg-side);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header .vault-name {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+  border: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-header .icon {
+  display: flex;
+  align-items: center;
+  border: none;
+  padding: 4px 6px;
+  color: var(--muted);
+}
+
+.sidebar-header .icon:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.file-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 0;
+  user-select: none;
+}
+
+.file-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tree-row:hover {
+  background: var(--hover);
+}
+
+.tree-row.selected {
+  background: var(--selected);
+}
+
+.tree-row.dragging {
+  opacity: 0.45;
+}
+
+/* 拖曳時，會放進去的資料夾（或整個根目錄）加上底色 */
+.file-tree li.drop-target,
+.file-tree.drop-target {
+  background: var(--drop);
+}
+
+.file-tree li.drop-target > .tree-row {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  border-radius: 4px;
+}
+
+.tree-icon {
+  width: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+.context-menu button {
+  border: none;
+  text-align: left;
+}
+
+.context-menu button:hover {
+  background: var(--selected);
+}
+
+.context-menu .danger {
+  color: var(--danger);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.note-title {
+  padding: 14px 28px 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.editor .cm-editor {
+  height: 100%;
+  font-size: var(--font-editor);
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.editor .cm-editor .cm-content {
+  caret-color: var(--fg);
+}
+
+.editor .cm-editor .cm-cursor {
+  border-left-color: var(--fg);
+}
+
+.editor .cm-editor .cm-gutters {
+  background: var(--bg);
+  color: #9a9286;
+  border-right: 1px solid var(--border);
+}
+
+.editor .cm-editor .cm-activeLine,
+.editor .cm-editor .cm-activeLineGutter {
+  background: rgb(0 0 0 / 0.035);
+}
+
+.editor .cm-editor .cm-selectionBackground,
+.editor .cm-editor.cm-focused .cm-selectionBackground {
+  background: #e4dcc8 !important;
+}
+
+.editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.editor .cm-scroller {
+  font-family: inherit;
+  line-height: 1.75;
+  padding: 12px 16px;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--banner);
+  border-bottom: 1px solid var(--border);
+}
+
+.banner.error,
+.error {
+  color: var(--danger);
+}
+
+.banner.error {
+  cursor: pointer;
+}
+
+.empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.empty h1 {
+  color: var(--fg);
+  margin: 0;
+}

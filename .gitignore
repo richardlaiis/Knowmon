@@ -1,0 +1,9 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+
+# Knowmon 索引與歷程（每個 vault 各自一份）
+test-vault/.knowmon
