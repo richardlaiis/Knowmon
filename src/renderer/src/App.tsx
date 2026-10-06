@@ -11,6 +11,7 @@ import {
   uniqueFolderPath,
   uniqueNotePath
 } from './lib/tree'
+import { applyTheme, browserStore, otherTheme, saveTheme, type Theme } from './lib/theme'
 
 interface OpenNote {
   path: string
@@ -21,6 +22,16 @@ interface OpenNote {
 
 let loadCounter = 0
 
+const PREVIEW_KEY = 'knowmon.livePreview'
+
+function loadPreviewSetting(): boolean {
+  try {
+    return localStorage.getItem(PREVIEW_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
 function App(): React.JSX.Element {
   const [vault, setVault] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
@@ -29,6 +40,42 @@ function App(): React.JSX.Element {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [externalChange, setExternalChange] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [preview, setPreview] = useState(loadPreviewSetting)
+  const [theme, setTheme] = useState<Theme>(() =>
+    document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+  )
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = otherTheme(current)
+      applyTheme(document.documentElement, next)
+      saveTheme(browserStore(), next)
+      return next
+    })
+  }, [])
+
+  const togglePreview = useCallback(() => {
+    setPreview((on) => {
+      try {
+        localStorage.setItem(PREVIEW_KEY, String(!on))
+      } catch {
+        // 無法儲存偏好時仍可切換
+      }
+      return !on
+    })
+  }, [])
+
+  // Ctrl/Cmd+E 切換即時渲染與原始碼模式（同 Obsidian）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        togglePreview()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [togglePreview])
 
   // 編輯器目前的內容（不放 state，避免每次打字都 re-render）
   const currentDoc = useRef('')
@@ -209,6 +256,9 @@ function App(): React.JSX.Element {
   if (!vault) {
     return (
       <div className="empty">
+        <div className="corner">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+        </div>
         <h1>Knowmon</h1>
         <p>Choose a folder as your vault. Notes are stored in it as Markdown files.</p>
         <button className="primary" onClick={pickVault}>
@@ -236,6 +286,7 @@ function App(): React.JSX.Element {
           <button className="icon" onClick={() => createFolder('')} title="New folder">
             <NewFolderIcon />
           </button>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
         {tree && (
           <FileTree
@@ -282,7 +333,16 @@ function App(): React.JSX.Element {
         )}
         {note ? (
           <>
-            <div className="note-title">{note.path.replace(/\.md$/i, '')}</div>
+            <div className="note-title">
+              <span className="note-path">{note.path.replace(/\.md$/i, '')}</span>
+              <button
+                className="mode-toggle"
+                onClick={togglePreview}
+                title="Toggle live preview / source mode (Ctrl+E)"
+              >
+                {preview ? 'Live preview' : 'Source'}
+              </button>
+            </div>
             <Editor
               docKey={note.key}
               doc={note.doc}
@@ -291,6 +351,7 @@ function App(): React.JSX.Element {
                 if (notePath.current) autosave.schedule(notePath.current, doc)
               }}
               onSave={() => void autosave.flush()}
+              livePreview={preview}
             />
           </>
         ) : (
@@ -328,6 +389,42 @@ function NewFolderIcon(): React.JSX.Element {
     <svg {...iconProps} aria-hidden="true">
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <path d="M12 10v6M9 13h6" />
+    </svg>
+  )
+}
+
+function ThemeToggle({
+  theme,
+  onToggle
+}: {
+  theme: Theme
+  onToggle: () => void
+}): React.JSX.Element {
+  const dark = theme === 'dark'
+  return (
+    <button
+      className="icon"
+      onClick={onToggle}
+      title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {dark ? <SunIcon /> : <MoonIcon />}
+    </button>
+  )
+}
+
+function MoonIcon(): React.JSX.Element {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+    </svg>
+  )
+}
+
+function SunIcon(): React.JSX.Element {
+  return (
+    <svg {...iconProps} aria-hidden="true">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
     </svg>
   )
 }

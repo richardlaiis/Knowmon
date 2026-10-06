@@ -42,6 +42,12 @@
 - 自動儲存：停止輸入 500ms 後寫入，`Ctrl/Cmd+S` 立即寫入。切換筆記、改名、刪除、換 vault 前都會先 flush。
 - 外部修改目前開著的筆記：沒有未儲存內容就直接重新載入；有的話顯示提示列讓使用者選擇。
 - 檔案樹拖曳移動直接使用 `notes.rename(from, to)`，不另外加 IPC。拖曳資料用自訂 MIME type `application/x-knowmon-path`，和從系統拖進來的檔案區分。
+- Markdown 即時渲染（`src/renderer/editor/livePreview.ts`）：以 CodeMirror 裝飾實作，不改動文件內容。行內元素（粗體、連結、程式碼、wikilink）在游標碰到該元素時顯示原始語法；區塊標記（標題 #、引用 >、清單、分隔線）在游標所在行顯示。`Ctrl/Cmd+E` 或右上角按鈕切換原始碼模式，偏好存在 renderer 的 localStorage。
+- frontmatter 用正則判斷文件開頭的 `---` 區塊，不寫 lezer 語法擴充（未閉合的 `---` 會被誤吞整份文件）。wikilink 也用正則找，並排除程式碼內的；lezer 會把 `[[x]]` 裡的 `[x]` 當成 Link，所以與 wikilink 重疊或沒有網址的 Link 不做渲染。
+- 程式碼區塊：游標不在區塊內時，``` 圍欄隱藏，只在右上角顯示語言（圍欄行保持原本行高，行號才對得齊）。語法上色使用 `@codemirror/language-data`（2026-10-06 經使用者同意加入），語言套件在筆記裡出現時才動態載入；不認得的語言以純文字顯示。
+- 外部連結需 `Ctrl/Cmd+點擊`，只允許 http(s) 與 mailto，經 main process 的 `setWindowOpenHandler` 交給系統瀏覽器。
+- 字型清單要明確寫 `Noto Sans CJK TC`：單獨成一個文字節點的全形標點（被隱藏標記切開時常發生）若交給系統 fallback，會選到窄字形。
+- 主題：淺色（米白）與深色（比 Nord 更深的底色、Nord 程式碼配色）。所有顏色都是 `main.css` 的 CSS 變數，深色版定義在 `:root[data-theme='dark']`，程式碼語法顏色用 `--hl-*` 變數，所以 `livePreview.ts` 不需要知道目前主題。選擇存在 renderer 的 localStorage（`knowmon.theme`），在 React 第一次渲染前就套用以避免閃爍。
 - IPC channel 名稱集中在 `src/shared/channels.ts`。
 
 ## 開發環境注意事項

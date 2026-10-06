@@ -1,5 +1,9 @@
 :root {
-  /* 米白底、黑字 */
+  --font-ui: 16px;
+  --font-editor: 18px;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Noto Sans Mono CJK TC', ui-monospace, monospace;
+
+  /* 淺色：米白底、黑字 */
   --bg: #faf6ee;
   --bg-side: #f2ecdf;
   --fg: #111111;
@@ -7,13 +11,64 @@
   --border: #e2dacb;
   --hover: #ebe3d3;
   --accent: #5b4bdb;
+  --on-accent: #ffffff;
   --selected: #e3dccb;
   --danger: #b42318;
   --banner: #fbefc4;
   --drop: #e6e0f7;
-  --font-ui: 16px;
-  --font-editor: 18px;
+  --shadow: rgb(0 0 0 / 0.18);
+  --syntax: #a59d90;
+  --quote: #4a4540;
+  --code-bg: #efe8da;
+  --gutter: #9a9286;
+  --active-line: rgb(0 0 0 / 0.035);
+  --selection: #e4dcc8;
+
+  /* 程式碼語法顏色 */
+  --hl-keyword: #8a3ffc;
+  --hl-string: #2e7d32;
+  --hl-comment: #948b7d;
+  --hl-number: #b5521b;
+  --hl-function: #1f5fbf;
+  --hl-type: #a1580c;
+  --hl-property: #0f6b75;
+  --hl-tag: #b0306a;
+
   color-scheme: light;
+}
+
+/* 深色：比 Nord 再深一點的 Polar Night 底色、白字，強調色用 Frost，程式碼用 Nord 配色 */
+:root[data-theme='dark'] {
+  --bg: #20242c;
+  --bg-side: #1a1d24;
+  --fg: #eceff4;
+  --muted: #a3acbd;
+  --border: #323946;
+  --hover: #2a303b;
+  --accent: #88c0d0;
+  --on-accent: #1a1d24;
+  --selected: #343c4a;
+  --danger: #bf616a;
+  --banner: #3b3623;
+  --drop: #2c3a4d;
+  --shadow: rgb(0 0 0 / 0.5);
+  --syntax: #616e88;
+  --quote: #c3cad6;
+  --code-bg: #2a2f39;
+  --gutter: #4c566a;
+  --active-line: rgb(255 255 255 / 0.035);
+  --selection: #3b4658;
+
+  --hl-keyword: #81a1c1;
+  --hl-string: #a3be8c;
+  --hl-comment: #6c7a94;
+  --hl-number: #b48ead;
+  --hl-function: #88c0d0;
+  --hl-type: #8fbcbb;
+  --hl-property: #d8dee9;
+  --hl-tag: #81a1c1;
+
+  color-scheme: dark;
 }
 
 * {
@@ -33,6 +88,7 @@ body {
   font-family:
     system-ui,
     -apple-system,
+    /* 明確指定 CJK 字型；否則單獨的全形標點（、。）會被系統 fallback 成窄字形 */ 'Noto Sans CJK TC',
     'Noto Sans TC',
     'PingFang TC',
     'Microsoft JhengHei',
@@ -53,7 +109,7 @@ button {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   padding: 8px 18px;
 }
 
@@ -178,7 +234,7 @@ button.primary {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  box-shadow: 0 6px 20px var(--shadow);
 }
 
 .context-menu button {
@@ -202,9 +258,32 @@ button.primary {
 }
 
 .note-title {
-  padding: 14px 28px 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px 4px 28px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.note-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-toggle {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 2px 10px;
+}
+
+.mode-toggle:hover {
+  background: var(--hover);
+  color: var(--fg);
 }
 
 .editor {
@@ -221,6 +300,8 @@ button.primary {
 
 .editor .cm-editor .cm-content {
   caret-color: var(--fg);
+  /* --- 等符號維持原樣，不被字型連字成破折號 */
+  font-variant-ligatures: none;
 }
 
 .editor .cm-editor .cm-cursor {
@@ -229,18 +310,18 @@ button.primary {
 
 .editor .cm-editor .cm-gutters {
   background: var(--bg);
-  color: #9a9286;
+  color: var(--gutter);
   border-right: 1px solid var(--border);
 }
 
 .editor .cm-editor .cm-activeLine,
 .editor .cm-editor .cm-activeLineGutter {
-  background: rgb(0 0 0 / 0.035);
+  background: var(--active-line);
 }
 
 .editor .cm-editor .cm-selectionBackground,
 .editor .cm-editor.cm-focused .cm-selectionBackground {
-  background: #e4dcc8 !important;
+  background: var(--selection) !important;
 }
 
 .editor .cm-editor.cm-focused {
@@ -281,7 +362,154 @@ button.primary {
   color: var(--muted);
 }
 
+.empty .corner {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+}
+
+.empty .corner .icon {
+  display: flex;
+  border: none;
+  padding: 6px;
+  color: var(--muted);
+}
+
+.empty .corner .icon:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
 .empty h1 {
   color: var(--fg);
   margin: 0;
+}
+
+/* ---- Markdown 即時渲染（src/renderer/editor/livePreview.ts） ---- */
+
+.cm-editor .cm-line.cm-lp-h1 {
+  font-size: 1.75em;
+  line-height: 1.4;
+  padding-top: 0.4em;
+}
+
+.cm-editor .cm-line.cm-lp-h2 {
+  font-size: 1.45em;
+  line-height: 1.4;
+  padding-top: 0.3em;
+}
+
+.cm-editor .cm-line.cm-lp-h3 {
+  font-size: 1.25em;
+}
+
+.cm-editor .cm-line.cm-lp-h4 {
+  font-size: 1.1em;
+}
+
+.cm-editor .cm-line.cm-lp-h5,
+.cm-editor .cm-line.cm-lp-h6 {
+  font-size: 1em;
+}
+
+.cm-editor .cm-lp-link,
+.cm-editor .cm-lp-wikilink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.cm-editor .cm-lp-link[data-url] {
+  cursor: pointer;
+}
+
+.cm-editor .cm-lp-code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.cm-editor .cm-line.cm-lp-codeblock {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding-left: 14px;
+}
+
+.cm-editor .cm-line.cm-lp-fence {
+  color: var(--syntax);
+}
+
+.cm-editor .cm-line.cm-lp-codeblock-first {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.cm-editor .cm-line.cm-lp-codeblock-last {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* 游標不在程式碼區塊裡時，圍欄行只在右上角顯示語言（行高不變，行號才對得齊） */
+.cm-editor .cm-line.cm-lp-fence-hidden {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.cm-editor .cm-lp-code-lang {
+  color: var(--syntax);
+  font-family: system-ui, sans-serif;
+  font-size: 0.75em;
+  letter-spacing: 0.04em;
+}
+
+.cm-editor .cm-line.cm-lp-quote {
+  border-left: 3px solid var(--border);
+  padding-left: 14px;
+  color: var(--quote);
+}
+
+.cm-editor .cm-lp-bullet {
+  display: inline-block;
+  width: 0.9em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.cm-editor .cm-lp-checkbox {
+  width: 1em;
+  height: 1em;
+  margin: 0 0.15em 0 0;
+  vertical-align: -0.12em;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.cm-editor .cm-lp-task-done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.cm-editor .cm-lp-hr {
+  display: inline-block;
+  width: 100%;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* frontmatter：維持原文、不套用標題等樣式 */
+.cm-editor .cm-line.cm-lp-frontmatter {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--muted);
+  background: var(--code-bg);
+}
+
+.cm-editor .cm-line.cm-lp-frontmatter * {
+  font: inherit !important;
+  color: inherit !important;
+  text-decoration: none !important;
 }
