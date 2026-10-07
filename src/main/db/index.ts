@@ -1,11 +1,12 @@
 // schema 與查詢。DB 只是索引：schema 版本不符時直接刪掉重建（歷程會從 events.jsonl 重播）。
 import fs from 'node:fs'
 import Database from 'better-sqlite3'
-import type { Note, NoteEvent, NoteEventKind } from '../../shared/types'
+import { createLinkResolver, type LinkResolver } from '../../shared/links'
+import type { Note, NoteEvent, NoteEventKind, NoteSummary } from '../../shared/types'
 
 export type DB = Database.Database
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 const SCHEMA = `
 CREATE TABLE notes (
@@ -25,6 +26,27 @@ CREATE TABLE note_events (
 );
 CREATE INDEX note_events_note ON note_events(note_id, kind, ts);
 CREATE INDEX note_events_ts ON note_events(ts);
+
+-- 邊有類型與權重。wikilink 的 dst 為 NULL 表示目標筆記尚未建立，target 保留原始寫法以便之後補上。
+CREATE TABLE links (
+  src    INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  dst    INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+  target TEXT,
+  type   TEXT NOT NULL,
+  weight REAL NOT NULL DEFAULT 1,
+  meta   TEXT
+);
+CREATE INDEX links_src ON links(src, type);
+CREATE INDEX links_dst ON links(dst, type);
+
+-- 全文搜尋，rowid = notes.id。trigram 才能搜尋中文。
+CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, tokenize='trigram');
+CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
+  DELETE FROM notes_fts WHERE rowid = old.id;
+END;
+CREATE TRIGGER notes_fts_title AFTER UPDATE OF title ON notes BEGIN
+  UPDATE notes_fts SET title = new.title WHERE rowid = new.id;
+END;
 `
 
 /** 開啟（必要時建立/重建）資料庫。file 為 ':memory:' 時用於測試。 */
@@ -125,4 +147,88 @@ export function listEvents(db: DB, noteId?: number): NoteEvent[] {
 
 export function countEvents(db: DB): number {
   return (db.prepare('SELECT COUNT(*) AS n FROM note_events').get() as { n: number }).n
+}
+
+export function listNoteSummaries(db: DB): NoteSummary[] {
+  return db
+    .prepare(
+      'SELECT path, title, event_date AS eventDate, modified_at AS modifiedAt FROM notes ORDER BY path'
+    )
+    .all() as NoteSummary[]
+}
+
+// ---- 全文索引 ----
+
+export function setNoteBody(db: DB, noteId: number, title: string, body: string): void {
+  db.prepare('DELETE FROM notes_fts WHERE rowid = ?').run(noteId)
+  db.prepare('INSERT INTO notes_fts (rowid, title, body) VALUES (?, ?, ?)').run(noteId, title, body)
+}
+
+export function getNoteBody(db: DB, noteId: number): string | null {
+  const row = db.prepare('SELECT body FROM notes_fts WHERE rowid = ?').get(noteId) as
+    { body: string } | undefined
+  return row ? row.body : null
+}
+
+// ---- 連結 ----
+
+export interface LinkRow {
+  src: number
+  dst: number | null
+  target: string | null
+  type: string
+  weight: number
+}
+
+/** 依目前的筆記建立 wikilink 解析器 */
+export function linkResolver(db: DB): (target: string) => number | null {
+  const rows = db.prepare('SELECT id, path FROM notes').all() as { id: number; path: string }[]
+  const ids = new Map(rows.map((r) => [r.path, r.id]))
+  const resolve: LinkResolver = createLinkResolver(rows.map((r) => r.path))
+  return (target) => {
+    const path = resolve(target)
+    return path === null ? null : ids.get(path)!
+  }
+}
+
+/** 以新的 wikilink 取代某篇筆記原有的全部 wikilink */
+export function setWikilinks(
+  db: DB,
+  src: number,
+  links: { target: string; count: number }[],
+  resolve: (target: string) => number | null = linkResolver(db)
+): void {
+  db.prepare("DELETE FROM links WHERE src = ? AND type = 'wikilink'").run(src)
+  const insert = db.prepare(
+    "INSERT INTO links (src, dst, target, type, weight) VALUES (?, ?, ?, 'wikilink', ?)"
+  )
+  for (const l of links) insert.run(src, resolve(l.target), l.target, l.count)
+}
+
+/** 筆記新增、改名、刪除後，重新解析所有 wikilink 的目標（不需要重讀檔案） */
+export function relinkWikilinks(
+  db: DB,
+  resolve: (target: string) => number | null = linkResolver(db)
+): void {
+  const rows = db.prepare("SELECT rowid, dst, target FROM links WHERE type = 'wikilink'").all() as {
+    rowid: number
+    dst: number | null
+    target: string
+  }[]
+  const update = db.prepare('UPDATE links SET dst = ? WHERE rowid = ?')
+  db.transaction(() => {
+    for (const r of rows) {
+      const dst = resolve(r.target)
+      if (dst !== r.dst) update.run(dst, r.rowid)
+    }
+  })()
+}
+
+export function listLinks(db: DB, type?: string): LinkRow[] {
+  const sql =
+    'SELECT src, dst, target, type, weight FROM links' +
+    (type === undefined ? '' : ' WHERE type = ?') +
+    ' ORDER BY rowid'
+  const stmt = db.prepare(sql)
+  return (type === undefined ? stmt.all() : stmt.all(type)) as LinkRow[]
 }

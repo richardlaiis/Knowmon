@@ -107,12 +107,12 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 完成標準：反向連結與中文搜尋正常，刪掉資料庫後能完整重建。這是整個專案的地基，值得花最多時間。
 
-- [ ] 解析器：frontmatter、`[[連結]]`、日期（純函式，必須有測試）
-- [ ] 寫入資料庫，以 content hash 做增量索引
-- [ ] FTS5 trigram 中文全文搜尋
-- [ ] 反向連結 API 與面板
-- [ ] 輸入 `[[` 時的筆記名稱自動補全
-- [ ] 快速切換筆記（Quick switcher）
+- [x] 解析器：frontmatter、`[[連結]]`、日期（純函式，必須有測試）
+- [x] 寫入資料庫，以 content hash 做增量索引
+- [x] FTS5 trigram 中文全文搜尋
+- [x] 反向連結 API 與面板
+- [x] 輸入 `[[` 時的筆記名稱自動補全
+- [x] 快速切換筆記（Quick switcher）
 
 ### 階段 3：圖譜視圖
 

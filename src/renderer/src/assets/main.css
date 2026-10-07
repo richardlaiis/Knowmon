@@ -385,6 +385,235 @@ button.primary {
   margin: 0;
 }
 
+/* ---- 側欄分頁、搜尋、反向連結、Quick switcher ---- */
+
+.sidebar-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-tabs button {
+  border: none;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 3px 10px;
+}
+
+.sidebar-tabs button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.sidebar-tabs button.active {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.sidebar-tabs button:last-child {
+  margin-left: auto;
+}
+
+.search-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-input,
+.switcher-input {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.search-input {
+  margin: 10px;
+}
+
+.search-input:focus,
+.switcher-input:focus {
+  border-color: var(--accent);
+}
+
+.panel-note {
+  margin: 4px 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.result-list {
+  flex: 1;
+  overflow: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 10px;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.result:hover {
+  background: var(--hover);
+}
+
+.result.selected {
+  background: var(--selected);
+}
+
+.result-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-folder {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-snippet {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.result-snippet mark,
+.switcher mark {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--fg);
+  border-radius: 3px;
+}
+
+.backlinks {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-side);
+  border-left: 1px solid var(--border);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.panel-header .count {
+  font-weight: 400;
+  font-size: 12px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--selected);
+}
+
+.mode-toggle.on {
+  color: var(--fg);
+  background: var(--selected);
+}
+
+.empty .hint {
+  font-size: 14px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 0.25);
+}
+
+.switcher {
+  width: min(560px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+
+.switcher-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.switcher-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.switcher-list li.active {
+  background: var(--selected);
+}
+
+.switcher-list li.empty-row {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* 自動補全選單（@codemirror/autocomplete）跟著主題 */
+.cm-tooltip.cm-tooltip-autocomplete {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px var(--shadow);
+  font-family: inherit;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  padding: 3px 10px;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.cm-tooltip-autocomplete .cm-completionDetail {
+  margin-left: 10px;
+  font-size: 0.85em;
+  font-style: normal;
+  color: var(--muted);
+}
+
 /* ---- Markdown 即時渲染（src/renderer/editor/livePreview.ts） ---- */
 
 .cm-editor .cm-line.cm-lp-h1 {

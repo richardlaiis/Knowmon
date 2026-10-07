@@ -61,4 +61,10 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.notesCreateFolder, (_e, path: string) => requireVault().createFolder(path))
   ipcMain.handle(IPC.notesRename, (_e, from: string, to: string) => requireVault().rename(from, to))
   ipcMain.handle(IPC.notesRemove, (_e, path: string) => requireVault().remove(path))
+  ipcMain.handle(IPC.notesList, () => requireVault().list())
+
+  ipcMain.handle(IPC.linksBacklinks, (_e, path: string) => requireVault().backlinks(path))
+  ipcMain.handle(IPC.searchQuery, (_e, q: string, limit?: number) =>
+    requireVault().search(String(q ?? ''), typeof limit === 'number' ? limit : undefined)
+  )
 }

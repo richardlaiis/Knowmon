@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { TreeNode, VaultChange } from '../../shared/types'
+import { resolveLink } from '../../shared/links'
+import type { NoteSummary, TreeNode, VaultChange } from '../../shared/types'
 import { Editor, createAutosave } from '../editor'
+import { BacklinksPanel } from './components/BacklinksPanel'
 import { FileTree } from './components/FileTree'
+import { QuickSwitcher } from './components/QuickSwitcher'
+import { SearchPanel } from './components/SearchPanel'
 import {
   errorMessage,
   isWithin,
@@ -23,14 +27,26 @@ interface OpenNote {
 let loadCounter = 0
 
 const PREVIEW_KEY = 'knowmon.livePreview'
+const BACKLINKS_KEY = 'knowmon.backlinks'
+const RECENT_MAX = 20
 
-function loadPreviewSetting(): boolean {
+function loadFlag(key: string): boolean {
   try {
-    return localStorage.getItem(PREVIEW_KEY) !== 'false'
+    return localStorage.getItem(key) !== 'false'
   } catch {
     return true
   }
 }
+
+function saveFlag(key: string, on: boolean): void {
+  try {
+    localStorage.setItem(key, String(on))
+  } catch {
+    // 無法儲存偏好時仍可切換
+  }
+}
+
+const fetchNotes = (): Promise<NoteSummary[]> => window.api.notes.list()
 
 function App(): React.JSX.Element {
   const [vault, setVault] = useState<string | null>(null)
@@ -40,7 +56,13 @@ function App(): React.JSX.Element {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [externalChange, setExternalChange] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [preview, setPreview] = useState(loadPreviewSetting)
+  const [preview, setPreview] = useState(() => loadFlag(PREVIEW_KEY))
+  const [showBacklinks, setShowBacklinks] = useState(() => loadFlag(BACKLINKS_KEY))
+  const [sidebarTab, setSidebarTab] = useState<'files' | 'search'>('files')
+  const [searchFocus, setSearchFocus] = useState(0)
+  /** 索引可能改變時遞增（外部修改、App 內操作、儲存），讓搜尋與反向連結重新查詢 */
+  const [indexVersion, setIndexVersion] = useState(0)
+  const [switcherNotes, setSwitcherNotes] = useState<NoteSummary[] | null>(null)
   const [theme, setTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
   )
@@ -56,26 +78,28 @@ function App(): React.JSX.Element {
 
   const togglePreview = useCallback(() => {
     setPreview((on) => {
-      try {
-        localStorage.setItem(PREVIEW_KEY, String(!on))
-      } catch {
-        // 無法儲存偏好時仍可切換
-      }
+      saveFlag(PREVIEW_KEY, !on)
       return !on
     })
   }, [])
 
-  // Ctrl/Cmd+E 切換即時渲染與原始碼模式（同 Obsidian）
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'e') {
-        e.preventDefault()
-        togglePreview()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [togglePreview])
+  const toggleBacklinks = useCallback(() => {
+    setShowBacklinks((on) => {
+      saveFlag(BACKLINKS_KEY, !on)
+      return !on
+    })
+  }, [])
+
+  const openSwitcher = useCallback(() => {
+    fetchNotes()
+      .then(setSwitcherNotes)
+      .catch((e) => setMessage(errorMessage(e)))
+  }, [])
+
+  const openSearch = useCallback(() => {
+    setSidebarTab('search')
+    setSearchFocus((n) => n + 1)
+  }, [])
 
   // 編輯器目前的內容（不放 state，避免每次打字都 re-render）
   const currentDoc = useRef('')
@@ -85,13 +109,24 @@ function App(): React.JSX.Element {
 
   const showError = useCallback((e: unknown) => setMessage(errorMessage(e)), [])
   const autosave = useMemo(
-    () => createAutosave((p, c) => window.api.notes.write(p, c), 500, showError),
+    () =>
+      createAutosave(
+        async (p, c) => {
+          await window.api.notes.write(p, c)
+          setIndexVersion((v) => v + 1)
+        },
+        500,
+        showError
+      ),
     [showError]
   )
+  // 最近開啟的筆記（Quick switcher 排序用），越前面越近
+  const [recent, setRecent] = useState<string[]>([])
 
   const refreshTree = useCallback(async () => {
     try {
       setTree(await window.api.vault.tree())
+      setIndexVersion((v) => v + 1)
     } catch (e) {
       showError(e)
     }
@@ -101,6 +136,7 @@ function App(): React.JSX.Element {
     const doc = await window.api.notes.read(path)
     currentDoc.current = doc
     notePath.current = path
+    setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, RECENT_MAX))
     setExternalChange(false)
     setNote({ path, doc, key: `${path}#${++loadCounter}` })
   }, [])
@@ -198,6 +234,25 @@ function App(): React.JSX.Element {
     }
   }
 
+  /** Ctrl/Cmd+點擊 [[目標]]：開啟筆記，不存在時在 vault 根目錄建立 */
+  const openLink = async (target: string): Promise<void> => {
+    try {
+      const notes = await fetchNotes()
+      const path = resolveLink(
+        target,
+        notes.map((n) => n.path)
+      )
+      if (path) return await openNote(path)
+      await runLocal(async () => {
+        const created = `${target}.md`
+        await window.api.notes.create(created)
+        await load(created)
+      })
+    } catch (e) {
+      showError(e)
+    }
+  }
+
   const createNote = (folder: string): Promise<void> =>
     runLocal(async () => {
       if (!tree) return
@@ -251,6 +306,22 @@ function App(): React.JSX.Element {
     })
   }
 
+  // 全域快捷鍵：Ctrl/Cmd+E 切換即時渲染、Ctrl/Cmd+O Quick switcher、Ctrl/Cmd+Shift+F 搜尋
+  useEffect(() => {
+    if (!vault) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const key = e.key.toLowerCase()
+      if (!e.shiftKey && key === 'e') togglePreview()
+      else if (!e.shiftKey && key === 'o') openSwitcher()
+      else if (e.shiftKey && key === 'f') openSearch()
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [vault, togglePreview, openSwitcher, openSearch])
+
   if (!ready) return <div className="empty" />
 
   if (!vault) {
@@ -288,7 +359,33 @@ function App(): React.JSX.Element {
           </button>
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
-        {tree && (
+        <nav className="sidebar-tabs">
+          <button
+            className={sidebarTab === 'files' ? 'active' : ''}
+            onClick={() => setSidebarTab('files')}
+          >
+            Files
+          </button>
+          <button
+            className={sidebarTab === 'search' ? 'active' : ''}
+            onClick={openSearch}
+            title="Search (Ctrl+Shift+F)"
+          >
+            Search
+          </button>
+          <button onClick={openSwitcher} title="Quick switcher (Ctrl+O)">
+            Go to…
+          </button>
+        </nav>
+        {sidebarTab === 'search' && (
+          <SearchPanel
+            focusKey={searchFocus}
+            version={indexVersion}
+            selected={note?.path ?? null}
+            onOpen={openNote}
+          />
+        )}
+        {sidebarTab === 'files' && tree && (
           <FileTree
             root={tree}
             selected={note?.path ?? null}
@@ -342,6 +439,13 @@ function App(): React.JSX.Element {
               >
                 {preview ? 'Live preview' : 'Source'}
               </button>
+              <button
+                className={`mode-toggle${showBacklinks ? ' on' : ''}`}
+                onClick={toggleBacklinks}
+                title="Show or hide backlinks"
+              >
+                Backlinks
+              </button>
             </div>
             <Editor
               docKey={note.key}
@@ -352,14 +456,31 @@ function App(): React.JSX.Element {
               }}
               onSave={() => void autosave.flush()}
               livePreview={preview}
+              getNotes={fetchNotes}
+              onOpenLink={(target) => void openLink(target)}
             />
           </>
         ) : (
           <div className="empty">
             <p>Select a note on the left, or right-click to create one.</p>
+            <p className="hint">Ctrl+O to jump to a note · Ctrl+Shift+F to search</p>
           </div>
         )}
       </main>
+      {note && showBacklinks && (
+        <BacklinksPanel path={note.path} version={indexVersion} onOpen={openNote} />
+      )}
+      {switcherNotes && (
+        <QuickSwitcher
+          notes={switcherNotes}
+          recent={recent}
+          onOpen={(path) => {
+            setSwitcherNotes(null)
+            void openNote(path)
+          }}
+          onClose={() => setSwitcherNotes(null)}
+        />
+      )}
     </div>
   )
 }

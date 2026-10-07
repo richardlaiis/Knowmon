@@ -19,6 +19,33 @@ export interface NoteEvent {
   kind: NoteEventKind
 }
 
+/** 筆記清單用的精簡資料（自動補全、Quick switcher、點擊連結） */
+export interface NoteSummary {
+  path: string
+  title: string
+  eventDate: string | null
+  modifiedAt: number
+}
+
+/** 一段文字，match = true 表示搜尋命中或連結本身（renderer 以高亮顯示） */
+export interface TextSegment {
+  text: string
+  match: boolean
+}
+
+export interface Backlink {
+  path: string // 來源筆記
+  title: string
+  line: number // 1-based
+  context: TextSegment[] // 該行文字，連結部分 match = true
+}
+
+export interface SearchHit {
+  path: string
+  title: string
+  snippet: TextSegment[]
+}
+
 export interface TreeNode {
   name: string
   path: string
@@ -45,5 +72,12 @@ export interface KnowmonAPI {
     createFolder(path: string): Promise<void>
     rename(from: string, to: string): Promise<void>
     remove(path: string): Promise<void>
+    list(): Promise<NoteSummary[]>
+  }
+  links: {
+    backlinks(path: string): Promise<Backlink[]>
+  }
+  search: {
+    query(q: string, limit?: number): Promise<SearchHit[]>
   }
 }

@@ -20,7 +20,14 @@ const api: KnowmonAPI = {
     create: (path) => ipcRenderer.invoke(IPC.notesCreate, path),
     createFolder: (path) => ipcRenderer.invoke(IPC.notesCreateFolder, path),
     rename: (from, to) => ipcRenderer.invoke(IPC.notesRename, from, to),
-    remove: (path) => ipcRenderer.invoke(IPC.notesRemove, path)
+    remove: (path) => ipcRenderer.invoke(IPC.notesRemove, path),
+    list: () => ipcRenderer.invoke(IPC.notesList)
+  },
+  links: {
+    backlinks: (path) => ipcRenderer.invoke(IPC.linksBacklinks, path)
+  },
+  search: {
+    query: (q, limit) => ipcRenderer.invoke(IPC.searchQuery, q, limit)
   }
 }
 

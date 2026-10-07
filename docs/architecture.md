@@ -33,6 +33,17 @@
 - `open`：`notes.read()`。
 - 同一篇、同一種事件在 `EVENT_THROTTLE_MS`（60 秒）內只記一次，避免自動儲存灌爆日誌。階段 4 的 session 預設 30 分鐘，1 分鐘粒度足夠。
 
+## 索引、連結、搜尋（階段 2）
+
+- 解析器 `src/main/indexer/parse.ts` 是純函式：`event_date` 取 frontmatter `date:`，其次是檔名開頭的 `YYYY-MM-DD`；wikilink 排除 frontmatter、圍欄程式碼與行內程式碼；YAML 損毀時當作沒有 frontmatter。
+- 標題一律用檔名（使用者決定，2026-10-07），frontmatter 的 `title:` 只是一般屬性。
+- wikilink 解析規則在 `src/shared/links.ts`，main 與 renderer 共用：不分大小寫、Unicode NFC；目標含 `/` 比對路徑結尾，否則比對檔名；同名時取路徑最短者，再依字典序。
+- `links` 表：wikilink 每個（來源, 目標）一列，`weight` 為出現次數。`dst` 為 NULL 表示目標不存在，`target` 保留原文；筆記新增、改名、刪除後由 `relinkWikilinks` 重新解析所有 `dst`（不重讀檔案），所以先寫連結再建筆記也會接上。改名不會改寫其他筆記裡的 `[[舊名]]`。
+- `notes_fts`（trigram，rowid = notes.id）存標題與內文。內文的 frontmatter 換成等量空行，行號與原檔一致；反向連結的上下文直接從這裡取，不讀檔。刪除與改名靠 trigger 同步。
+- 增量：內容 hash 與 DB 相同時只更新 mtime，不重新解析；改名時強制重新解析（檔名日期可能改變）。
+- 搜尋：依空白切詞、全部 AND。3 字以上走 `MATCH`（bm25，標題權重 10），不足 3 字（常見的 2 字中文詞）用 `LIKE`。標題包含所有詞的排前面。摘要在 main 以 JS 擷取，用 `TextSegment[]` 回傳，renderer 不插入 HTML。
+- Renderer：側欄「Files / Search」分頁（`Ctrl/Cmd+Shift+F`）、`Ctrl/Cmd+O` Quick switcher（模糊比對，最近開啟的排前面，只存在記憶體）、右側反向連結面板（顯示狀態存 localStorage `knowmon.backlinks`）。`Ctrl/Cmd+點擊` wikilink 開啟筆記，目標不存在時在 vault 根目錄建立。`[[` 自動補全使用 `@codemirror/autocomplete`，插入能唯一解析的最短目標。
+
 ## 啟動
 
 - 啟動時不自動開啟上次的 vault（使用者要求，2026-10-06）。`settings.json` 仍記住上次的 vault，「Open folder」對話框會以它作為起始位置。

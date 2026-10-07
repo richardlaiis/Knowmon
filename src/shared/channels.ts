@@ -9,5 +9,8 @@ export const IPC = {
   notesCreate: 'notes:create',
   notesCreateFolder: 'notes:createFolder',
   notesRename: 'notes:rename',
-  notesRemove: 'notes:remove'
+  notesRemove: 'notes:remove',
+  notesList: 'notes:list',
+  linksBacklinks: 'links:backlinks',
+  searchQuery: 'search:query'
 } as const
