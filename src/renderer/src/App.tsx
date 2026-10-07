@@ -1,33 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { resolveLink } from '../../shared/links'
 import type { NoteSummary, TreeNode, VaultChange } from '../../shared/types'
-import { Editor, createAutosave } from '../editor'
+import { createAutosave } from '../editor'
+import { GlobalGraph, LocalGraph, type Point } from '../graph'
 import { BacklinksPanel } from './components/BacklinksPanel'
 import { FileTree } from './components/FileTree'
 import { QuickSwitcher } from './components/QuickSwitcher'
 import { SearchPanel } from './components/SearchPanel'
+import { Splitter } from './components/Splitter'
 import {
   errorMessage,
   isWithin,
   movedInto,
-  remapPath,
   renamedPath,
   uniqueFolderPath,
   uniqueNotePath
 } from './lib/tree'
 import { applyTheme, browserStore, otherTheme, saveTheme, type Theme } from './lib/theme'
-
-interface OpenNote {
-  path: string
-  doc: string
-  /** 每次從磁碟載入都換一個 key，讓編輯器重設內容 */
-  key: string
-}
-
-let loadCounter = 0
+import {
+  DEFAULT_LAYOUT,
+  PANE_LIMITS,
+  clampWidth,
+  loadLayout,
+  saveLayout,
+  type LayoutPrefs
+} from './workspace/layout'
+import { NotePane } from './workspace/NotePane'
+import { TabBar } from './workspace/TabBar'
+import * as T from './workspace/tabs'
 
 const PREVIEW_KEY = 'knowmon.livePreview'
-const BACKLINKS_KEY = 'knowmon.backlinks'
+const SIDE_TAB_KEY = 'knowmon.sidePanel'
+const TABS_KEY = 'knowmon.tabs:'
 const RECENT_MAX = 20
 
 function loadFlag(key: string): boolean {
@@ -46,30 +50,112 @@ function saveFlag(key: string, on: boolean): void {
   }
 }
 
+function loadSideTab(): 'backlinks' | 'local' {
+  try {
+    return localStorage.getItem(SIDE_TAB_KEY) === 'local' ? 'local' : 'backlinks'
+  } catch {
+    return 'backlinks'
+  }
+}
+
+/** 每個 vault 各自記住開著的分頁 */
+function loadSavedTabs(vault: string): unknown {
+  try {
+    const raw = localStorage.getItem(TABS_KEY + vault)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function saveTabs(vault: string, tabs: T.TabsState): void {
+  try {
+    localStorage.setItem(TABS_KEY + vault, JSON.stringify(T.serializeTabs(tabs)))
+  } catch {
+    // 無法儲存時下次就從空白開始
+  }
+}
+
 const fetchNotes = (): Promise<NoteSummary[]> => window.api.notes.list()
+
+function withSaved(layout: LayoutPrefs): LayoutPrefs {
+  saveLayout(layout)
+  return layout
+}
 
 function App(): React.JSX.Element {
   const [vault, setVault] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [tree, setTree] = useState<TreeNode | null>(null)
-  const [note, setNote] = useState<OpenNote | null>(null)
+  const [tabs, setTabs] = useState<T.TabsState>(T.emptyTabs)
   const [renaming, setRenaming] = useState<string | null>(null)
-  const [externalChange, setExternalChange] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [preview, setPreview] = useState(() => loadFlag(PREVIEW_KEY))
-  const [showBacklinks, setShowBacklinks] = useState(() => loadFlag(BACKLINKS_KEY))
+  const [layout, setLayout] = useState<LayoutPrefs>(loadLayout)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'search'>('files')
   const [searchFocus, setSearchFocus] = useState(0)
-  /** 索引可能改變時遞增（外部修改、App 內操作、儲存），讓搜尋與反向連結重新查詢 */
+  /** 索引可能改變時遞增（外部修改、App 內操作、儲存），讓搜尋、反向連結與圖譜重新查詢 */
   const [indexVersion, setIndexVersion] = useState(0)
-  const [switcherNotes, setSwitcherNotes] = useState<NoteSummary[] | null>(null)
+  const [switcher, setSwitcher] = useState<{
+    notes: NoteSummary[]
+    recent: string[]
+    newTab: boolean
+  } | null>(null)
+  const [sideTab, setSideTab] = useState<'backlinks' | 'local'>(() => loadSideTab())
+  // 圖譜節點座標快取，換 vault 時重新開始
+  const graphPositions = useMemo(
+    () => ({ global: new Map<string, Point>(), local: new Map<string, Point>(), vault }),
+    [vault]
+  )
   const [theme, setTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
   )
 
+  // 事件處理器（watcher）讀取最新的分頁狀態
+  const tabsRef = useRef(tabs)
+  useEffect(() => {
+    tabsRef.current = tabs
+  })
+
+  const current = T.activeTab(tabs)
+  const currentNote = current?.kind === 'note' ? current.path : null
+
+  // 最近開啟的筆記（Quick switcher 排序用），越前面越近
+  const recent = useRef<string[]>([])
+  useEffect(() => {
+    if (currentNote) {
+      recent.current = [currentNote, ...recent.current.filter((p) => p !== currentNote)].slice(
+        0,
+        RECENT_MAX
+      )
+    }
+  }, [currentNote])
+
+  // ---- 分頁的存檔與還原 ----
+  /** 已經還原過分頁的 vault；還原完成前不存檔，避免空的狀態蓋掉上次的分頁 */
+  const restoredFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!vault) return
+    let stale = false
+    fetchNotes()
+      .then((notes) => {
+        if (stale) return
+        const exists = new Set(notes.map((n) => n.path))
+        restoredFor.current = vault
+        setTabs(T.restoreTabs(loadSavedTabs(vault), (p) => exists.has(p)))
+      })
+      .catch((e) => setMessage(errorMessage(e)))
+    return () => {
+      stale = true
+    }
+  }, [vault])
+  useEffect(() => {
+    if (vault && restoredFor.current === vault) saveTabs(vault, tabs)
+  }, [vault, tabs])
+
   const toggleTheme = useCallback(() => {
-    setTheme((current) => {
-      const next = otherTheme(current)
+    setTheme((t) => {
+      const next = otherTheme(t)
       applyTheme(document.documentElement, next)
       saveTheme(browserStore(), next)
       return next
@@ -83,29 +169,34 @@ function App(): React.JSX.Element {
     })
   }, [])
 
-  const toggleBacklinks = useCallback(() => {
-    setShowBacklinks((on) => {
-      saveFlag(BACKLINKS_KEY, !on)
-      return !on
-    })
+  const updateLayout = useCallback((change: Partial<LayoutPrefs>) => {
+    setLayout((l) => withSaved({ ...l, ...change }))
   }, [])
 
-  const openSwitcher = useCallback(() => {
+  const openSwitcher = useCallback((newTab = false) => {
     fetchNotes()
-      .then(setSwitcherNotes)
+      .then((notes) => setSwitcher({ notes, recent: recent.current, newTab }))
       .catch((e) => setMessage(errorMessage(e)))
   }, [])
 
+  const chooseSideTab = (tab: 'backlinks' | 'local'): void => {
+    setSideTab(tab)
+    try {
+      localStorage.setItem(SIDE_TAB_KEY, tab)
+    } catch {
+      // 無法儲存偏好時仍可切換
+    }
+  }
+
   const openSearch = useCallback(() => {
+    updateLayout({ leftOpen: true })
     setSidebarTab('search')
     setSearchFocus((n) => n + 1)
-  }, [])
+  }, [updateLayout])
 
-  // 編輯器目前的內容（不放 state，避免每次打字都 re-render）
-  const currentDoc = useRef('')
-  const notePath = useRef<string | null>(null)
   // App 自己發起的新增/改名/刪除進行中，忽略 watcher 對開著的筆記的通知
   const localOps = useRef(0)
+  const isLocalOp = useCallback(() => localOps.current > 0, [])
 
   const showError = useCallback((e: unknown) => setMessage(errorMessage(e)), [])
   const autosave = useMemo(
@@ -120,8 +211,6 @@ function App(): React.JSX.Element {
       ),
     [showError]
   )
-  // 最近開啟的筆記（Quick switcher 排序用），越前面越近
-  const [recent, setRecent] = useState<string[]>([])
 
   const refreshTree = useCallback(async () => {
     try {
@@ -131,21 +220,6 @@ function App(): React.JSX.Element {
       showError(e)
     }
   }, [showError])
-
-  const load = useCallback(async (path: string) => {
-    const doc = await window.api.notes.read(path)
-    currentDoc.current = doc
-    notePath.current = path
-    setRecent((r) => [path, ...r.filter((p) => p !== path)].slice(0, RECENT_MAX))
-    setExternalChange(false)
-    setNote({ path, doc, key: `${path}#${++loadCounter}` })
-  }, [])
-
-  const close = useCallback(() => {
-    notePath.current = null
-    setExternalChange(false)
-    setNote(null)
-  }, [])
 
   // 啟動：還原上次的 vault
   useEffect(() => {
@@ -159,36 +233,31 @@ function App(): React.JSX.Element {
       .finally(() => setReady(true))
   }, [showError])
 
-  // 外部修改
+  // 外部修改：更新檔案樹；筆記被外部刪除或移走時關閉它的分頁（內容變更由各分頁自己處理）
   useEffect(() => {
     if (!vault) return
     let timer: ReturnType<typeof setTimeout> | null = null
-    const off = window.api.vault.onChange(async (c: VaultChange) => {
+    const off = window.api.vault.onChange((c: VaultChange) => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => void refreshTree(), 100)
-
-      const open = notePath.current
-      if (!open || localOps.current > 0) return
-      if (c.type === 'unlink' && isWithin(open, c.path)) {
-        autosave.cancel()
-        close()
-        setMessage(`"${open}" was deleted or moved outside the app`)
-      } else if (c.type === 'change' && c.path === open) {
-        if (autosave.isDirty(open)) {
-          setExternalChange(true)
-          return
-        }
-        const disk = await window.api.notes.read(open).catch(() => null)
-        if (disk !== null && disk !== currentDoc.current && notePath.current === open) {
-          await load(open)
-        }
-      }
+      if (c.type !== 'unlink' || localOps.current > 0) return
+      const gone = tabsRef.current.tabs.flatMap((t) =>
+        t.kind === 'note' && isWithin(t.path, c.path) ? [t.path] : []
+      )
+      if (gone.length === 0) return
+      if (gone.some((p) => autosave.isDirty(p))) autosave.cancel()
+      setMessage(
+        gone.length === 1
+          ? `"${gone[0]}" was deleted or moved outside the app`
+          : `${gone.length} open notes were deleted or moved outside the app`
+      )
+      setTabs((s) => T.removePaths(s, c.path))
     })
     return () => {
       off()
       if (timer) clearTimeout(timer)
     }
-  }, [vault, refreshTree, autosave, close, load])
+  }, [vault, refreshTree, autosave])
 
   // 關閉視窗前寫出未儲存的內容
   useEffect(() => {
@@ -216,7 +285,8 @@ function App(): React.JSX.Element {
       await autosave.flush()
       const root = await window.api.vault.pick()
       if (!root) return
-      close()
+      restoredFor.current = null
+      setTabs(T.emptyTabs)
       setVault(root)
       await refreshTree()
     } catch (e) {
@@ -224,29 +294,39 @@ function App(): React.JSX.Element {
     }
   }
 
-  const openNote = async (path: string): Promise<void> => {
-    if (path === notePath.current) return
-    try {
+  /** 開啟筆記：取代目前分頁，newTab 時開新分頁；已開著就切過去 */
+  const openNote = useCallback(
+    async (path: string, newTab = false): Promise<void> => {
+      // 取代分頁時原本的編輯器會被移除，先寫出未儲存的內容
       await autosave.flush()
-      await load(path)
-    } catch (e) {
-      showError(e)
-    }
-  }
+      setTabs((s) => T.openNote(s, path, newTab))
+    },
+    [autosave]
+  )
 
-  /** Ctrl/Cmd+點擊 [[目標]]：開啟筆記，不存在時在 vault 根目錄建立 */
-  const openLink = async (target: string): Promise<void> => {
+  const openGraph = useCallback(() => setTabs((s) => T.openGraph(s)), [])
+
+  const closeTab = useCallback(
+    async (id: string): Promise<void> => {
+      await autosave.flush()
+      setTabs((s) => T.closeTab(s, id))
+    },
+    [autosave]
+  )
+
+  /** [[目標]]：開啟筆記，不存在時在 vault 根目錄建立 */
+  const openLink = async (target: string, newTab: boolean): Promise<void> => {
     try {
       const notes = await fetchNotes()
       const path = resolveLink(
         target,
         notes.map((n) => n.path)
       )
-      if (path) return await openNote(path)
+      if (path) return await openNote(path, newTab)
       await runLocal(async () => {
         const created = `${target}.md`
         await window.api.notes.create(created)
-        await load(created)
+        setTabs((s) => T.openNote(s, created, newTab))
       })
     } catch (e) {
       showError(e)
@@ -258,7 +338,8 @@ function App(): React.JSX.Element {
       if (!tree) return
       const path = uniqueNotePath(tree, folder)
       await window.api.notes.create(path)
-      await load(path)
+      // 新筆記開在新分頁，不取代正在看的筆記
+      setTabs((s) => T.openNote(s, path, true))
       setRenaming(path)
     })
 
@@ -270,22 +351,13 @@ function App(): React.JSX.Element {
       setRenaming(path)
     })
 
-  /** 改名或搬移後，若開著的筆記受影響就跟著更新路徑 */
-  const followMove = (from: string, to: string): void => {
-    const open = notePath.current
-    if (!open || !isWithin(open, from)) return
-    const moved = remapPath(open, from, to)
-    notePath.current = moved
-    setNote((n) => (n ? { ...n, path: moved } : n))
-  }
-
   const renameNode = (node: TreeNode, newName: string): Promise<void> =>
     runLocal(async () => {
       setRenaming(null)
       const to = renamedPath(node, newName)
       if (to === node.path) return
       await window.api.notes.rename(node.path, to)
-      followMove(node.path, to)
+      setTabs((s) => T.renamePaths(s, node.path, to))
     })
 
   const moveNode = (from: string, folder: string): Promise<void> =>
@@ -293,7 +365,7 @@ function App(): React.JSX.Element {
       const to = movedInto(from, folder)
       if (!to) return
       await window.api.notes.rename(from, to)
-      followMove(from, to)
+      setTabs((s) => T.renamePaths(s, from, to))
     })
 
   const removeNode = (node: TreeNode): Promise<void> => {
@@ -302,25 +374,66 @@ function App(): React.JSX.Element {
     if (!window.confirm(`Move ${what} to the trash?`)) return Promise.resolve()
     return runLocal(async () => {
       await window.api.notes.remove(node.path)
-      if (notePath.current && isWithin(notePath.current, node.path)) close()
+      setTabs((s) => T.removePaths(s, node.path))
     })
   }
 
-  // 全域快捷鍵：Ctrl/Cmd+E 切換即時渲染、Ctrl/Cmd+O Quick switcher、Ctrl/Cmd+Shift+F 搜尋
+  // 面板寬度：拖曳時限制在上下限內，且不把編輯器擠得太窄
+  const resizeLeft = (w: number): void =>
+    updateLayout({
+      left: clampWidth(w, PANE_LIMITS.left, window.innerWidth, layout.rightOpen ? layout.right : 0)
+    })
+  const resizeRight = (w: number): void =>
+    updateLayout({
+      right: clampWidth(w, PANE_LIMITS.right, window.innerWidth, layout.leftOpen ? layout.left : 0)
+    })
+  const toggleLeft = useCallback(
+    () => setLayout((l) => withSaved({ ...l, leftOpen: !l.leftOpen })),
+    []
+  )
+  const toggleRight = useCallback(
+    () => setLayout((l) => withSaved({ ...l, rightOpen: !l.rightOpen })),
+    []
+  )
+
+  // 全域快捷鍵（完整列表見 README 的「快捷鍵」）
+  const activeId = tabs.activeId
   useEffect(() => {
     if (!vault) return
     const onKey = (e: KeyboardEvent): void => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      if (!(e.ctrlKey || e.metaKey)) return
       const key = e.key.toLowerCase()
-      if (!e.shiftKey && key === 'e') togglePreview()
-      else if (!e.shiftKey && key === 'o') openSwitcher()
+      if (e.key === 'Tab' && e.ctrlKey) setTabs((s) => T.cycle(s, e.shiftKey ? -1 : 1))
+      else if (e.altKey && key === 'b') toggleRight()
+      else if (e.altKey) return
       else if (e.shiftKey && key === 'f') openSearch()
-      else return
+      else if (e.shiftKey) return
+      else if (key === 'e') togglePreview()
+      else if (key === 'o') openSwitcher(false)
+      else if (key === 't') openSwitcher(true)
+      else if (key === 'g') openGraph()
+      else if (key === 'b') toggleLeft()
+      else if (key === 'w') {
+        if (activeId) void closeTab(activeId)
+      } else return
       e.preventDefault()
+      // 不讓編輯器再處理同一個按鍵（例如 CodeMirror 的 Ctrl/Cmd+G 是「找下一個」）
+      e.stopPropagation()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [vault, togglePreview, openSwitcher, openSearch])
+    // capture：在編輯器之前攔截全域快捷鍵
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [
+    vault,
+    activeId,
+    togglePreview,
+    openSwitcher,
+    openSearch,
+    openGraph,
+    closeTab,
+    toggleLeft,
+    toggleRight
+  ])
 
   if (!ready) return <div className="empty" />
 
@@ -340,145 +453,192 @@ function App(): React.JSX.Element {
     )
   }
 
+  const graphTab = tabs.tabs.find((t) => t.kind === 'graph')
+
   return (
     <div className="layout">
-      <aside className="sidebar">
-        <header className="sidebar-header">
-          <button
-            className="vault-name"
-            onClick={pickVault}
-            title={`${vault}\nClick to switch vault`}
-          >
-            {tree?.name ?? vault}
-          </button>
-          <button className="icon" onClick={() => createNote('')} title="New note">
-            <NewNoteIcon />
-          </button>
-          <button className="icon" onClick={() => createFolder('')} title="New folder">
-            <NewFolderIcon />
-          </button>
-          <ThemeToggle theme={theme} onToggle={toggleTheme} />
-        </header>
-        <nav className="sidebar-tabs">
-          <button
-            className={sidebarTab === 'files' ? 'active' : ''}
-            onClick={() => setSidebarTab('files')}
-          >
-            Files
-          </button>
-          <button
-            className={sidebarTab === 'search' ? 'active' : ''}
-            onClick={openSearch}
-            title="Search (Ctrl+Shift+F)"
-          >
-            Search
-          </button>
-          <button onClick={openSwitcher} title="Quick switcher (Ctrl+O)">
-            Go to…
-          </button>
-        </nav>
-        {sidebarTab === 'search' && (
-          <SearchPanel
-            focusKey={searchFocus}
-            version={indexVersion}
-            selected={note?.path ?? null}
-            onOpen={openNote}
+      {layout.leftOpen && (
+        <>
+          <aside className="sidebar" style={{ width: layout.left }}>
+            <header className="sidebar-header">
+              <button
+                className="vault-name"
+                onClick={pickVault}
+                title={`${vault}\nClick to switch vault`}
+              >
+                {tree?.name ?? vault}
+              </button>
+              <button className="icon" onClick={() => createNote('')} title="New note">
+                <NewNoteIcon />
+              </button>
+              <button className="icon" onClick={() => createFolder('')} title="New folder">
+                <NewFolderIcon />
+              </button>
+              <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            </header>
+            <nav className="sidebar-tabs">
+              <button
+                className={sidebarTab === 'files' ? 'active' : ''}
+                onClick={() => setSidebarTab('files')}
+              >
+                Files
+              </button>
+              <button
+                className={sidebarTab === 'search' ? 'active' : ''}
+                onClick={openSearch}
+                title="Search (Ctrl+Shift+F)"
+              >
+                Search
+              </button>
+              <button onClick={openGraph} title="Graph view (Ctrl+G)">
+                Graph
+              </button>
+              <button onClick={() => openSwitcher(false)} title="Quick switcher (Ctrl+O)">
+                Go to…
+              </button>
+            </nav>
+            {sidebarTab === 'search' && (
+              <SearchPanel
+                focusKey={searchFocus}
+                version={indexVersion}
+                selected={currentNote}
+                onOpen={(p, newTab) => void openNote(p, newTab)}
+              />
+            )}
+            {sidebarTab === 'files' && tree && (
+              <FileTree
+                root={tree}
+                selected={currentNote}
+                renaming={renaming}
+                onOpen={(p, newTab) => void openNote(p, newTab)}
+                onCreate={createNote}
+                onCreateFolder={createFolder}
+                onStartRename={setRenaming}
+                onRename={renameNode}
+                onMove={moveNode}
+                onRemove={removeNode}
+              />
+            )}
+          </aside>
+          <Splitter
+            side="left"
+            width={layout.left}
+            onResize={resizeLeft}
+            onReset={() => updateLayout({ left: DEFAULT_LAYOUT.left })}
           />
-        )}
-        {sidebarTab === 'files' && tree && (
-          <FileTree
-            root={tree}
-            selected={note?.path ?? null}
-            renaming={renaming}
-            onOpen={openNote}
-            onCreate={createNote}
-            onCreateFolder={createFolder}
-            onStartRename={setRenaming}
-            onRename={renameNode}
-            onMove={moveNode}
-            onRemove={removeNode}
-          />
-        )}
-      </aside>
+        </>
+      )}
       <main className="main">
+        <TabBar
+          tabs={tabs.tabs}
+          activeId={tabs.activeId}
+          onActivate={(id) => setTabs((s) => T.activate(s, id))}
+          onClose={(id) => void closeTab(id)}
+          onCloseOthers={(id) => {
+            void autosave.flush().then(() => setTabs((s) => T.closeOthers(s, id)))
+          }}
+          onMove={(id, to) => setTabs((s) => T.moveTab(s, id, to))}
+          onNewTab={() => openSwitcher(true)}
+          leftOpen={layout.leftOpen}
+          rightOpen={layout.rightOpen}
+          onToggleLeft={toggleLeft}
+          onToggleRight={toggleRight}
+        />
         {message && (
           <div className="banner error" onClick={() => setMessage(null)}>
             {message} (click to dismiss)
           </div>
         )}
-        {externalChange && note && (
-          <div className="banner">
-            This note was changed outside the app.
-            <button
-              onClick={() => {
-                autosave.cancel()
-                load(note.path).catch(showError)
-              }}
-            >
-              Load external version
-            </button>
-            <button
-              onClick={() => {
-                setExternalChange(false)
-                autosave.schedule(note.path, currentDoc.current)
-                void autosave.flush()
-              }}
-            >
-              Keep my version
-            </button>
-          </div>
+        {graphTab && (
+          <GlobalGraph
+            visible={graphTab.id === tabs.activeId}
+            version={indexVersion}
+            current={null}
+            theme={theme}
+            positions={graphPositions.global}
+            onOpen={(p, newTab) => void openNote(p, newTab)}
+            onError={showError}
+          />
         )}
-        {note ? (
-          <>
-            <div className="note-title">
-              <span className="note-path">{note.path.replace(/\.md$/i, '')}</span>
-              <button
-                className="mode-toggle"
-                onClick={togglePreview}
-                title="Toggle live preview / source mode (Ctrl+E)"
-              >
-                {preview ? 'Live preview' : 'Source'}
-              </button>
-              <button
-                className={`mode-toggle${showBacklinks ? ' on' : ''}`}
-                onClick={toggleBacklinks}
-                title="Show or hide backlinks"
-              >
-                Backlinks
-              </button>
-            </div>
-            <Editor
-              docKey={note.key}
-              doc={note.doc}
-              onChange={(doc) => {
-                currentDoc.current = doc
-                if (notePath.current) autosave.schedule(notePath.current, doc)
-              }}
-              onSave={() => void autosave.flush()}
-              livePreview={preview}
+        {tabs.tabs.map((t) =>
+          t.kind === 'note' ? (
+            <NotePane
+              key={t.id}
+              path={t.path}
+              active={t.id === tabs.activeId}
+              preview={preview}
+              autosave={autosave}
+              isLocalOp={isLocalOp}
               getNotes={fetchNotes}
-              onOpenLink={(target) => void openLink(target)}
+              onTogglePreview={togglePreview}
+              onOpenLink={(target, newTab) => void openLink(target, newTab)}
+              onError={showError}
             />
-          </>
-        ) : (
+          ) : null
+        )}
+        {tabs.tabs.length === 0 && (
           <div className="empty">
             <p>Select a note on the left, or right-click to create one.</p>
-            <p className="hint">Ctrl+O to jump to a note · Ctrl+Shift+F to search</p>
+            <p className="hint">
+              Ctrl+O to jump to a note · Ctrl+Shift+F to search · Ctrl+G for the graph
+            </p>
           </div>
         )}
       </main>
-      {note && showBacklinks && (
-        <BacklinksPanel path={note.path} version={indexVersion} onOpen={openNote} />
+      {layout.rightOpen && (
+        <>
+          <Splitter
+            side="right"
+            width={layout.right}
+            onResize={resizeRight}
+            onReset={() => updateLayout({ right: DEFAULT_LAYOUT.right })}
+          />
+          <aside className="side-panel" style={{ width: layout.right }}>
+            <nav className="side-tabs">
+              <button
+                className={sideTab === 'backlinks' ? 'active' : ''}
+                onClick={() => chooseSideTab('backlinks')}
+              >
+                Backlinks
+              </button>
+              <button
+                className={sideTab === 'local' ? 'active' : ''}
+                onClick={() => chooseSideTab('local')}
+              >
+                Local graph
+              </button>
+            </nav>
+            {!currentNote ? (
+              <p className="panel-note">No note is open in this tab.</p>
+            ) : sideTab === 'backlinks' ? (
+              <BacklinksPanel
+                path={currentNote}
+                version={indexVersion}
+                onOpen={(p, newTab) => void openNote(p, newTab)}
+              />
+            ) : (
+              <LocalGraph
+                path={currentNote}
+                version={indexVersion}
+                theme={theme}
+                positions={graphPositions.local}
+                onOpen={(p, newTab) => void openNote(p, newTab)}
+                onError={showError}
+              />
+            )}
+          </aside>
+        </>
       )}
-      {switcherNotes && (
+      {switcher && (
         <QuickSwitcher
-          notes={switcherNotes}
-          recent={recent}
-          onOpen={(path) => {
-            setSwitcherNotes(null)
-            void openNote(path)
+          notes={switcher.notes}
+          recent={switcher.recent}
+          newTab={switcher.newTab}
+          onOpen={(path, newTab) => {
+            setSwitcher(null)
+            void openNote(path, newTab)
           }}
-          onClose={() => setSwitcherNotes(null)}
+          onClose={() => setSwitcher(null)}
         />
       )}
     </div>

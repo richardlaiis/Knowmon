@@ -118,10 +118,10 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 完成標準：全域圖與單篇局部圖可互動，1000 篇筆記時不卡頓。
 
-- [ ] 全域圖譜（先只顯示 `wikilink` 邊）
-- [ ] 互動：縮放、點擊開啟筆記、hover 高亮鄰居
-- [ ] 單篇局部圖，可調整顯示深度
-- [ ] 用大型測試 vault 做效能測試
+- [x] 全域圖譜（先只顯示 `wikilink` 邊）
+- [x] 互動：縮放、點擊開啟筆記、hover 高亮鄰居
+- [x] 單篇局部圖，可調整顯示深度
+- [x] 用大型測試 vault 做效能測試（結果見 `docs/plans/phase3-graph.md`：1000 篇時縮放、平移、排版順暢，hover 約 21 fps；超過約 1000 篇時評估 sigma.js）
 
 ### 階段 4：時間層
 

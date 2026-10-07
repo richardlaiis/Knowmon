@@ -17,7 +17,9 @@ export interface EditorProps {
   /** [[ 自動補全用的筆記清單 */
   getNotes: () => Promise<NoteSummary[]>
   /** Ctrl/Cmd+點擊 wikilink */
-  onOpenLink: (target: string) => void
+  onOpenLink: (target: string, newTab: boolean) => void
+  /** 所在分頁是否為目前的分頁；切回來時取得焦點（隱藏的分頁不搶焦點） */
+  active?: boolean
 }
 
 const previewMode = new Compartment()
@@ -30,13 +32,20 @@ export function Editor({
   onSave,
   livePreview: preview,
   getNotes,
-  onOpenLink
+  onOpenLink,
+  active = true
 }: EditorProps): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   // 用 ref 存 callback，讓 CodeMirror extension 只建立一次
   const callbacks = useRef({ onChange, onSave, getNotes, onOpenLink })
   const previewRef = useRef(preview)
+  const activeRef = useRef(active)
+
+  useEffect(() => {
+    activeRef.current = active
+    if (active) view.current?.focus()
+  }, [active])
   useEffect(() => {
     callbacks.current = { onChange, onSave, getNotes, onOpenLink }
   })
@@ -78,7 +87,7 @@ export function Editor({
           previewMode.of(previewExtension(previewRef.current)),
           wikilinks({
             getNotes: () => callbacks.current.getNotes(),
-            onOpen: (target) => callbacks.current.onOpenLink(target)
+            onOpen: (target, newTab) => callbacks.current.onOpenLink(target, newTab)
           }),
           EditorView.lineWrapping,
           EditorView.updateListener.of((u) => {
@@ -87,7 +96,7 @@ export function Editor({
         ]
       })
     )
-    v.focus()
+    if (activeRef.current) v.focus()
     // doc 只在 docKey 改變時才套用，打字造成的 doc 變化不重設
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey])

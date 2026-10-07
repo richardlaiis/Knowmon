@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchHit } from '../../../shared/types'
 import { errorMessage } from '../lib/tree'
+import { wantsNewTab } from '../workspace/tabs'
 import { Segments } from './Segments'
 
 const DEBOUNCE_MS = 200
@@ -11,7 +12,8 @@ export interface SearchPanelProps {
   /** 索引有變動時遞增，重新查詢 */
   version: number
   selected: string | null
-  onOpen: (path: string) => void
+  /** newTab：Ctrl/Cmd+點擊或中鍵 */
+  onOpen: (path: string, newTab: boolean) => void
 }
 
 export function SearchPanel({
@@ -61,7 +63,7 @@ export function SearchPanel({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && hits?.length) onOpen(hits[0].path)
+          if (e.key === 'Enter' && hits?.length) onOpen(hits[0].path, e.ctrlKey || e.metaKey)
           if (e.key === 'Escape') setQuery('')
         }}
       />
@@ -73,7 +75,9 @@ export function SearchPanel({
             <li key={h.path}>
               <button
                 className={`result${h.path === selected ? ' selected' : ''}`}
-                onClick={() => onOpen(h.path)}
+                onClick={(e) => onOpen(h.path, wantsNewTab(e))}
+                onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+                onAuxClick={(e) => e.button === 1 && onOpen(h.path, true)}
                 title={h.path}
               >
                 <span className="result-title">{h.title}</span>

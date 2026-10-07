@@ -168,7 +168,10 @@ describe('增量索引', () => {
     fs.utimesSync(abs('歡迎.md'), t, t)
     await v.reconcile()
     expect(parseNote).not.toHaveBeenCalled()
-    expect(getNoteByPath(v.db, '歡迎.md')!.modifiedAt).toBe(Math.floor(t.getTime()))
+    // 以磁碟上實際的 mtime 比較：utimes 以浮點秒設定，讀回來可能少 1ms 以下
+    expect(getNoteByPath(v.db, '歡迎.md')!.modifiedAt).toBe(
+      Math.floor(fs.statSync(abs('歡迎.md')).mtimeMs)
+    )
 
     writeExternal('歡迎.md', '改了 [[日記/2026-10-06]]')
     await v.reconcile()
@@ -201,6 +204,23 @@ describe('增量索引', () => {
     await v.rename('歡迎.md', '入口.md')
     expect(v.search('入口').map((h) => h.path)).toEqual(['入口.md'])
     expect(v.search('歡迎').map((h) => h.title)).not.toContain('歡迎')
+  })
+})
+
+describe('圖譜', () => {
+  it('邊跟著寫入與建立筆記更新，未建立的目標不列入', async () => {
+    const v = await open()
+    const edges = (): string[] => v.graph().edges.map((e) => `${e.source} → ${e.target}`)
+    expect(v.graph().nodes).toHaveLength(3)
+    expect(edges()).toEqual([
+      '日記/2026-10-06.md → 讀書筆記/原子習慣.md',
+      '歡迎.md → 讀書筆記/原子習慣.md',
+      '讀書筆記/原子習慣.md → 歡迎.md'
+    ])
+    await v.create('尚未建立.md')
+    expect(edges()).toContain('歡迎.md → 尚未建立.md')
+    await v.write('日記/2026-10-06.md', '沒有連結了')
+    expect(edges()).not.toContain('日記/2026-10-06.md → 讀書筆記/原子習慣.md')
   })
 })
 

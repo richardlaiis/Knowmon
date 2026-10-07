@@ -5,6 +5,7 @@ import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type {
   Backlink,
+  GraphData,
   Note,
   NoteEventKind,
   NoteSummary,
@@ -30,6 +31,7 @@ import {
   type DB
 } from '../db'
 import { getBacklinks } from '../db/backlinks'
+import { getGraph } from '../db/graph'
 import { EventsLog, movedPath, replay } from '../db/events-log'
 import { searchNotes } from '../db/search'
 import { countLinks, parseNote } from '../indexer'
@@ -106,6 +108,10 @@ export class Vault {
 
   backlinks(rel: string): Backlink[] {
     return getBacklinks(this.db, normalizeRel(rel))
+  }
+
+  graph(): GraphData {
+    return getGraph(this.db)
   }
 
   search(query: string, limit?: number): SearchHit[] {

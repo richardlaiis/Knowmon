@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TreeNode } from '../../../shared/types'
 import { displayName, movedInto, parentOf } from '../lib/tree'
+import { wantsNewTab } from '../workspace/tabs'
 
 /** 檔案樹內部拖曳用的 MIME type，和外部拖進來的檔案區分 */
 const DRAG_TYPE = 'application/x-knowmon-path'
@@ -12,7 +13,8 @@ export interface FileTreeProps {
   selected: string | null
   /** 正在改名的節點路徑（新增筆記或資料夾後會直接進入改名狀態） */
   renaming: string | null
-  onOpen: (path: string) => void
+  /** newTab：Ctrl/Cmd+點擊或中鍵 */
+  onOpen: (path: string, newTab: boolean) => void
   onCreate: (folder: string) => void
   onCreateFolder: (parent: string) => void
   onStartRename: (path: string | null) => void
@@ -130,7 +132,14 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
           onDragOver={(e) => dragOverFolder(e, target, isFolder ? node.path : null)}
           onDrop={(e) => dropOnFolder(e, target)}
           style={{ paddingLeft: 8 + depth * 14 }}
-          onClick={() => (isFolder ? toggle(node.path) : props.onOpen(node.path))}
+          onClick={(e) => (isFolder ? toggle(node.path) : props.onOpen(node.path, wantsNewTab(e)))}
+          onMouseDown={(e) => {
+            // 中鍵不要觸發自動捲動
+            if (e.button === 1) e.preventDefault()
+          }}
+          onAuxClick={(e) => {
+            if (e.button === 1 && !isFolder) props.onOpen(node.path, true)
+          }}
           onContextMenu={(e) => {
             e.preventDefault()
             e.stopPropagation()

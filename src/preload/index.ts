@@ -28,6 +28,9 @@ const api: KnowmonAPI = {
   },
   search: {
     query: (q, limit) => ipcRenderer.invoke(IPC.searchQuery, q, limit)
+  },
+  graph: {
+    get: () => ipcRenderer.invoke(IPC.graphGet)
   }
 }
 

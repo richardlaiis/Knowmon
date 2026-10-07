@@ -12,5 +12,6 @@ export const IPC = {
   notesRemove: 'notes:remove',
   notesList: 'notes:list',
   linksBacklinks: 'links:backlinks',
-  searchQuery: 'search:query'
+  searchQuery: 'search:query',
+  graphGet: 'graph:get'
 } as const

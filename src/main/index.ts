@@ -1,8 +1,38 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { closeVault, registerIpc } from './ipc'
+
+/**
+ * 應用程式選單。Electron 預設選單把 Ctrl/Cmd+W 綁成關閉視窗，
+ * 這裡自訂選單拿掉它，讓 renderer 用 Ctrl/Cmd+W 關閉分頁。
+ */
+function buildMenu(): Menu {
+  const template: MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+    {
+      label: 'File',
+      submenu: [
+        process.platform === 'darwin' ? { role: 'hide' as const } : { role: 'quit' as const }
+      ]
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        ...(is.dev ? [{ role: 'reload' as const }, { role: 'toggleDevTools' as const }] : []),
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] }
+  ]
+  return Menu.buildFromTemplate(template)
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -38,6 +68,8 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  Menu.setApplicationMenu(buildMenu())
 
   const ctx = { settingsDir: app.getPath('userData') }
   registerIpc(ctx)

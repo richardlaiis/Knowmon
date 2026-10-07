@@ -6,8 +6,11 @@ export interface QuickSwitcherProps {
   notes: NoteSummary[]
   /** 最近開啟的路徑，越前面越近 */
   recent: string[]
-  onOpen: (path: string) => void
+  /** newTab：Ctrl/Cmd+Enter、Ctrl/Cmd+點擊，或以「新分頁」模式開啟（Ctrl/Cmd+T） */
+  onOpen: (path: string, newTab: boolean) => void
   onClose: () => void
+  /** true 時選到的筆記一律開在新分頁 */
+  newTab?: boolean
 }
 
 /** Ctrl/Cmd+O：模糊搜尋筆記名稱並開啟 */
@@ -15,7 +18,8 @@ export function QuickSwitcher({
   notes,
   recent,
   onOpen,
-  onClose
+  onClose,
+  newTab = false
 }: QuickSwitcherProps): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -26,9 +30,9 @@ export function QuickSwitcher({
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active])
 
-  const choose = (i: number): void => {
+  const choose = (i: number, forceNewTab = false): void => {
     const hit = results[i]
-    if (hit) onOpen(hit.path)
+    if (hit) onOpen(hit.path, newTab || forceNewTab)
   }
 
   return (
@@ -37,7 +41,7 @@ export function QuickSwitcher({
         <input
           autoFocus
           className="switcher-input"
-          placeholder="Find a note…"
+          placeholder={newTab ? 'Open a note in a new tab…' : 'Find a note…'}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -52,7 +56,7 @@ export function QuickSwitcher({
               setActive((a) => Math.max(a - 1, 0))
             } else if (e.key === 'Enter') {
               e.preventDefault()
-              choose(active)
+              choose(active, e.ctrlKey || e.metaKey)
             } else if (e.key === 'Escape') {
               e.preventDefault()
               onClose()
@@ -65,7 +69,7 @@ export function QuickSwitcher({
               key={n.path}
               className={i === active ? 'active' : ''}
               onMouseMove={() => setActive(i)}
-              onClick={() => choose(i)}
+              onClick={(e) => choose(i, e.ctrlKey || e.metaKey)}
             >
               <span className="result-title">{n.title}</span>
               {n.path.includes('/') && (

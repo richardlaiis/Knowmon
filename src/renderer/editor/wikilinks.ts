@@ -47,7 +47,8 @@ function inCode(state: EditorState, pos: number): boolean {
 
 export interface WikilinkOptions {
   getNotes: () => Promise<NoteSummary[]>
-  onOpen: (target: string) => void
+  /** newTab：Ctrl/Cmd+Shift+點擊 */
+  onOpen: (target: string, newTab: boolean) => void
 }
 
 export function wikilinks({ getNotes, onOpen }: WikilinkOptions): Extension {
@@ -87,7 +88,7 @@ export function wikilinks({ getNotes, onOpen }: WikilinkOptions): Extension {
         const target = wikilinkAt(line.text, pos - line.from)
         if (!target) return false
         e.preventDefault()
-        onOpen(target)
+        onOpen(target, e.shiftKey)
         return true
       }
     })

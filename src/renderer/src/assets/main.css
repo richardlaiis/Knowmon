@@ -119,7 +119,6 @@ button.primary {
 }
 
 .sidebar {
-  width: 280px;
   flex-shrink: 0;
   background: var(--bg-side);
   border-right: 1px solid var(--border);
@@ -504,13 +503,271 @@ button.primary {
   border-radius: 3px;
 }
 
-.backlinks {
-  width: 280px;
+.side-panel {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-side);
   border-left: 1px solid var(--border);
+}
+
+.side-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.side-tabs button,
+.graph-toolbar button {
+  border: none;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 3px 10px;
+}
+
+.side-tabs button:hover,
+.graph-toolbar button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.side-tabs button.active {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.backlinks {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 分頁與可調整的面板（src/renderer/src/workspace/） ---- */
+
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px 6px 0;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-bar .pane-toggle {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  border: none;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.tab-bar .pane-toggle:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.tab-bar .pane-toggle.on {
+  color: var(--fg);
+}
+
+.tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  /* 分頁太多時可水平捲動；不顯示捲軸，也不要因為目前分頁蓋住下框線而出現垂直捲軸 */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 180px;
+  min-width: 80px;
+  padding: 6px 6px 6px 12px;
+  font-size: 14px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab:hover {
+  background: var(--hover);
+}
+
+.tab.active {
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--border);
+  /* 蓋住分頁列的下框線，看起來和內容區相連 */
+  margin-bottom: -1px;
+  padding-bottom: 7px;
+}
+
+.tab.drop-before::before,
+.tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+}
+
+.tab.drop-before::before {
+  left: -2px;
+}
+
+.tab.drop-after::after {
+  right: -2px;
+}
+
+.tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  flex-shrink: 0;
+  border: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  font-size: 16px;
+  color: var(--muted);
+  border-radius: 4px;
+  visibility: hidden;
+}
+
+.tab:hover .tab-close,
+.tab.active .tab-close {
+  visibility: visible;
+}
+
+.tab-close:hover {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.tab-new {
+  align-self: center;
+  flex-shrink: 0;
+  border: none;
+  margin-bottom: 4px;
+  padding: 2px 10px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.tab-new:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.note-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.splitter {
+  flex: 0 0 5px;
+  margin: 0 -2px;
+  z-index: 1;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.splitter:hover,
+body.resizing .splitter {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* 拖曳分隔線時避免選取文字、游標維持調整寬度的樣式 */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.resizing iframe,
+body.resizing canvas {
+  pointer-events: none;
+}
+
+/* ---- 圖譜（src/renderer/graph/） ---- */
+
+.graph {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.graph-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.graph-toolbar select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.graph-count {
+  margin-right: auto;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-empty {
+  position: absolute;
+  inset: 40% 0 auto;
+  text-align: center;
+  color: var(--muted);
 }
 
 .panel-header {

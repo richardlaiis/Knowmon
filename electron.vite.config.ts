@@ -16,6 +16,8 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    // 圖譜的版面配置 Worker（src/renderer/graph/layout.worker.ts）以 ES module 載入
+    worker: { format: 'es' }
   }
 })

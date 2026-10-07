@@ -46,6 +46,28 @@ export interface SearchHit {
   snippet: TextSegment[]
 }
 
+/** 圖譜邊的類型；階段 4、5 會加入 same_session、same_day、sequence、semantic */
+export type LinkType = 'wikilink'
+
+export interface GraphNode {
+  path: string
+  title: string
+  eventDate: string | null
+}
+
+export interface GraphEdge {
+  source: string // 筆記路徑
+  target: string
+  type: LinkType
+  weight: number
+}
+
+/** 圖譜資料：只含已存在的筆記，尚未建立的 wikilink 目標不列入 */
+export interface GraphData {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
 export interface TreeNode {
   name: string
   path: string
@@ -79,5 +101,8 @@ export interface KnowmonAPI {
   }
   search: {
     query(q: string, limit?: number): Promise<SearchHit[]>
+  }
+  graph: {
+    get(): Promise<GraphData>
   }
 }
