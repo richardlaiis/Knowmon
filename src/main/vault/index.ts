@@ -4,12 +4,14 @@ import fs from 'node:fs/promises'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type {
+  ActivityEvent,
   Backlink,
   GraphData,
   Note,
   NoteEventKind,
   NoteSummary,
   SearchHit,
+  TimeSettings,
   TreeNode,
   VaultChange
 } from '../../shared/types'
@@ -32,11 +34,14 @@ import {
 } from '../db'
 import { getBacklinks } from '../db/backlinks'
 import { getGraph } from '../db/graph'
+import { listActivity, rebuildTimeLinks } from '../db/time'
 import { EventsLog, movedPath, replay } from '../db/events-log'
 import { searchNotes } from '../db/search'
 import { countLinks, parseNote } from '../indexer'
+import { clampTimeSettings } from '../../shared/time'
 import { META_DIR, isNotePath, normalizeRel, resolveInVault, titleFromPath } from './paths'
 import { buildTree, listNotes } from './tree'
+import { loadTimeSettings, saveTimeSettings } from './vault-settings'
 import { watchVault, type Watcher } from './watcher'
 
 /** 同一篇筆記、同一種事件在這段時間內只記一次 */
@@ -63,6 +68,10 @@ export class Vault {
   private watcher: Watcher | null = null
   /** wikilink 解析器快取；筆記集合改變時由 relink() 重建 */
   private resolver: ((target: string) => number | null) | null = null
+  private readonly settingsFile: string
+  private timeSettings: TimeSettings
+  /** 時間邊需要重算（事件、日期、路徑或設定改變）；讀取圖譜前才重算 */
+  private timeDirty = true
 
   private constructor(
     readonly root: string,
@@ -72,6 +81,8 @@ export class Vault {
     mkdirSync(meta, { recursive: true })
     this.db = openDb(path.join(meta, 'index.db'))
     this.log = new EventsLog(path.join(meta, 'events.jsonl'))
+    this.settingsFile = path.join(meta, 'settings.json')
+    this.timeSettings = loadTimeSettings(this.settingsFile)
     this.trash = opts.trash ?? ((p) => fs.rm(p, { recursive: true, force: true }))
     this.now = opts.now ?? Date.now
   }
@@ -111,7 +122,31 @@ export class Vault {
   }
 
   graph(): GraphData {
+    if (this.timeDirty) {
+      rebuildTimeLinks(this.db, this.timeSettings)
+      this.timeDirty = false
+    }
     return getGraph(this.db)
+  }
+
+  /** [from, to) 之間的 create / edit 事件 */
+  activity(from: number, to: number): ActivityEvent[] {
+    return listActivity(this.db, from, to)
+  }
+
+  getTimeSettings(): TimeSettings {
+    return { ...this.timeSettings }
+  }
+
+  /** 修改時間參數（限制在合法範圍內）並寫入 settings.json，回傳實際套用的值 */
+  setTimeSettings(change: Partial<TimeSettings>): Promise<TimeSettings> {
+    return this.exclusive(async () => {
+      const next = clampTimeSettings(change, this.timeSettings)
+      saveTimeSettings(this.settingsFile, next)
+      this.timeSettings = next
+      this.timeDirty = true
+      return { ...next }
+    })
   }
 
   search(query: string, limit?: number): SearchHit[] {
@@ -205,6 +240,7 @@ export class Vault {
       // 檔名可能帶有日期（日記），重新解析
       for (const n of affected) await this.indexFile(movedPath(n.path, from, to)!, undefined, true)
       this.relink()
+      this.timeDirty = true
       this.log.append({ ts: this.now(), op: 'rename', from, to })
       this.emit({ type: 'unlink', path: from })
       this.emit({ type: 'add', path: to })
@@ -219,6 +255,7 @@ export class Vault {
       const affected = listAllNotes(this.db).filter((n) => movedPath(n.path, rel, rel) !== null)
       this.db.transaction(() => affected.forEach((n) => deleteNote(this.db, n.path)))()
       this.relink()
+      this.timeDirty = true
       this.log.append({ ts: this.now(), op: 'delete', path: rel })
       this.emit({ type: 'unlink', path: rel })
     })
@@ -313,6 +350,7 @@ export class Vault {
       changes.push({ type: 'add', path: rel })
     }
     if (changes.some((c) => c.type !== 'change')) this.relink()
+    if (changes.length) this.timeDirty = true
     return changes
   }
 
@@ -344,6 +382,8 @@ export class Vault {
       eventDate: parsed.eventDate,
       contentHash
     }
+    // 日期或路徑可能改變（same_day、sequence）
+    this.timeDirty = true
     const id = this.db.transaction(() => {
       const id = upsertNote(this.db, input)
       setNoteBody(this.db, id, title, parsed.body)
@@ -372,6 +412,7 @@ export class Vault {
     }
     insertEvent(this.db, noteId, ts, kind)
     this.log.append({ ts, kind, path: rel })
+    if (kind === 'edit') this.timeDirty = true
   }
 }
 

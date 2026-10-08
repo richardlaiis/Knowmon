@@ -49,6 +49,7 @@ npm start         # 執行 out/ 裡建置好的版本
 | 筆記                             | vault 裡的 `.md` 檔                      |
 | 編輯歷程（無法重建，請勿刪除）   | `<vault>/.knowmon/events.jsonl`          |
 | 索引資料庫（可刪除，會自動重建） | `<vault>/.knowmon/index.db`              |
+| 時間參數（session 長度等）       | `<vault>/.knowmon/settings.json`         |
 | App 設定（上次的 vault）         | Linux：`~/.config/knowmon/settings.json` |
 
 ## 快捷鍵
@@ -65,6 +66,7 @@ macOS 上把 `Ctrl` 換成 `Cmd`（`Ctrl+Tab` 除外）。
 | `Ctrl+T`                      | Quick switcher，開在新分頁（同分頁列的「+」） |
 | `Ctrl+Shift+F`                | 搜尋（左側欄關著時會打開）                    |
 | `Ctrl+G`                      | 圖譜分頁（沒有就開一個）                      |
+| `Ctrl+Shift+T`                | 時間軸分頁（沒有就開一個）                    |
 | `Ctrl+W`                      | 關閉目前分頁                                  |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一個／上一個分頁                            |
 | `Ctrl+B`                      | 開關左側欄（檔案樹、搜尋）                    |
@@ -107,17 +109,17 @@ macOS 上把 `Ctrl` 換成 `Cmd`（`Ctrl+Tab` 除外）。
 
 ### 滑鼠
 
-| 操作                                             | 動作                                                              |
-| ------------------------------------------------ | ----------------------------------------------------------------- |
-| 點擊筆記（檔案樹、搜尋結果、反向連結、圖譜節點） | 在目前分頁開啟                                                    |
-| `Ctrl+點擊` 或中鍵                               | 在新分頁開啟（圖譜節點只支援 `Ctrl+點擊`）                        |
-| 右鍵檔案樹                                       | 新增筆記／資料夾、重新命名、刪除；改名時 `Enter` 確認、`Esc` 取消 |
-| 拖曳檔案樹中的筆記或資料夾                       | 搬移到其他資料夾                                                  |
-| 中鍵分頁                                         | 關閉分頁                                                          |
-| 拖曳分頁                                         | 調整順序                                                          |
-| 右鍵分頁                                         | Close / Close others                                              |
-| 拖曳面板之間的分隔線                             | 調整寬度；雙擊恢復預設寬度                                        |
-| 圖譜：滾輪／拖曳背景／拖曳節點                   | 縮放／平移／移動節點；滑鼠停在節點上會高亮相連的筆記              |
+| 操作                                                     | 動作                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| 點擊筆記（檔案樹、搜尋結果、反向連結、圖譜節點、時間軸） | 在目前分頁開啟                                                    |
+| `Ctrl+點擊` 或中鍵                                       | 在新分頁開啟（圖譜節點只支援 `Ctrl+點擊`）                        |
+| 右鍵檔案樹                                               | 新增筆記／資料夾、重新命名、刪除；改名時 `Enter` 確認、`Esc` 取消 |
+| 拖曳檔案樹中的筆記或資料夾                               | 搬移到其他資料夾                                                  |
+| 中鍵分頁                                                 | 關閉分頁                                                          |
+| 拖曳分頁                                                 | 調整順序                                                          |
+| 右鍵分頁                                                 | Close / Close others                                              |
+| 拖曳面板之間的分隔線                                     | 調整寬度；雙擊恢復預設寬度                                        |
+| 圖譜：滾輪／拖曳背景／拖曳節點                           | 縮放／平移／移動節點；滑鼠停在節點上會高亮相連的筆記              |
 
 ### 應用程式
 
@@ -147,6 +149,8 @@ npm run lint         # ESLint + Prettier 檢查
 - `src/renderer/editor/livePreview.test.ts`：Markdown 即時渲染（哪些標記被隱藏、游標附近顯示原始語法、frontmatter、待辦切換）
 - `src/renderer/src/lib/theme.test.ts`：主題切換與記憶
 - `src/renderer/editor/autosave.test.ts`、`src/renderer/src/lib/tree.test.ts`：自動儲存、檔案樹路徑工具（含拖曳）
+- `src/main/indexer/timeLinks.test.ts`、`src/main/db/time.test.ts`、`src/main/vault/time.test.ts`：時間邊（same_session、same_day、sequence）的推導、何時重算、時間參數的讀寫、DB 重建
+- `src/shared/time.test.ts`、`src/renderer/graph/timeFilter.test.ts`、`src/renderer/timeline/model.test.ts`：session 切分、圖譜時間篩選、時間軸分組
 
 新功能必須附測試，完成前要確認上面三個指令都通過。
 
@@ -194,6 +198,22 @@ npm run dev
 | 26  | 拖曳檔案樹與編輯器、編輯器與右側面板之間的分隔線；雙擊分隔線 | 調整寬度；雙擊恢復預設                                                                  |
 | 27  | `Ctrl+B`、`Ctrl+Alt+B` 或分頁列兩端的按鈕                    | 開關左側欄、右側面板                                                                    |
 | 28  | 關掉 App 再開同一個 vault                                    | 分頁、面板寬度與開關都還原                                                              |
+
+### 時間層
+
+兩種時間、各種時間邊的規則與圖譜篩選的意思見 [`docs/time-layer.md`](docs/time-layer.md)。
+
+時間邊需要編輯歷程。剛複製的 vault 只有每篇一筆 `create`，先在 App 裡編輯幾篇筆記（同一段時間內編輯的會連在一起），或調整下面的設定。
+
+| #   | 操作                                                                                     | 預期結果                                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 29  | 依序編輯「原子習慣」「深度工作」（間隔不到 30 分鐘），按 `Ctrl+G`                        | 兩篇之間多一條 Session 邊（橘色虛線）；`日記/` 裡的三篇以 Sequence 邊（實線）串起來                                                |
+| 30  | 圖譜工具列點 Links / Session / Same day / Sequence                                       | 對應類型的邊顯示或隱藏，版面跟著微調；重開 App 後維持上次的選擇                                                                    |
+| 31  | 拖動圖譜的時間滑桿，取消勾選「Undated」，切換「Event date / Written」                    | 範圍外的筆記消失但其他節點不移動；工具列顯示「N of M notes」；「Reset」恢復全部                                                    |
+| 32  | 按 `Ctrl+Shift+T`（或側欄的「Timeline」）                                                | 開啟時間軸分頁：「Event date」依日期列出有日期的筆記；「Written」依天列出 session（時間範圍與編輯的筆記，新建的標示 new）          |
+| 33  | 點時間軸上方的長條、點筆記、`Ctrl+點擊`筆記                                              | 捲到該月；在目前分頁開啟；在新分頁開啟                                                                                             |
+| 34  | 時間軸或圖譜工具列按「Settings」，把 Session gap 改成 5、Same-day window 改成 1，按 Save | `cat ~/knowmon-test-vault/.knowmon/settings.json` 看得到新值；圖譜的 Session 邊變少、日記之間多了 Same day 邊；時間軸 session 變短 |
+| 35  | 右側面板切到「Local graph」，切換邊類型                                                  | 局部圖只沿著選取的類型找相連的筆記                                                                                                 |
 
 ### 大型 vault 效能測試
 

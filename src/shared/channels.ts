@@ -13,5 +13,8 @@ export const IPC = {
   notesList: 'notes:list',
   linksBacklinks: 'links:backlinks',
   searchQuery: 'search:query',
-  graphGet: 'graph:get'
+  graphGet: 'graph:get',
+  timelineActivity: 'timeline:activity',
+  settingsGetTime: 'settings:getTime',
+  settingsSetTime: 'settings:setTime'
 } as const

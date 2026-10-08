@@ -34,6 +34,8 @@ export interface GraphViewProps {
   autoFit?: boolean
   /** 大型圖譜排版中的進度（0–1），完成時為 null */
   onProgress?: (progress: number | null) => void
+  /** 隱藏的節點（時間篩選）：只是不顯示，仍參與版面配置，所以篩選時節點不會移動 */
+  hidden?: ReadonlySet<string>
 }
 
 /** 新增/刪除的節點少於這個比例時只輕度加熱，不重排整張圖 */
@@ -49,9 +51,10 @@ export const LARGE_GRAPH = 500
 
 /** 縮放到整張圖；容器還沒有大小（例如被隱藏）時回傳 false */
 function fitView(cy: Core): boolean {
-  if (cy.elements().empty()) return true
+  const visible = cy.nodes(':visible')
+  if (visible.empty()) return true
   if (cy.width() === 0 || cy.height() === 0) return false
-  cy.fit(undefined, FIT_PADDING)
+  cy.fit(visible, FIT_PADDING)
   if (cy.zoom() > MAX_FIT_ZOOM) {
     cy.zoom({
       level: MAX_FIT_ZOOM,
@@ -73,6 +76,8 @@ interface ViewState {
   fitWhenDone: boolean
   /** 隱藏時無法縮放，等容器有大小時再做 */
   fitWhenVisible: boolean
+  /** 套用隱藏節點的 requestAnimationFrame（拖動時間滑桿時每幀最多一次） */
+  hideFrame: number
 }
 
 const EMPTY: GraphData = { nodes: [], edges: [] }
@@ -105,7 +110,7 @@ function sync(
     for (const e of diff.addEdges) {
       add.push({
         group: 'edges',
-        data: { id: edgeId(e), source: e.source, target: e.target, weight: e.weight }
+        data: { id: edgeId(e), source: e.source, target: e.target, type: e.type, weight: e.weight }
       })
     }
     cy.add(add)
@@ -173,9 +178,10 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     pending: null,
     frame: 0,
     fitWhenDone: true,
-    fitWhenVisible: false
+    fitWhenVisible: false,
+    hideFrame: 0
   })
-  const { data, current, positions, labels, theme, relayoutKey, fitKey } = props
+  const { data, current, positions, labels, theme, relayoutKey, fitKey, hidden } = props
   // 事件處理器透過 ref 取得最新的 props，Cytoscape 只建立一次
   const latest = useRef(props)
   useEffect(() => {
@@ -274,6 +280,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     return () => {
       resize.disconnect()
       if (s.frame) cancelAnimationFrame(s.frame)
+      if (s.hideFrame) cancelAnimationFrame(s.hideFrame)
       send({ type: 'stop' })
       worker.terminate()
       cy.destroy()
@@ -304,6 +311,23 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     // 只在 relayoutKey 改變時執行
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relayoutKey])
+
+  // ---- 時間篩選：切換節點的 hidden class（相連的邊跟著隱藏），不重新排版 ----
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+    const s = state.current
+    if (s.hideFrame) cancelAnimationFrame(s.hideFrame)
+    s.hideFrame = requestAnimationFrame(() => {
+      s.hideFrame = 0
+      cy.batch(() => {
+        cy.nodes().forEach((n) => {
+          const hide = hidden?.has(n.id()) ?? false
+          if (n.hasClass('hidden') !== hide) n.toggleClass('hidden', hide)
+        })
+      })
+    })
+  }, [hidden, data, relayoutKey])
 
   // ---- 目前的筆記 ----
   useEffect(() => {

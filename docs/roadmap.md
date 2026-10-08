@@ -127,11 +127,11 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 完成標準：時間軸視圖可用，圖譜能依時間範圍與邊類型篩選。
 
-- [ ] 從 `note_events` 推導 `same_session` 邊
-- [ ] 從 `event_date` 推導 `same_day` 與 `sequence` 邊
-- [ ] 時間軸視圖
-- [ ] 圖譜時間滑桿與邊類型篩選
-- [ ] 時間參數（session 長度等）做成可調整的設定
+- [x] 從 `note_events` 推導 `same_session` 邊
+- [x] 從 `event_date` 推導 `same_day` 與 `sequence` 邊（`sequence` 的主題 = 同一資料夾）
+- [x] 時間軸視圖
+- [x] 圖譜時間滑桿與邊類型篩選
+- [x] 時間參數（session 長度等）做成可調整的設定（存在 `<vault>/.knowmon/settings.json`，計畫見 `docs/plans/phase4-time.md`）
 
 ### 階段 5：LLM 基礎能力
 

@@ -8,6 +8,9 @@ export interface GraphColors {
   accent: string
   border: string
   bg: string
+  session: string
+  day: string
+  sequence: string
 }
 
 export function readColors(el: Element = document.documentElement): GraphColors {
@@ -19,7 +22,10 @@ export function readColors(el: Element = document.documentElement): GraphColors 
     muted: v('--muted', '#666'),
     accent: v('--accent', '#5b4bdb'),
     border: v('--border', '#ddd'),
-    bg: v('--bg', '#fff')
+    bg: v('--bg', '#fff'),
+    session: v('--edge-session', '#d97706'),
+    day: v('--edge-day', '#0f8a6a'),
+    sequence: v('--edge-sequence', '#2563eb')
   }
 }
 
@@ -54,10 +60,31 @@ export function graphStyle(c: GraphColors, labels: boolean): StylesheetJson {
         opacity: 0.35
       }
     },
+    // 時間邊：顏色與線型區分類型（haystack 不支援箭頭，sequence 的方向不畫出來）
+    {
+      selector: 'edge[type = "same_session"]',
+      style: {
+        'line-color': c.session,
+        'line-style': 'dashed',
+        'line-dash-pattern': [6, 4],
+        opacity: 0.55
+      }
+    },
+    {
+      selector: 'edge[type = "same_day"]',
+      style: {
+        'line-color': c.day,
+        'line-style': 'dashed',
+        'line-dash-pattern': [2, 3],
+        opacity: 0.6
+      }
+    },
+    { selector: 'edge[type = "sequence"]', style: { 'line-color': c.sequence, opacity: 0.5 } },
     { selector: 'node.current', style: { 'background-color': c.accent, 'font-weight': 'bold' } },
     { selector: '.faded', style: { opacity: 0.12 } },
     { selector: 'node.highlight', style: { 'background-color': c.accent, label: 'data(title)' } },
     { selector: 'edge.highlight', style: { 'line-color': c.accent, opacity: 1 } },
-    { selector: 'node:grabbed', style: { 'background-color': c.accent } }
+    { selector: 'node:grabbed', style: { 'background-color': c.accent } },
+    { selector: 'node.hidden', style: { display: 'none' } }
   ]
 }

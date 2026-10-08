@@ -9,6 +9,7 @@
 | 筆記 | `<vault>/**/*.md` | 唯一真相 |
 | 編輯歷程 | `<vault>/.knowmon/events.jsonl`（append-only） | 唯一真相 |
 | 索引資料庫 | `<vault>/.knowmon/index.db` | 可從上面兩者完整重建 |
+| vault 設定（時間參數） | `<vault>/.knowmon/settings.json` | 不存在時用預設值 |
 | App 設定（上次開啟的 vault） | `userData/settings.json` | — |
 
 - `note_events` 無法事後補回，所以 SQLite 裡的只是索引，真相在 `events.jsonl`。DB 被刪除後，重新開啟 vault 時會從日誌重播（`src/main/db/events-log.ts` 的 `replay`）。
@@ -56,11 +57,28 @@
 - 顏色讀 `main.css` 的 CSS 變數（`src/renderer/graph/style.ts`），切換主題時重新套用。偏好存在 localStorage：`knowmon.graph.labels`、`knowmon.graph.depth`、`knowmon.sidePanel`。
 - 右側面板分為 Backlinks / Local graph 兩個分頁，跟著目前的筆記分頁；目前是圖譜分頁時顯示「沒有開啟的筆記」。
 
+## 時間層（階段 4）
+
+概念、規則與設計理由見 `docs/time-layer.md`；計畫與決定見 `docs/plans/phase4-time.md`。
+
+- 三種時間邊由純函式 `src/main/indexer/timeLinks.ts` 從 `notes` 與 `note_events` 推導，寫進 `links` 表（`dst` 一定不為 NULL）：
+  - `same_session`：全 vault 的 `edit` 事件依時間排序，間隔超過 `sessionGapMinutes` 就切成新 session；同一 session 編輯的筆記兩兩相連，權重為共同的 session 數。只看 `edit`（`create` 在第一次開啟 vault 時用 birthtime 補記，可能全部擠在同一刻；`open` 只是閱讀）。編輯超過 `sessionMaxNotes` 篇的 session 視為批次操作，不產生邊。
+  - `same_day`：`event_date` 相差 ≤ `sameDayWindowDays`，權重 `1 / (1 + 相差天數)`。
+  - `sequence`：同一資料夾（含根目錄）中有 `event_date` 的筆記依日期（同日依路徑）串起來，早 → 晚（使用者決定「同一主題」= 同一資料夾，2026-10-08）。
+  - 無方向的邊以路徑字典序較小者為 `src`。
+- 時間邊不做增量：事件、日期、路徑、設定任何一項改變都可能影響全 vault。`Vault` 改變時標記 dirty，`graph()` 讀取前才整批重算（1000 篇、5 萬筆事件在 500ms 內，見 `src/main/db/time.test.ts`）。不需要 schema 變更；DB 重建時從日誌重播事件後重算。
+- session 切分（`sessionize`）、日期換算、參數預設值與範圍在 `src/shared/time.ts`，main 與 renderer 共用；時間軸的 session 與 `same_session` 用同一個函式與參數（時間軸也把 `create` 算進 session）。
+- 時間參數存在 vault 的 `.knowmon/settings.json` 的 `time` 欄位（使用者決定，2026-10-08），main 以 `clampTimeSettings` 限制範圍；寫入時保留檔案中其他欄位。
+- `GraphNode.activeDays`：有 `create` / `edit` 事件的本地日期，圖譜「寫作時間」篩選用。日期一律用本地時區（`localDay`），main 與 renderer 在同一台機器上。
+- 圖譜：`edgeId` 含類型（同一對筆記可能同時有多種邊）。邊類型篩選影響版面（時間邊也參與排版），切換時沿用座標快取、輕度加熱；時間範圍篩選只替節點加 `hidden` class（`display: none`），不重新排版，以 `requestAnimationFrame` 節流。haystack 邊不支援箭頭，`sequence` 的方向沒有畫出來；同一對筆記的多種邊會重疊在同一條線上。
+- 偏好（localStorage）：`knowmon.graph.types`、`knowmon.graph.localTypes`（逗號分隔，預設全開）、`knowmon.graph.timeAxis`、`knowmon.graph.undated`、`knowmon.timeline.mode`。時間範圍本身不存。
+- 時間軸是一種分頁（`kind: 'timeline'`，最多一個），和圖譜一樣存在期間保持掛載；隱藏時不重新取得資料。「寫作時間」模式一次取得全部的 `create` / `edit` 事件（`timeline.activity`），在 renderer 分組。
+
 ## 工作區：分頁與面板
 
 計畫與決定見 `docs/plans/workspace-tabs.md`。
 
-- 分頁狀態是純函式（`src/renderer/src/workspace/tabs.ts`）：分頁為筆記或圖譜；同一篇筆記只開一個分頁（再開就切過去），圖譜分頁最多一個。
+- 分頁狀態是純函式（`src/renderer/src/workspace/tabs.ts`）：分頁為筆記、圖譜或時間軸；同一篇筆記只開一個分頁（再開就切過去），圖譜與時間軸分頁各最多一個。
 - 點選筆記（檔案樹、搜尋、反向連結、圖譜、Quick switcher）預設**取代目前分頁**，`Ctrl/Cmd+點擊`或中鍵開新分頁（使用者決定，2026-10-07）。新建的筆記開在新分頁。沒有上一頁／下一頁。
 - 取代分頁時分頁換新 id；畫面以分頁 id 作為 key，所以換筆記會重建編輯器，改名（`renamePaths`）則保留 id 與編輯器（游標、undo 不受影響）。
 - 每個筆記分頁（`NotePane`）有自己的 CodeMirror，第一次切到時才讀檔（還原很多分頁時不會一次讀所有檔案、也不會替每篇記 `open` 事件），之後保持掛載、隱藏。外部修改由各分頁自己監聽處理；外部刪除由 App 關閉受影響的分頁。
@@ -69,7 +87,7 @@
 - Electron 預設選單把 `Ctrl/Cmd+W` 綁成關閉視窗，main process 改用自訂選單（`src/main/index.ts` 的 `buildMenu`）拿掉它，renderer 用來關分頁。
 - 面板：左側欄與右側面板寬度可拖曳（`Splitter`，雙擊恢復預設），寬度限制在上下限內且編輯器至少保留 `EDITOR_MIN`（`workspace/layout.ts`）。`Ctrl/Cmd+B`、`Ctrl/Cmd+Alt+B` 或分頁列兩端的按鈕開關左右面板。寬度與開關存 localStorage `knowmon.layout`，所有 vault 共用。
 - 全域快捷鍵在 `App.tsx` 以 capture 階段攔截並 `stopPropagation`，編輯器不會再處理同一個按鍵（CodeMirror 的 `Ctrl/Cmd+G`「找下一個」因此停用，改用 `F3`）。所有快捷鍵的列表在 README 的「快捷鍵」，新增或修改快捷鍵時要同步更新。
-- 快捷鍵：`Ctrl/Cmd+W` 關分頁、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切換、`Ctrl/Cmd+T` 以新分頁開 Quick switcher（Quick switcher 裡 `Ctrl/Cmd+Enter` 也是新分頁）、`Ctrl/Cmd+G` 圖譜分頁。
+- 快捷鍵：`Ctrl/Cmd+W` 關分頁、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切換、`Ctrl/Cmd+T` 以新分頁開 Quick switcher（Quick switcher 裡 `Ctrl/Cmd+Enter` 也是新分頁）、`Ctrl/Cmd+G` 圖譜分頁、`Ctrl/Cmd+Shift+T` 時間軸分頁。
 
 ## 啟動
 

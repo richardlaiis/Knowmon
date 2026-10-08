@@ -24,6 +24,11 @@
   --active-line: rgb(0 0 0 / 0.035);
   --selection: #e4dcc8;
 
+  /* 圖譜的時間邊 */
+  --edge-session: #c2410c;
+  --edge-day: #0f7b5f;
+  --edge-sequence: #2b59c3;
+
   /* 程式碼語法顏色 */
   --hl-keyword: #8a3ffc;
   --hl-string: #2e7d32;
@@ -58,6 +63,10 @@
   --gutter: #4c566a;
   --active-line: rgb(255 255 255 / 0.035);
   --selection: #3b4658;
+
+  --edge-session: #d08770;
+  --edge-day: #a3be8c;
+  --edge-sequence: #b48ead;
 
   --hl-keyword: #81a1c1;
   --hl-string: #a3be8c;
@@ -388,12 +397,14 @@ button.primary {
 
 .sidebar-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
 }
 
 .sidebar-tabs button {
+  white-space: nowrap;
   border: none;
   font-size: 14px;
   color: var(--muted);
@@ -770,6 +781,120 @@ body.resizing canvas {
   color: var(--muted);
 }
 
+.graph-toolbar {
+  flex-wrap: wrap;
+}
+
+.graph-toolbar button:disabled {
+  opacity: 0.45;
+  background: none;
+}
+
+/* 邊類型的開關 */
+.edge-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.graph-toolbar .edge-type {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  opacity: 0.55;
+}
+
+.graph-toolbar .edge-type.on {
+  opacity: 1;
+  color: var(--fg);
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--muted);
+}
+
+.swatch-same_session {
+  border-top: 2px dashed var(--edge-session);
+}
+
+.swatch-same_day {
+  border-top: 2px dotted var(--edge-day);
+}
+
+.swatch-sequence {
+  border-top-color: var(--edge-sequence);
+}
+
+/* 時間範圍：兩個重疊的 range input，只有把手接收滑鼠 */
+.time-bar .range-label {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.range-slider {
+  position: relative;
+  flex: 1;
+  min-width: 120px;
+  max-width: 520px;
+  height: 20px;
+}
+
+.range-track,
+.range-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+
+.range-track {
+  left: 0;
+  right: 0;
+  background: var(--border);
+}
+
+.range-fill {
+  background: var(--accent);
+}
+
+.range-slider input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+}
+
+.range-slider input.on-top {
+  z-index: 1;
+}
+
+.range-slider input::-webkit-slider-runnable-track {
+  background: none;
+}
+
+.range-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.range-slider-empty {
+  flex: 1;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -998,4 +1123,236 @@ body.resizing canvas {
   font: inherit !important;
   color: inherit !important;
   text-decoration: none !important;
+}
+
+/* ---- 時間軸（src/renderer/timeline/） ---- */
+
+.timeline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.segmented {
+  display: flex;
+  gap: 2px;
+}
+
+.graph-toolbar .segmented button.active {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+/* 每月數量的長條圖，點擊捲到該月 */
+.timeline-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-histogram .bar {
+  flex: 1;
+  max-width: 28px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.timeline-histogram .bar span {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--muted);
+  opacity: 0.45;
+}
+
+.timeline-histogram .bar:hover:not(:disabled) span {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.timeline-histogram .bar:disabled {
+  cursor: default;
+}
+
+.timeline-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 24px 40px;
+}
+
+.timeline-month {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 14px 0 6px;
+  font-size: 15px;
+  background: var(--bg);
+}
+
+.timeline-day {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.timeline-day h3 {
+  grid-column: 1;
+  margin: 0;
+  padding-top: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.timeline-day > .timeline-notes,
+.timeline-session {
+  grid-column: 2;
+}
+
+.timeline-session {
+  display: flex;
+  gap: 10px;
+}
+
+.session-time {
+  flex-shrink: 0;
+  width: 84px;
+  padding-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.timeline-note {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-side);
+  font-size: 14px;
+  color: var(--fg);
+  text-align: left;
+}
+
+.timeline-note:hover {
+  background: var(--hover);
+}
+
+.timeline-note.current {
+  border-color: var(--accent);
+}
+
+.timeline-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-folder {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.timeline-undated {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 20px;
+}
+
+/* ---- 設定對話框 ---- */
+
+.dialog {
+  width: min(440px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+
+.dialog h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.dialog .hint {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dialog .field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  align-items: center;
+}
+
+.field-label {
+  font-weight: 500;
+}
+
+.field-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field-input input {
+  width: 72px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+.field-help {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

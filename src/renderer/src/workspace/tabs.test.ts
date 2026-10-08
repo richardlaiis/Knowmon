@@ -7,12 +7,13 @@ import {
   cycle,
   emptyTabs,
   moveTab,
-  openGraph,
+  openView,
   openNote,
   removePaths,
   renamePaths,
   restoreTabs,
   serializeTabs,
+  tabTitle,
   wantsNewTab,
   type TabsState
 } from './tabs'
@@ -24,15 +25,14 @@ function ids(): () => string {
 
 /** 簡寫：列出分頁內容，目前的分頁加 * */
 function show(s: TabsState): string[] {
-  return s.tabs.map(
-    (t) => (t.kind === 'note' ? t.path : 'graph') + (t.id === s.activeId ? '*' : '')
-  )
+  return s.tabs.map((t) => (t.kind === 'note' ? t.path : t.kind) + (t.id === s.activeId ? '*' : ''))
 }
 
 function build(...paths: string[]): TabsState {
   const id = ids()
   let s = emptyTabs
-  for (const p of paths) s = p === 'graph' ? openGraph(s, id) : openNote(s, p, true, id)
+  for (const p of paths)
+    s = p === 'graph' || p === 'timeline' ? openView(s, p, id) : openNote(s, p, true, id)
   return s
 }
 
@@ -66,15 +66,25 @@ describe('openNote', () => {
   })
 })
 
-describe('openGraph', () => {
+describe('openView', () => {
   it('最多一個圖譜分頁，已存在就切過去', () => {
     let s = build('a.md')
-    s = openGraph(s, () => 'g')
+    s = openView(s, 'graph', () => 'g')
     expect(show(s)).toEqual(['a.md', 'graph*'])
     s = activate(s, s.tabs[0].id)
-    s = openGraph(s, () => 'g2')
+    s = openView(s, 'graph', () => 'g2')
     expect(show(s)).toEqual(['a.md', 'graph*'])
     expect(s.tabs[1].id).toBe('g')
+  })
+
+  it('時間軸分頁與圖譜分頁各自最多一個', () => {
+    let s = build('a.md', 'graph')
+    s = openView(s, 'timeline', () => 't')
+    expect(show(s)).toEqual(['a.md', 'graph', 'timeline*'])
+    s = openView(s, 'graph')
+    s = openView(s, 'timeline', () => 't2')
+    expect(show(s)).toEqual(['a.md', 'graph', 'timeline*'])
+    expect(tabTitle(s.tabs[2])).toBe('Timeline')
   })
 })
 
@@ -168,11 +178,13 @@ describe('serializeTabs / restoreTabs', () => {
         { kind: 'note', path: '已刪除.md' },
         { kind: 'note', path: 'a.md' },
         { kind: 'graph' },
-        { kind: 'graph' }
+        { kind: 'timeline' },
+        { kind: 'graph' },
+        { kind: 'timeline' }
       ],
       active: 1
     }
-    expect(show(restoreTabs(raw, exists, ids()))).toEqual(['a.md*', 'graph'])
+    expect(show(restoreTabs(raw, exists, ids()))).toEqual(['a.md*', 'graph', 'timeline'])
   })
 
   it('格式錯誤時回傳空的狀態', () => {

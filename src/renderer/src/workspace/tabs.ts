@@ -1,7 +1,10 @@
-// 分頁狀態（純函式）。分頁是筆記或全域圖譜；同一篇筆記只開一個分頁，圖譜分頁最多一個。
+// 分頁狀態（純函式）。分頁是筆記、全域圖譜或時間軸；同一篇筆記只開一個分頁，圖譜與時間軸分頁各最多一個。
 import { isWithin, remapPath } from '../lib/tree'
 
-export type Tab = { id: string; kind: 'note'; path: string } | { id: string; kind: 'graph' }
+/** 全 App 只會有一個的分頁（不是筆記） */
+export type ViewKind = 'graph' | 'timeline'
+
+export type Tab = { id: string; kind: 'note'; path: string } | { id: string; kind: ViewKind }
 
 export interface TabsState {
   tabs: Tab[]
@@ -17,7 +20,7 @@ export function newTabId(): string {
 }
 
 export function tabTitle(tab: Tab): string {
-  if (tab.kind === 'graph') return 'Graph'
+  if (tab.kind !== 'note') return tab.kind === 'graph' ? 'Graph' : 'Timeline'
   return tab.path.slice(tab.path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
 }
 
@@ -60,11 +63,11 @@ export function openNote(
   }
 }
 
-/** 切到圖譜分頁，沒有就在右邊開一個 */
-export function openGraph(s: TabsState, makeId: () => string = newTabId): TabsState {
-  const existing = s.tabs.find((t) => t.kind === 'graph')
+/** 切到圖譜或時間軸分頁，沒有就在右邊開一個 */
+export function openView(s: TabsState, kind: ViewKind, makeId: () => string = newTabId): TabsState {
+  const existing = s.tabs.find((t) => t.kind === kind)
   if (existing) return existing.id === s.activeId ? s : { ...s, activeId: existing.id }
-  return insertAfterActive(s, { id: makeId(), kind: 'graph' })
+  return insertAfterActive(s, { id: makeId(), kind })
 }
 
 export function activate(s: TabsState, id: string): TabsState {
@@ -132,7 +135,7 @@ export function wantsNewTab(e: { ctrlKey: boolean; metaKey: boolean; button?: nu
 
 // ---- 存檔與還原 ----
 
-type SavedTab = { kind: 'note'; path: string } | { kind: 'graph' }
+type SavedTab = { kind: 'note'; path: string } | { kind: ViewKind }
 
 export interface SavedTabs {
   tabs: SavedTab[]
@@ -142,7 +145,7 @@ export interface SavedTabs {
 export function serializeTabs(s: TabsState): SavedTabs {
   return {
     tabs: s.tabs.map((t): SavedTab =>
-      t.kind === 'note' ? { kind: 'note', path: t.path } : { kind: 'graph' }
+      t.kind === 'note' ? { kind: 'note', path: t.path } : { kind: t.kind }
     ),
     active: s.tabs.findIndex((t) => t.id === s.activeId)
   }
@@ -164,9 +167,9 @@ export function restoreTabs(
   const seen = new Set<string>()
   saved.tabs.forEach((t, i) => {
     let tab: Tab | null = null
-    if (t && t.kind === 'graph' && !seen.has('graph')) {
-      seen.add('graph')
-      tab = { id: makeId(), kind: 'graph' }
+    if (t && (t.kind === 'graph' || t.kind === 'timeline') && !seen.has(t.kind)) {
+      seen.add(t.kind)
+      tab = { id: makeId(), kind: t.kind }
     } else if (t && t.kind === 'note' && typeof t.path === 'string' && exists(t.path)) {
       if (!seen.has('note:' + t.path)) {
         seen.add('note:' + t.path)

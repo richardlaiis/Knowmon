@@ -1,13 +1,19 @@
 // 圖譜的純函式：鄰接、局部圖、節點大小、初始座標、增量更新。不碰 DOM 與 Cytoscape。
-import type { GraphData, GraphEdge } from '../../shared/types'
+import type { GraphData, GraphEdge, LinkType } from '../../shared/types'
 
 export interface Point {
   x: number
   y: number
 }
 
-export const edgeId = (e: Pick<GraphEdge, 'source' | 'target'>): string =>
-  `${e.source}\u0000${e.target}`
+/** 同一對筆記可能同時有多種類型的邊，所以 id 包含類型 */
+export const edgeId = (e: Pick<GraphEdge, 'source' | 'target' | 'type'>): string =>
+  `${e.source}\u0000${e.target}\u0000${e.type}`
+
+/** 只保留 types 中的邊（節點不變） */
+export function filterEdges(data: GraphData, types: ReadonlySet<LinkType>): GraphData {
+  return { nodes: data.nodes, edges: data.edges.filter((e) => types.has(e.type)) }
+}
 
 /** 不分方向的鄰接表（每篇筆記都有一項，孤立筆記為空集合） */
 export function adjacency(data: GraphData): Map<string, Set<string>> {
@@ -127,7 +133,7 @@ export function diffGraph(prev: GraphData, next: GraphData): GraphDiff {
   for (const [id, e] of nextEdges) {
     const p = prevEdges.get(id)
     if (!p) diff.addEdges.push(e)
-    else if (p.weight !== e.weight || p.type !== e.type) diff.updateEdges.push(e)
+    else if (p.weight !== e.weight) diff.updateEdges.push(e)
   }
   for (const id of prevEdges.keys()) if (!nextEdges.has(id)) diff.removeEdges.push(id)
   return diff

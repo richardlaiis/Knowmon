@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { resolveLink } from '../../shared/links'
-import type { NoteSummary, TreeNode, VaultChange } from '../../shared/types'
+import { DEFAULT_TIME_SETTINGS } from '../../shared/time'
+import type { NoteSummary, TimeSettings, TreeNode, VaultChange } from '../../shared/types'
 import { createAutosave } from '../editor'
 import { GlobalGraph, LocalGraph, type Point } from '../graph'
+import { TimelineView } from '../timeline'
 import { BacklinksPanel } from './components/BacklinksPanel'
 import { FileTree } from './components/FileTree'
 import { QuickSwitcher } from './components/QuickSwitcher'
 import { SearchPanel } from './components/SearchPanel'
 import { Splitter } from './components/Splitter'
+import { TimeSettingsDialog } from './components/TimeSettingsDialog'
 import {
   errorMessage,
   isWithin,
@@ -107,6 +110,9 @@ function App(): React.JSX.Element {
     () => ({ global: new Map<string, Point>(), local: new Map<string, Point>(), vault }),
     [vault]
   )
+  /** 這個 vault 的時間參數（時間軸的 session 切分用；時間邊由 main 計算） */
+  const [timeSettings, setTimeSettings] = useState<TimeSettings>(DEFAULT_TIME_SETTINGS)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
   )
@@ -122,6 +128,9 @@ function App(): React.JSX.Element {
 
   // 最近開啟的筆記（Quick switcher 排序用），越前面越近
   const recent = useRef<string[]>([])
+  /** 最後看的筆記：切到時間軸時仍標示它（render 時直接調整，不經過 effect） */
+  const [lastNote, setLastNote] = useState<string | null>(null)
+  if (currentNote && currentNote !== lastNote) setLastNote(currentNote)
   useEffect(() => {
     if (currentNote) {
       recent.current = [currentNote, ...recent.current.filter((p) => p !== currentNote)].slice(
@@ -152,6 +161,18 @@ function App(): React.JSX.Element {
   useEffect(() => {
     if (vault && restoredFor.current === vault) saveTabs(vault, tabs)
   }, [vault, tabs])
+
+  useEffect(() => {
+    if (!vault) return
+    let stale = false
+    window.api.settings
+      .getTime()
+      .then((t) => !stale && setTimeSettings(t))
+      .catch((e) => setMessage(errorMessage(e)))
+    return () => {
+      stale = true
+    }
+  }, [vault])
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
@@ -304,7 +325,20 @@ function App(): React.JSX.Element {
     [autosave]
   )
 
-  const openGraph = useCallback(() => setTabs((s) => T.openGraph(s)), [])
+  const openGraph = useCallback(() => setTabs((s) => T.openView(s, 'graph')), [])
+  const openTimeline = useCallback(() => setTabs((s) => T.openView(s, 'timeline')), [])
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
+
+  const saveTimeSettings = async (next: TimeSettings): Promise<void> => {
+    try {
+      setTimeSettings(await window.api.settings.setTime(next))
+      setSettingsOpen(false)
+      // 時間邊已重算，讓圖譜重新取得資料
+      setIndexVersion((v) => v + 1)
+    } catch (e) {
+      showError(e)
+    }
+  }
 
   const closeTab = useCallback(
     async (id: string): Promise<void> => {
@@ -407,6 +441,7 @@ function App(): React.JSX.Element {
       else if (e.altKey && key === 'b') toggleRight()
       else if (e.altKey) return
       else if (e.shiftKey && key === 'f') openSearch()
+      else if (e.shiftKey && key === 't') openTimeline()
       else if (e.shiftKey) return
       else if (key === 'e') togglePreview()
       else if (key === 'o') openSwitcher(false)
@@ -430,6 +465,7 @@ function App(): React.JSX.Element {
     openSwitcher,
     openSearch,
     openGraph,
+    openTimeline,
     closeTab,
     toggleLeft,
     toggleRight
@@ -454,6 +490,7 @@ function App(): React.JSX.Element {
   }
 
   const graphTab = tabs.tabs.find((t) => t.kind === 'graph')
+  const timelineTab = tabs.tabs.find((t) => t.kind === 'timeline')
 
   return (
     <div className="layout">
@@ -492,6 +529,9 @@ function App(): React.JSX.Element {
               </button>
               <button onClick={openGraph} title="Graph view (Ctrl+G)">
                 Graph
+              </button>
+              <button onClick={openTimeline} title="Timeline (Ctrl+Shift+T)">
+                Timeline
               </button>
               <button onClick={() => openSwitcher(false)} title="Quick switcher (Ctrl+O)">
                 Go to…
@@ -557,6 +597,18 @@ function App(): React.JSX.Element {
             theme={theme}
             positions={graphPositions.global}
             onOpen={(p, newTab) => void openNote(p, newTab)}
+            onOpenSettings={openSettings}
+            onError={showError}
+          />
+        )}
+        {timelineTab && (
+          <TimelineView
+            visible={timelineTab.id === tabs.activeId}
+            version={indexVersion}
+            current={lastNote}
+            sessionGapMinutes={timeSettings.sessionGapMinutes}
+            onOpen={(p, newTab) => void openNote(p, newTab)}
+            onOpenSettings={openSettings}
             onError={showError}
           />
         )}
@@ -580,7 +632,8 @@ function App(): React.JSX.Element {
           <div className="empty">
             <p>Select a note on the left, or right-click to create one.</p>
             <p className="hint">
-              Ctrl+O to jump to a note · Ctrl+Shift+F to search · Ctrl+G for the graph
+              Ctrl+O to jump to a note · Ctrl+Shift+F to search · Ctrl+G for the graph ·
+              Ctrl+Shift+T for the timeline
             </p>
           </div>
         )}
@@ -628,6 +681,13 @@ function App(): React.JSX.Element {
             )}
           </aside>
         </>
+      )}
+      {settingsOpen && (
+        <TimeSettingsDialog
+          value={timeSettings}
+          onSave={saveTimeSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
       {switcher && (
         <QuickSwitcher

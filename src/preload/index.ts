@@ -31,6 +31,13 @@ const api: KnowmonAPI = {
   },
   graph: {
     get: () => ipcRenderer.invoke(IPC.graphGet)
+  },
+  timeline: {
+    activity: (from, to) => ipcRenderer.invoke(IPC.timelineActivity, from, to)
+  },
+  settings: {
+    getTime: () => ipcRenderer.invoke(IPC.settingsGetTime),
+    setTime: (s) => ipcRenderer.invoke(IPC.settingsSetTime, s)
   }
 }
 

@@ -210,7 +210,11 @@ describe('增量索引', () => {
 describe('圖譜', () => {
   it('邊跟著寫入與建立筆記更新，未建立的目標不列入', async () => {
     const v = await open()
-    const edges = (): string[] => v.graph().edges.map((e) => `${e.source} → ${e.target}`)
+    const edges = (): string[] =>
+      v
+        .graph()
+        .edges.filter((e) => e.type === 'wikilink')
+        .map((e) => `${e.source} → ${e.target}`)
     expect(v.graph().nodes).toHaveLength(3)
     expect(edges()).toEqual([
       '日記/2026-10-06.md → 讀書筆記/原子習慣.md',

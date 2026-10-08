@@ -65,6 +65,13 @@ export function registerIpc(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.linksBacklinks, (_e, path: string) => requireVault().backlinks(path))
   ipcMain.handle(IPC.graphGet, () => requireVault().graph())
+  ipcMain.handle(IPC.timelineActivity, (_e, from: number, to: number) =>
+    requireVault().activity(Number(from) || 0, Number(to) || 0)
+  )
+  ipcMain.handle(IPC.settingsGetTime, () => requireVault().getTimeSettings())
+  ipcMain.handle(IPC.settingsSetTime, (_e, change: unknown) =>
+    requireVault().setTimeSettings(change && typeof change === 'object' ? change : {})
+  )
   ipcMain.handle(IPC.searchQuery, (_e, q: string, limit?: number) =>
     requireVault().search(String(q ?? ''), typeof limit === 'number' ? limit : undefined)
   )

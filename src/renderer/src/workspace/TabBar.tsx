@@ -69,7 +69,9 @@ export function TabBar(props: TabBarProps): React.JSX.Element {
               role="tab"
               aria-selected={active}
               className={classes.join(' ')}
-              title={tab.kind === 'note' ? tab.path : 'Graph view'}
+              title={
+                tab.kind === 'note' ? tab.path : tab.kind === 'graph' ? 'Graph view' : 'Timeline'
+              }
               draggable
               onClick={() => props.onActivate(tab.id)}
               onMouseDown={(e) => e.button === 1 && e.preventDefault()}

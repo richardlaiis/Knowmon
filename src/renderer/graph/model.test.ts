@@ -4,6 +4,7 @@ import {
   adjacency,
   diffGraph,
   edgeId,
+  filterEdges,
   localSubgraph,
   neighborhood,
   nodeRadius,
@@ -13,7 +14,8 @@ import {
 const node = (path: string): GraphData['nodes'][number] => ({
   path,
   title: path.replace(/\.md$/, ''),
-  eventDate: null
+  eventDate: null,
+  activeDays: []
 })
 const edge = (source: string, target: string, weight = 1): GraphData['edges'][number] => ({
   source,
@@ -128,5 +130,19 @@ describe('diffGraph', () => {
   it('沒有變化時全部為空', () => {
     const d = diffGraph(data, data)
     expect(Object.values(d).every((list) => list.length === 0)).toBe(true)
+  })
+})
+
+describe('filterEdges', () => {
+  it('只保留選取的類型，節點不變；同一對筆記的不同類型是不同的邊', () => {
+    const session = { ...edge('a.md', 'b.md'), type: 'same_session' as const }
+    const both: GraphData = { nodes: data.nodes, edges: [...data.edges, session] }
+    expect(edgeId(session)).not.toBe(edgeId(edge('a.md', 'b.md')))
+    expect(filterEdges(both, new Set(['same_session'] as const))).toEqual({
+      nodes: data.nodes,
+      edges: [session]
+    })
+    expect(filterEdges(both, new Set()).edges).toEqual([])
+    expect(diffGraph(data, both).addEdges).toEqual([session])
   })
 })

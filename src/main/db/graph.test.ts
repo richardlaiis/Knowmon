@@ -21,9 +21,14 @@ describe('getGraph', () => {
     setWikilinks(db, b, [{ target: '歡迎', count: 1 }])
     expect(getGraph(db)).toEqual({
       nodes: [
-        { path: '孤立.md', title: '孤立', eventDate: null },
-        { path: '歡迎.md', title: '歡迎', eventDate: null },
-        { path: '讀書筆記/原子習慣.md', title: '原子習慣', eventDate: '2025-12-20' }
+        { path: '孤立.md', title: '孤立', eventDate: null, activeDays: [] },
+        { path: '歡迎.md', title: '歡迎', eventDate: null, activeDays: [] },
+        {
+          path: '讀書筆記/原子習慣.md',
+          title: '原子習慣',
+          eventDate: '2025-12-20',
+          activeDays: []
+        }
       ],
       edges: [
         { source: '歡迎.md', target: '讀書筆記/原子習慣.md', type: 'wikilink', weight: 2 },
