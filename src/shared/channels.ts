@@ -16,5 +16,15 @@ export const IPC = {
   graphGet: 'graph:get',
   timelineActivity: 'timeline:activity',
   settingsGetTime: 'settings:getTime',
-  settingsSetTime: 'settings:setTime'
+  settingsSetTime: 'settings:setTime',
+  settingsGetSemantic: 'settings:getSemantic',
+  settingsSetSemantic: 'settings:setSemantic',
+  llmStatus: 'llm:status',
+  llmStatusChanged: 'llm:statusChanged',
+  llmRetry: 'llm:retry',
+  llmSetSettings: 'llm:setSettings',
+  llmRetrieve: 'llm:retrieve',
+  llmSummarize: 'llm:summarize',
+  llmCancel: 'llm:cancel',
+  llmSummary: 'llm:summary'
 } as const

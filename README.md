@@ -6,6 +6,7 @@
 
 - Node.js 22 以上（目前開發使用 v24）
 - Linux / macOS / Windows。以下 Linux 專屬步驟會特別標註。
+- AI 功能（可選）：[Ollama](https://ollama.com)，並下載模型 `ollama pull bge-m3`（embedding）與 `ollama pull qwen3:8b`（總結）。沒有 Ollama 時其他功能照常，側欄底部顯示「AI offline」。
 
 ## 安裝
 
@@ -49,8 +50,8 @@ npm start         # 執行 out/ 裡建置好的版本
 | 筆記                             | vault 裡的 `.md` 檔                      |
 | 編輯歷程（無法重建，請勿刪除）   | `<vault>/.knowmon/events.jsonl`          |
 | 索引資料庫（可刪除，會自動重建） | `<vault>/.knowmon/index.db`              |
-| 時間參數（session 長度等）       | `<vault>/.knowmon/settings.json`         |
-| App 設定（上次的 vault）         | Linux：`~/.config/knowmon/settings.json` |
+| 時間參數、semantic 邊參數        | `<vault>/.knowmon/settings.json`         |
+| App 設定（上次的 vault、Ollama） | Linux：`~/.config/knowmon/settings.json` |
 
 ## 快捷鍵
 
@@ -70,8 +71,9 @@ macOS 上把 `Ctrl` 換成 `Cmd`（`Ctrl+Tab` 除外）。
 | `Ctrl+W`                      | 關閉目前分頁                                  |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一個／上一個分頁                            |
 | `Ctrl+B`                      | 開關左側欄（檔案樹、搜尋）                    |
-| `Ctrl+Alt+B`                  | 開關右側面板（Backlinks、Local graph）        |
+| `Ctrl+Alt+B`                  | 開關右側面板（Backlinks、Local graph、AI）    |
 | `Ctrl+E`                      | 切換即時渲染／原始碼模式                      |
+| `Ctrl+Shift+S`                | 總結目前的筆記；有選取文字時只總結選取的部分  |
 
 ### 編輯器
 
@@ -100,12 +102,12 @@ macOS 上把 `Ctrl` 換成 `Cmd`（`Ctrl+Tab` 除外）。
 
 ### Quick switcher 與搜尋框
 
-| 快捷鍵                          | 動作                            |
-| ------------------------------- | ------------------------------- |
-| `↑` `↓`（或 `Ctrl+N` `Ctrl+P`） | 在 Quick switcher 中選擇        |
-| `Enter`                         | 開啟（搜尋框：開啟第一個結果）  |
-| `Ctrl+Enter`                    | 開在新分頁                      |
-| `Esc`                           | 關閉 Quick switcher／清空搜尋框 |
+| 快捷鍵                          | 動作                                                              |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `↑` `↓`（或 `Ctrl+N` `Ctrl+P`） | 在 Quick switcher 中選擇                                          |
+| `Enter`                         | 開啟（搜尋框：開啟第一個結果；Hybrid 模式下先查詢，再按一次開啟） |
+| `Ctrl+Enter`                    | 開在新分頁                                                        |
+| `Esc`                           | 關閉 Quick switcher／清空搜尋框                                   |
 
 ### 滑鼠
 
@@ -151,6 +153,14 @@ npm run lint         # ESLint + Prettier 檢查
 - `src/renderer/editor/autosave.test.ts`、`src/renderer/src/lib/tree.test.ts`：自動儲存、檔案樹路徑工具（含拖曳）
 - `src/main/indexer/timeLinks.test.ts`、`src/main/db/time.test.ts`、`src/main/vault/time.test.ts`：時間邊（same_session、same_day、sequence）的推導、何時重算、時間參數的讀寫、DB 重建
 - `src/shared/time.test.ts`、`src/renderer/graph/timeFilter.test.ts`、`src/renderer/timeline/model.test.ts`：session 切分、圖譜時間篩選、時間軸分組
+- `src/main/indexer/chunk.test.ts`、`src/main/db/vectors.test.ts`：切塊、向量表（sqlite-vec）、semantic 邊與 1000 篇的效能
+- `src/main/llm/*.test.ts`：Ollama client（假的 fetch）、背景 embedding、混合檢索、總結；`service.test.ts` 用真的 Vault 加假的 Ollama 測離線、模型未下載、換模型
+
+與真的 Ollama 連線的整合測試預設跳過，需要時執行：
+
+```bash
+OLLAMA_IT=1 npx vitest run src/main/llm/ollama.integration.test.ts
+```
 
 新功能必須附測試，完成前要確認上面三個指令都通過。
 
@@ -215,6 +225,25 @@ npm run dev
 | 34  | 時間軸或圖譜工具列按「Settings」，把 Session gap 改成 5、Same-day window 改成 1，按 Save | `cat ~/knowmon-test-vault/.knowmon/settings.json` 看得到新值；圖譜的 Session 邊變少、日記之間多了 Same day 邊；時間軸 session 變短 |
 | 35  | 右側面板切到「Local graph」，切換邊類型                                                  | 局部圖只沿著選取的類型找相連的筆記                                                                                                 |
 
+### AI（階段 5）
+
+需要 Ollama 與 `bge-m3`、`qwen3:8b`（見「環境需求」）。開啟 vault 後，側欄底部會顯示「Indexing N/M」，背景 embedding 完成後變成「AI ready」（test-vault 約 10 秒）。
+
+| #   | 操作                                                           | 預期結果                                                                                                        |
+| --- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 36  | 開「原子習慣」，按 `Ctrl+Shift+S`（或筆記上方的「Summarize」） | 右側面板切到「AI」，逐字顯示繁體中文的條列總結（約 15–30 秒）；`[[深度工作]]` 可點擊；可 Stop、Copy、Regenerate |
+| 37  | 選取一段文字再按 `Ctrl+Shift+S`                                | 標題顯示「Selection in …」，只總結選取的部分                                                                    |
+| 38  | 搜尋切到「Hybrid」，輸入 `培養好習慣的方法` 按 Enter           | 沒有完全相同字詞也找得到「原子習慣」等筆記，標示 meaning（向量）、text（全文）、linked（圖譜鄰居）              |
+| 39  | 點 Hybrid 的結果                                               | 開啟筆記並捲到最相關的段落                                                                                      |
+| 40  | 設定 Hybrid 的日期範圍後按 Enter                               | 只列出 event date（沒有的話用最後修改日）在範圍內的筆記                                                         |
+| 41  | `Ctrl+G`，工具列切換「Semantic」                               | 內容相似的筆記之間有洋紅色的 Semantic 邊；「Settings」可調整相似度門檻與每篇上限                                |
+| 42  | 結束 Ollama（`systemctl stop ollama` 或關掉 `ollama serve`）   | 側欄變成「AI offline」，AI 分頁顯示原因；搜尋、圖譜、編輯照常；Hybrid 退回關鍵字結果並提示                      |
+| 43  | 重新啟動 Ollama                                                | 30 秒內自動恢復（或按 AI 分頁的「Retry」）                                                                      |
+| 44  | AI 分頁按「Settings」                                          | 可改 Ollama 位址與模型；換 embedding 模型會重新索引所有筆記                                                     |
+| 45  | AI 分頁切到「EN」再按 Regenerate                               | 用英文條列總結，`[[原子習慣]]` 等連結保持原文、可點擊；切回「中文」恢復繁體中文；重開 App 後仍記得選擇          |
+| 46  | 總結內容有粗體、清單、程式碼時                                 | 以格式顯示（不是原始 Markdown 符號）；串流途中未完成的語法先顯示為文字                                          |
+| 47  | 總結一篇沒有任何 `[[連結]]` 的筆記                             | 總結裡沒有可點的連結，也沒有 `[[` 符號；有連結的筆記只會出現原文中的連結                                        |
+
 ### 大型 vault 效能測試
 
 ```bash
@@ -236,7 +265,7 @@ sqlite3 ~/knowmon-test-vault/.knowmon/index.db \
 
 ### 測試 DB 重建
 
-關掉 App 後執行 `rm ~/knowmon-test-vault/.knowmon/index.db*`，再重新開啟同一個 vault，用上面的 sqlite3 指令檢查。歷程應該跟刪除前完全一樣，`events.jsonl` 也不會多出重複的紀錄。搜尋結果與反向連結也應與刪除前相同（連結與全文索引都從 Markdown 檔重建）。
+關掉 App 後執行 `rm ~/knowmon-test-vault/.knowmon/index.db*`，再重新開啟同一個 vault，用上面的 sqlite3 指令檢查。歷程應該跟刪除前完全一樣，`events.jsonl` 也不會多出重複的紀錄。搜尋結果與反向連結也應與刪除前相同（連結與全文索引都從 Markdown 檔重建）。向量會在背景重新 embedding（需要 Ollama）。
 
 從階段 1 升級的 vault 第一次開啟時，因為 schema 版本改變，`index.db` 會自動重建一次。
 

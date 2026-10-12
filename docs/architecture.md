@@ -4,13 +4,13 @@
 
 ## 資料存放位置
 
-| 資料 | 位置 | 可否重建 |
-| --- | --- | --- |
-| 筆記 | `<vault>/**/*.md` | 唯一真相 |
-| 編輯歷程 | `<vault>/.knowmon/events.jsonl`（append-only） | 唯一真相 |
-| 索引資料庫 | `<vault>/.knowmon/index.db` | 可從上面兩者完整重建 |
-| vault 設定（時間參數） | `<vault>/.knowmon/settings.json` | 不存在時用預設值 |
-| App 設定（上次開啟的 vault） | `userData/settings.json` | — |
+| 資料                                            | 位置                                           | 可否重建             |
+| ----------------------------------------------- | ---------------------------------------------- | -------------------- |
+| 筆記                                            | `<vault>/**/*.md`                              | 唯一真相             |
+| 編輯歷程                                        | `<vault>/.knowmon/events.jsonl`（append-only） | 唯一真相             |
+| 索引資料庫                                      | `<vault>/.knowmon/index.db`                    | 可從上面兩者完整重建 |
+| vault 設定（時間、semantic 參數）               | `<vault>/.knowmon/settings.json`               | 不存在時用預設值     |
+| App 設定（上次開啟的 vault、Ollama 位址與模型） | `userData/settings.json`                       | —                    |
 
 - `note_events` 無法事後補回，所以 SQLite 裡的只是索引，真相在 `events.jsonl`。DB 被刪除後，重新開啟 vault 時會從日誌重播（`src/main/db/events-log.ts` 的 `replay`）。
 - 日誌以路徑記錄，不用 note id（id 重建後會變）。改名寫 `{"op":"rename"}`、刪除寫 `{"op":"delete"}`，重播時歷程跟著路徑走，資料夾改名/刪除會套用到底下所有筆記。
@@ -74,6 +74,23 @@
 - 偏好（localStorage）：`knowmon.graph.types`、`knowmon.graph.localTypes`（逗號分隔，預設全開）、`knowmon.graph.timeAxis`、`knowmon.graph.undated`、`knowmon.timeline.mode`。時間範圍本身不存。
 - 時間軸是一種分頁（`kind: 'timeline'`，最多一個），和圖譜一樣存在期間保持掛載；隱藏時不重新取得資料。「寫作時間」模式一次取得全部的 `create` / `edit` 事件（`timeline.activity`），在 renderer 分組。
 
+## LLM（階段 5）
+
+計畫與決定見 `docs/plans/phase5-llm.md`。所有 Ollama 呼叫都在 `src/main/llm/`；Ollama 是可選的，連不上時其他功能照常。
+
+- Ollama client（`ollama.ts`）只用 Node 內建的 `fetch`，對話一律帶 `think: false`（qwen3 不輸出思考過程；模型不支援時不帶參數重送）。連線檢查逾時 2 秒、embedding 每批 60 秒、對話可取消不逾時。
+- `LlmService`（`service.ts`）管理連線狀態：開啟 vault、使用者按 Retry、embedding 或總結遇到離線時檢查；離線時每 30 秒重試。狀態以 `llm:statusChanged` 推送給 renderer。設定（位址、模型）存 App 的 `userData/settings.json`，所有 vault 共用。
+- 切塊（`indexer/chunk.ts`，純函式）：依標題切章節、空行分段、累積到約 800 字；過長的段落依句子切（英文句點後要接空白，避免切開 3.14）；圍欄程式碼整段保留。每塊記起始行與章節標題路徑，送去 embedding 的文字前面加上「標題 › 章節」。
+- Schema 版本 3：`chunks`（`AUTOINCREMENT`，id 不重複使用）、`meta`（`embed_model`、`embed_dim`）。比計畫多了 `chunks.heading` 欄位（embedding 文字要用）。向量表 `vec_chunks`、`vec_notes`（sqlite-vec `vec0`，cosine）在第一次拿到 embedding 時才建立，維度取決於模型；刪除用 trigger。換模型時丟掉兩張表重算。
+- `indexFile` 重新解析時一併重寫 chunk；內容完全相同時（例如改名）保留原本的向量。只動 DB，不呼叫 Ollama。
+- `Embedder` 在背景每批 16 塊呼叫 Ollama。**不經過 Vault 佇列**：better-sqlite3 是同步的，寫入不會與其他操作交錯；embedding 途中筆記被修改或刪除時，舊 chunk 已不存在（id 不重複），`storeEmbeddings` 會略過。整篇向量 = 各塊向量正規化後的平均。
+- 混合檢索（`retrieve.ts`）：全文（`searchNotes`）與向量（`vec_chunks` KNN）各取前 50 篇，以 RRF（k = 60）合併；前 5 名的 wikilink／semantic 鄰居加上種子分數的一半。日期篩選用 `event_date`，沒有的話用最後修改日。查詢向量取不到時（離線、還沒建好、模型不同）退回全文＋圖譜，`vector: false`。
+- semantic 邊：每篇取相似度最高的 5 篇（≥ 門檻）的聯集，權重為相似度。門檻預設 0.65：bge-m3 在 test-vault 上無關的句子約 0.42、相關的約 0.77，0.6 時會多出幾條勉強的邊（實測見計畫）。vec0 逐篇 KNN 在 1000 篇時要 1.5 秒，改在 JS 兩兩計算（約 0.6 秒），每約 10ms 讓出一次 event loop，不卡住 main process；因此 `Vault.graph()` 改成 async。和時間邊一樣讀取圖譜前才整批重算（整篇向量、筆記、設定改變時標 dirty）。
+- 總結（`summarize.ts`）：條列、保留原文的 wikilink。提示詞附上原文的連結清單（`linkTargets`），只准使用清單裡的連結；提示詞本身不寫任何 `[[...]]` 範例（小模型會把範例原樣抄進總結）。輸出再經 `createLinkFilter` 串流過濾，原文沒有的 `[[x]]` 改成純文字 `x`，等到 `]]` 或換行才判斷，所以連結被切在多個片段之間也沒問題。語言由 `SummaryRequest.language` 決定（`zh-TW` 預設、`en`，2026-10-12 經使用者同意加入合約），AI 分頁的「中文 / EN」切換，偏好存 localStorage `knowmon.summary.language`。英文模式在內容後面再提醒一次用英文：qwen3:8b 對中文筆記容易跟著用中文回答，提示詞裡放中文範例時甚至改用簡體。超過 12000 字時先每 6000 字分段摘要再合併（分段的結果不顯示）。內文從 `notes_fts` 取（frontmatter 已換成空行），所以 renderer 會先 flush 自動儲存。串流片段以 `llm:summary` 推送，renderer 依 request id 對應。
+- 總結以 Markdown 渲染（`renderer/chat/markdown.ts`）：用編輯器同一個 lezer 解析器（GFM）加上 wikilink 擴充，轉成簡單的樹再由 React 產生元素，不插入 HTML；外部連結只允許 http(s) 與 mailto，表格與 HTML 顯示原文。
+- Renderer：右側面板新增「AI」分頁（狀態、總結），側欄底部顯示狀態；搜尋面板有 Keyword / Hybrid 切換（`knowmon.search.mode`），Hybrid 按 Enter 才查詢，結果點擊後捲到最相關的段落。背景 embedding 結束時（busy → false）遞增 `indexVersion`，讓圖譜取得新的 semantic 邊。
+- 圖譜邊類型偏好的儲存格式改為「`a,-b`」（記錄開與關）；舊格式沒有提到的新類型（semantic）預設開啟。
+
 ## 工作區：分頁與面板
 
 計畫與決定見 `docs/plans/workspace-tabs.md`。
@@ -109,5 +126,7 @@
 ## 開發環境注意事項
 
 - better-sqlite3 13 附 N-API prebuild，同一個 binary 在 Node（vitest）和 Electron 都能用，不需要 rebuild。
+- sqlite-vec 由 `openDb` 載入（`node_modules/sqlite-vec-<平台>` 裡的 `.so`）；載入失敗時向量功能停用，AI 狀態顯示原因。打包時（階段 8）要確認這個檔案沒有被包進 asar。
+- Cytoscape 的 canvas 以整數像素取高度，容器高度有小數時會溢出 1px，所以 `.graph-canvas` 設 `overflow: hidden`（工具列換行時曾讓整頁出現捲軸）。
 - chokidar 5 只有 ESM，在 `electron.vite.config.ts` 中設定為打包進 main，而不是 external。
 - `npx tsc --noEmit` 搭配根目錄的 project references 不會檢查任何檔案，型別檢查請用 `npm run typecheck`。

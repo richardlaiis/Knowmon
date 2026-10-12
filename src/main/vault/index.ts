@@ -11,6 +11,7 @@ import type {
   NoteEventKind,
   NoteSummary,
   SearchHit,
+  SemanticSettings,
   TimeSettings,
   TreeNode,
   VaultChange
@@ -34,14 +35,23 @@ import {
 } from '../db'
 import { getBacklinks } from '../db/backlinks'
 import { getGraph } from '../db/graph'
+import { rebuildSemanticLinks } from '../db/semantic'
 import { listActivity, rebuildTimeLinks } from '../db/time'
+import { setChunks } from '../db/vectors'
 import { EventsLog, movedPath, replay } from '../db/events-log'
 import { searchNotes } from '../db/search'
 import { countLinks, parseNote } from '../indexer'
+import { chunkMarkdown } from '../indexer/chunk'
+import { clampSemanticSettings } from '../../shared/llm'
 import { clampTimeSettings } from '../../shared/time'
 import { META_DIR, isNotePath, normalizeRel, resolveInVault, titleFromPath } from './paths'
 import { buildTree, listNotes } from './tree'
-import { loadTimeSettings, saveTimeSettings } from './vault-settings'
+import {
+  loadSemanticSettings,
+  loadTimeSettings,
+  saveSemanticSettings,
+  saveTimeSettings
+} from './vault-settings'
 import { watchVault, type Watcher } from './watcher'
 
 /** 同一篇筆記、同一種事件在這段時間內只記一次 */
@@ -72,6 +82,13 @@ export class Vault {
   private timeSettings: TimeSettings
   /** 時間邊需要重算（事件、日期、路徑或設定改變）；讀取圖譜前才重算 */
   private timeDirty = true
+  private semanticSettings: SemanticSettings
+  /** semantic 邊需要重算（整篇向量、筆記或設定改變）；讀取圖譜前才重算 */
+  private semanticDirty = true
+  /** 進行中的 semantic 邊重算（分段計算，會讓出 event loop） */
+  private semanticJob: Promise<void> | null = null
+  /** chunk 有變動（需要 embedding）時通知，Embedder 用 */
+  private readonly chunkListeners = new Set<() => void>()
 
   private constructor(
     readonly root: string,
@@ -83,6 +100,7 @@ export class Vault {
     this.log = new EventsLog(path.join(meta, 'events.jsonl'))
     this.settingsFile = path.join(meta, 'settings.json')
     this.timeSettings = loadTimeSettings(this.settingsFile)
+    this.semanticSettings = loadSemanticSettings(this.settingsFile)
     this.trash = opts.trash ?? ((p) => fs.rm(p, { recursive: true, force: true }))
     this.now = opts.now ?? Date.now
   }
@@ -121,12 +139,33 @@ export class Vault {
     return getBacklinks(this.db, normalizeRel(rel))
   }
 
-  graph(): GraphData {
+  async graph(): Promise<GraphData> {
     if (this.timeDirty) {
       rebuildTimeLinks(this.db, this.timeSettings)
       this.timeDirty = false
     }
+    while (this.semanticDirty || this.semanticJob) {
+      if (!this.semanticJob) {
+        // 計算途中又變動時 semanticDirty 會再被設為 true，下一輪重算
+        this.semanticDirty = false
+        this.semanticJob = rebuildSemanticLinks(this.db, this.semanticSettings).finally(() => {
+          this.semanticJob = null
+        })
+      }
+      await this.semanticJob
+    }
     return getGraph(this.db)
+  }
+
+  /** 整篇向量改變（Embedder 寫入）時呼叫 */
+  markSemanticDirty(): void {
+    this.semanticDirty = true
+  }
+
+  /** chunk 有變動、需要 embedding 時通知 */
+  onChunksChanged(cb: () => void): () => void {
+    this.chunkListeners.add(cb)
+    return () => this.chunkListeners.delete(cb)
   }
 
   /** [from, to) 之間的 create / edit 事件 */
@@ -145,6 +184,21 @@ export class Vault {
       saveTimeSettings(this.settingsFile, next)
       this.timeSettings = next
       this.timeDirty = true
+      return { ...next }
+    })
+  }
+
+  getSemanticSettings(): SemanticSettings {
+    return { ...this.semanticSettings }
+  }
+
+  /** 修改 semantic 參數（限制在合法範圍內）並寫入 settings.json，回傳實際套用的值 */
+  setSemanticSettings(change: Partial<SemanticSettings>): Promise<SemanticSettings> {
+    return this.exclusive(async () => {
+      const next = clampSemanticSettings(change, this.semanticSettings)
+      saveSemanticSettings(this.settingsFile, next)
+      this.semanticSettings = next
+      this.semanticDirty = true
       return { ...next }
     })
   }
@@ -241,6 +295,7 @@ export class Vault {
       for (const n of affected) await this.indexFile(movedPath(n.path, from, to)!, undefined, true)
       this.relink()
       this.timeDirty = true
+      this.semanticDirty = true
       this.log.append({ ts: this.now(), op: 'rename', from, to })
       this.emit({ type: 'unlink', path: from })
       this.emit({ type: 'add', path: to })
@@ -256,6 +311,7 @@ export class Vault {
       this.db.transaction(() => affected.forEach((n) => deleteNote(this.db, n.path)))()
       this.relink()
       this.timeDirty = true
+      this.semanticDirty = true
       this.log.append({ ts: this.now(), op: 'delete', path: rel })
       this.emit({ type: 'unlink', path: rel })
     })
@@ -270,6 +326,8 @@ export class Vault {
     await this.watcher?.close()
     this.watcher = null
     await this.queue.catch(() => {})
+    await this.semanticJob?.catch(() => {})
+    this.chunkListeners.clear()
     this.db.close()
   }
 
@@ -350,12 +408,15 @@ export class Vault {
       changes.push({ type: 'add', path: rel })
     }
     if (changes.some((c) => c.type !== 'change')) this.relink()
-    if (changes.length) this.timeDirty = true
+    if (changes.length) {
+      this.timeDirty = true
+      this.semanticDirty = true
+    }
     return changes
   }
 
   /**
-   * 依磁碟上的檔案更新索引（notes、links、notes_fts）。
+   * 依磁碟上的檔案更新索引（notes、links、notes_fts、chunks）。
    * 內容 hash 與 DB 相同時只更新 mtime，不重新解析；force 用於改名（檔名日期可能改變）。
    */
   private async indexFile(rel: string, content?: string, force = false): Promise<Note> {
@@ -382,14 +443,16 @@ export class Vault {
       eventDate: parsed.eventDate,
       contentHash
     }
-    // 日期或路徑可能改變（same_day、sequence）
+    // 日期或路徑可能改變（same_day、sequence）；內容改變後整篇向量作廢
     this.timeDirty = true
-    const id = this.db.transaction(() => {
+    this.semanticDirty = true
+    const { id, rechunked } = this.db.transaction(() => {
       const id = upsertNote(this.db, input)
       setNoteBody(this.db, id, title, parsed.body)
       setWikilinks(this.db, id, countLinks(parsed.links), (t) => this.resolve(t))
-      return id
+      return { id, rechunked: setChunks(this.db, id, chunkMarkdown(parsed.body)) }
     })()
+    if (rechunked) for (const cb of this.chunkListeners) cb()
     return { ...input, id }
   }
 

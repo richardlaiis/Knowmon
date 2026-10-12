@@ -51,7 +51,7 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 - [x] 設定 vitest
 - [x] 準備 `test-vault/` 測試筆記
 - [x] 初始化 git
-- [ ] 安裝 Ollama 並下載模型：`ollama pull qwen3:8b`、`ollama pull bge-m3`（階段 5 之前完成即可，不影響階段 1–4）
+- [x] 安裝 Ollama 並下載模型：`ollama pull qwen3:8b`、`ollama pull bge-m3`（階段 5 之前完成即可，不影響階段 1–4）
 
 `types.ts` 與 schema 是使用者手寫的初版，Claude Code 接手時應先閱讀並確認是否涵蓋本文件「資料模型」一節的內容，有缺漏時先提出，不要直接修改。
 
@@ -135,13 +135,13 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 ### 階段 5：LLM 基礎能力
 
-開始前需完成 Ollama 安裝。完成標準：向量檢索可用，能總結單篇筆記。
+開始前需完成 Ollama 安裝。完成標準：向量檢索可用，能總結單篇筆記。計畫與實作決定見 `docs/plans/phase5-llm.md`。
 
-- [ ] Ollama client 與連線檢查（未啟動時優雅降級）
-- [ ] 筆記切塊與 embedding
-- [ ] 向量搜尋與混合檢索（全文 + 向量 + 圖譜鄰居 + 時間篩選）
-- [ ] 單次功能：總結筆記、總結選取文字
-- [ ] `semantic` 邊加入圖譜
+- [x] Ollama client 與連線檢查（未啟動時優雅降級）
+- [x] 筆記切塊與 embedding
+- [x] 向量搜尋與混合檢索（全文 + 向量 + 圖譜鄰居 + 時間篩選）
+- [x] 單次功能：總結筆記、總結選取文字
+- [x] `semantic` 邊加入圖譜
 
 ### 階段 6：問答（RAG）
 

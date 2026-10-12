@@ -1,7 +1,8 @@
 // IPC handler：renderer 只能透過這裡（以及 preload 暴露的 KnowmonAPI）存取檔案與 DB
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/channels'
-import type { TreeNode } from '../shared/types'
+import type { LlmStatus, RetrieveOptions, SummaryChunk, TreeNode } from '../shared/types'
+import { LlmService } from './llm/service'
 import { loadSettings, saveSettings } from './settings'
 import { Vault } from './vault'
 
@@ -10,6 +11,16 @@ export interface IpcContext {
 }
 
 let current: Vault | null = null
+let llm: LlmService | null = null
+
+function broadcast(channel: string, payload: LlmStatus | SummaryChunk): void {
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, payload)
+}
+
+function requireLlm(): LlmService {
+  if (!llm) throw new Error('LLM service is not ready')
+  return llm
+}
 
 function requireVault(): Vault {
   if (!current) throw new Error('No vault is open')
@@ -17,6 +28,8 @@ function requireVault(): Vault {
 }
 
 export async function openVault(root: string, ctx: IpcContext): Promise<Vault> {
+  // 先停下背景 embedding，再關閉舊 vault 的 DB
+  await llm?.attach(null)
   await current?.close()
   current = null
   const vault = await Vault.open(root, {
@@ -28,15 +41,26 @@ export async function openVault(root: string, ctx: IpcContext): Promise<Vault> {
   })
   current = vault
   saveSettings(ctx.settingsDir, { ...loadSettings(ctx.settingsDir), lastVault: vault.root })
+  // 不等連線檢查（Ollama 沒開時最多 2 秒）
+  void llm?.attach(vault)
   return vault
 }
 
 export async function closeVault(): Promise<void> {
+  await llm?.dispose()
   await current?.close()
   current = null
 }
 
 export function registerIpc(ctx: IpcContext): void {
+  llm = new LlmService({
+    loadSettings: () => loadSettings(ctx.settingsDir).llm,
+    saveSettings: (s) =>
+      saveSettings(ctx.settingsDir, { ...loadSettings(ctx.settingsDir), llm: s }),
+    onStatus: (s) => broadcast(IPC.llmStatusChanged, s),
+    onSummary: (c) => broadcast(IPC.llmSummary, c)
+  })
+
   ipcMain.handle(IPC.vaultPick, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     // 不自動開啟上次的 vault，但對話框會從上次的位置開始
@@ -75,4 +99,42 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.searchQuery, (_e, q: string, limit?: number) =>
     requireVault().search(String(q ?? ''), typeof limit === 'number' ? limit : undefined)
   )
+  ipcMain.handle(IPC.settingsGetSemantic, () => requireVault().getSemanticSettings())
+  ipcMain.handle(IPC.settingsSetSemantic, (_e, change: unknown) =>
+    requireVault().setSemanticSettings(change && typeof change === 'object' ? change : {})
+  )
+
+  ipcMain.handle(IPC.llmStatus, () => requireLlm().status())
+  ipcMain.handle(IPC.llmRetry, () => requireLlm().retry())
+  ipcMain.handle(IPC.llmSetSettings, (_e, change: unknown) =>
+    requireLlm().setSettings(change && typeof change === 'object' ? change : {})
+  )
+  ipcMain.handle(IPC.llmRetrieve, (_e, q: unknown, opts: unknown) => {
+    requireVault()
+    return requireLlm().retrieve(String(q ?? ''), retrieveOptions(opts))
+  })
+  ipcMain.handle(IPC.llmSummarize, (_e, req: unknown) => {
+    requireVault()
+    const r = (req && typeof req === 'object' ? req : {}) as Record<string, unknown>
+    return requireLlm().summarize({
+      path: String(r.path ?? ''),
+      ...(typeof r.selection === 'string' ? { selection: r.selection } : {}),
+      language: r.language === 'en' ? 'en' : 'zh-TW'
+    })
+  })
+  ipcMain.handle(IPC.llmCancel, (_e, id: unknown) => requireLlm().cancel(String(id ?? '')))
+}
+
+/** renderer 傳來的檢索選項只取合法欄位 */
+function retrieveOptions(input: unknown): RetrieveOptions {
+  if (!input || typeof input !== 'object') return {}
+  const o = input as Record<string, unknown>
+  const day = (v: unknown): string | undefined =>
+    typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined
+  return {
+    ...(typeof o.limit === 'number' ? { limit: o.limit } : {}),
+    ...(day(o.from) ? { from: day(o.from) } : {}),
+    ...(day(o.to) ? { to: day(o.to) } : {}),
+    ...(typeof o.expand === 'boolean' ? { expand: o.expand } : {})
+  }
 }

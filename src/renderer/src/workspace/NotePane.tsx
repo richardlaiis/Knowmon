@@ -14,6 +14,11 @@ export interface NotePaneProps {
   onTogglePreview: () => void
   onOpenLink: (target: string, newTab: boolean) => void
   onError: (e: unknown) => void
+  /** 總結這篇（有選取時只總結選取的部分） */
+  onSummarize: () => void
+  onSelectionChange: (path: string, text: string) => void
+  /** 捲到這一行（搜尋結果），n 改變時再跳一次 */
+  reveal: { line: number; n: number } | null
 }
 
 interface Loaded {
@@ -103,6 +108,13 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
         <span className="note-path">{path.replace(/\.md$/i, '')}</span>
         <button
           className="mode-toggle"
+          onClick={props.onSummarize}
+          title="Summarize this note, or the selected text (Ctrl+Shift+S)"
+        >
+          Summarize
+        </button>
+        <button
+          className="mode-toggle"
           onClick={props.onTogglePreview}
           title="Toggle live preview / source mode (Ctrl+E)"
         >
@@ -122,6 +134,8 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
           livePreview={preview}
           getNotes={props.getNotes}
           onOpenLink={props.onOpenLink}
+          onSelectionChange={(text) => props.onSelectionChange(pathRef.current, text)}
+          reveal={props.reveal}
         />
       )}
     </div>

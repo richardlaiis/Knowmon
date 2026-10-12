@@ -46,8 +46,8 @@ export interface SearchHit {
   snippet: TextSegment[]
 }
 
-/** 圖譜邊的類型；階段 5 會加入 semantic */
-export type LinkType = 'wikilink' | 'same_session' | 'same_day' | 'sequence'
+/** 圖譜邊的類型 */
+export type LinkType = 'wikilink' | 'same_session' | 'same_day' | 'sequence' | 'semantic'
 
 export interface GraphNode {
   path: string
@@ -86,6 +86,79 @@ export interface TimeSettings {
   sessionMaxNotes: number
   /** event_date 相差幾天以內算 same_day（0 = 同一天） */
   sameDayWindowDays: number
+}
+
+/** semantic 邊的參數，存在 <vault>/.knowmon/settings.json */
+export interface SemanticSettings {
+  /** 相似度（0–1）門檻 */
+  semanticThreshold: number
+  /** 每篇最多連到幾篇 */
+  semanticMaxPerNote: number
+}
+
+/** Ollama 連線與模型，存在 App 的 userData/settings.json（跟著機器走） */
+export interface LlmSettings {
+  baseUrl: string
+  chatModel: string
+  embedModel: string
+}
+
+export interface LlmStatus {
+  online: boolean
+  /** 離線、模型未下載等原因，給使用者看 */
+  error: string | null
+  /** Ollama 已下載的模型 */
+  models: string[]
+  settings: LlmSettings
+  /** embedding 進度：已完成的筆記數 / 有內容的筆記數 */
+  embedded: number
+  total: number
+  /** 背景正在 embedding */
+  busy: boolean
+}
+
+export interface RetrieveOptions {
+  /** 預設 20 */
+  limit?: number
+  /** YYYY-MM-DD，含兩端；依 event_date，沒有的話用最後修改日 */
+  from?: string
+  to?: string
+  /** 加入前幾名的圖譜鄰居，預設 true */
+  expand?: boolean
+}
+
+export interface RetrieveHit {
+  path: string
+  title: string
+  score: number
+  /** 最相關的段落起始行（1-based） */
+  line: number
+  snippet: TextSegment[]
+  /** 這篇由哪些來源命中 */
+  via: ('fulltext' | 'vector' | 'graph')[]
+}
+
+export interface RetrieveResult {
+  hits: RetrieveHit[]
+  /** false 表示這次沒有用到向量（Ollama 離線或尚未建好） */
+  vector: boolean
+}
+
+export interface SummaryRequest {
+  path: string
+  /** 有值時只總結這段選取文字（path 提供標題與上下文） */
+  selection?: string
+  /** 總結使用的語言，預設 'zh-TW' */
+  language?: SummaryLanguage
+}
+
+export type SummaryLanguage = 'zh-TW' | 'en'
+
+export interface SummaryChunk {
+  id: string
+  delta: string
+  done: boolean
+  error?: string
 }
 
 export interface TreeNode {
@@ -133,5 +206,20 @@ export interface KnowmonAPI {
     getTime(): Promise<TimeSettings>
     /** 寫入並回傳實際套用（限制範圍後）的值；時間邊會重算 */
     setTime(s: Partial<TimeSettings>): Promise<TimeSettings>
+    getSemantic(): Promise<SemanticSettings>
+    /** 寫入並回傳實際套用（限制範圍後）的值；semantic 邊會重算 */
+    setSemantic(s: Partial<SemanticSettings>): Promise<SemanticSettings>
+  }
+  llm: {
+    status(): Promise<LlmStatus>
+    /** 重新檢查連線並恢復 embedding */
+    retry(): Promise<LlmStatus>
+    onStatus(cb: (s: LlmStatus) => void): () => void
+    setSettings(s: Partial<LlmSettings>): Promise<LlmStatus>
+    retrieve(query: string, opts?: RetrieveOptions): Promise<RetrieveResult>
+    /** 開始串流總結，回傳 request id；片段經 onSummary 推送 */
+    summarize(req: SummaryRequest): Promise<string>
+    cancel(id: string): Promise<void>
+    onSummary(cb: (c: SummaryChunk) => void): () => void
   }
 }

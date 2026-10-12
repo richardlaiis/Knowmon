@@ -1,12 +1,13 @@
 // schema 與查詢。DB 只是索引：schema 版本不符時直接刪掉重建（歷程會從 events.jsonl 重播）。
 import fs from 'node:fs'
 import Database from 'better-sqlite3'
+import * as sqliteVec from 'sqlite-vec'
 import { createLinkResolver, type LinkResolver } from '../../shared/links'
 import type { Note, NoteEvent, NoteEventKind, NoteSummary } from '../../shared/types'
 
 export type DB = Database.Database
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 const SCHEMA = `
 CREATE TABLE notes (
@@ -47,6 +48,22 @@ END;
 CREATE TRIGGER notes_fts_title AFTER UPDATE OF title ON notes BEGIN
   UPDATE notes_fts SET title = new.title WHERE rowid = new.id;
 END;
+
+-- 供 LLM 檢索的文字塊。AUTOINCREMENT：id 不重複使用，背景 embedding 回來時不會寫到新的同號 chunk。
+-- 向量表（vec_chunks、vec_notes）在第一次拿到 embedding 時才建立（維度取決於模型），見 vectors.ts。
+CREATE TABLE chunks (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  note_id  INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  seq      INTEGER NOT NULL,
+  line     INTEGER NOT NULL,
+  heading  TEXT NOT NULL,
+  text     TEXT NOT NULL,
+  embedded INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX chunks_note ON chunks(note_id, seq);
+CREATE INDEX chunks_pending ON chunks(embedded) WHERE embedded = 0;
+
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
 /** 開啟（必要時建立/重建）資料庫。file 為 ':memory:' 時用於測試。 */
@@ -60,11 +77,21 @@ export function openDb(file: string): DB {
   }
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  loadVectorExtension(db)
   if ((db.pragma('user_version', { simple: true }) as number) === 0) {
     db.exec(SCHEMA)
     db.pragma(`user_version = ${SCHEMA_VERSION}`)
   }
   return db
+}
+
+/** 載入 sqlite-vec；失敗時（不支援的平台）向量功能停用，其餘照常 */
+function loadVectorExtension(db: DB): void {
+  try {
+    sqliteVec.load(db)
+  } catch (e) {
+    console.warn('sqlite-vec is unavailable, vector search is disabled:', e)
+  }
 }
 
 interface NoteRow {

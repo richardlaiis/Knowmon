@@ -11,6 +11,7 @@ export interface GraphColors {
   session: string
   day: string
   sequence: string
+  semantic: string
 }
 
 export function readColors(el: Element = document.documentElement): GraphColors {
@@ -25,7 +26,8 @@ export function readColors(el: Element = document.documentElement): GraphColors 
     bg: v('--bg', '#fff'),
     session: v('--edge-session', '#d97706'),
     day: v('--edge-day', '#0f8a6a'),
-    sequence: v('--edge-sequence', '#2563eb')
+    sequence: v('--edge-sequence', '#2563eb'),
+    semantic: v('--edge-semantic', '#b0306a')
   }
 }
 
@@ -80,6 +82,11 @@ export function graphStyle(c: GraphColors, labels: boolean): StylesheetJson {
       }
     },
     { selector: 'edge[type = "sequence"]', style: { 'line-color': c.sequence, opacity: 0.5 } },
+    // semantic 的權重是相似度（0–1），不套用 wikilink 次數的粗細
+    {
+      selector: 'edge[type = "semantic"]',
+      style: { 'line-color': c.semantic, width: 1.5, opacity: 0.45 }
+    },
     { selector: 'node.current', style: { 'background-color': c.accent, 'font-weight': 'bold' } },
     { selector: '.faded', style: { opacity: 0.12 } },
     { selector: 'node.highlight', style: { 'background-color': c.accent, label: 'data(title)' } },

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_SEMANTIC_SETTINGS } from '../../shared/llm'
 import { DEFAULT_TIME_SETTINGS } from '../../shared/time'
 import type { LinkType } from '../../shared/types'
 import { Vault } from '.'
@@ -25,10 +26,9 @@ async function open(): Promise<Vault> {
   return vault
 }
 
-function edges(v: Vault, type: LinkType): string[] {
-  return v
-    .graph()
-    .edges.filter((e) => e.type === type)
+async function edges(v: Vault, type: LinkType): Promise<string[]> {
+  return (await v.graph()).edges
+    .filter((e) => e.type === type)
     .map((e) => `${e.source} – ${e.target}`)
 }
 
@@ -50,44 +50,45 @@ afterEach(async () => {
 describe('時間邊', () => {
   it('同一段時間編輯的筆記產生 same_session 邊，隔太久的不會', async () => {
     const v = await open()
-    expect(edges(v, 'same_session')).toEqual([])
+    expect(await edges(v, 'same_session')).toEqual([])
     await v.write('a.md', 'a 1')
     clock += 10 * MIN
     await v.write('b.md', 'b 1')
-    expect(edges(v, 'same_session')).toEqual(['a.md – b.md'])
+    expect(await edges(v, 'same_session')).toEqual(['a.md – b.md'])
     clock += 120 * MIN
     await v.write('日記/2026-10-04.md', '隔了兩小時')
-    expect(edges(v, 'same_session')).toEqual(['a.md – b.md'])
+    expect(await edges(v, 'same_session')).toEqual(['a.md – b.md'])
   })
 
   it('event_date 改變時 same_day 與 sequence 跟著更新', async () => {
     const v = await open()
-    expect(edges(v, 'sequence')).toEqual(['日記/2026-10-04.md – 日記/2026-10-05.md'])
-    expect(edges(v, 'same_day')).toEqual([])
+    expect(await edges(v, 'sequence')).toEqual(['日記/2026-10-04.md – 日記/2026-10-05.md'])
+    expect(await edges(v, 'same_day')).toEqual([])
     await v.write('a.md', '---\ndate: 2026-10-05\n---\n')
-    expect(edges(v, 'same_day')).toEqual(['a.md – 日記/2026-10-05.md'])
+    expect(await edges(v, 'same_day')).toEqual(['a.md – 日記/2026-10-05.md'])
     await v.rename('a.md', '日記/a.md')
-    expect(edges(v, 'sequence')).toEqual([
+    expect(await edges(v, 'sequence')).toEqual([
       '日記/2026-10-04.md – 日記/2026-10-05.md',
       '日記/2026-10-05.md – 日記/a.md'
     ])
     await v.remove('日記/2026-10-05.md')
-    expect(edges(v, 'sequence')).toEqual(['日記/2026-10-04.md – 日記/a.md'])
+    expect(await edges(v, 'sequence')).toEqual(['日記/2026-10-04.md – 日記/a.md'])
   })
 
   it('外部修改（reconcile）也會更新時間邊', async () => {
     const v = await open()
     writeExternal('c.md', '---\ndate: 2026-10-04\n---\n')
     await v.reconcile()
-    expect(edges(v, 'same_day')).toEqual(['c.md – 日記/2026-10-04.md'])
+    expect(await edges(v, 'same_day')).toEqual(['c.md – 日記/2026-10-04.md'])
   })
 
   it('activeDays 包含建立與編輯的日期', async () => {
     const v = await open()
     clock += 24 * 60 * MIN
     await v.write('a.md', '隔天改')
-    const a = v.graph().nodes.find((n) => n.path === 'a.md')!
-    expect(a.activeDays.at(-1)).toBe('2026-10-09')
+    const a = (await v.graph()).nodes.find((n) => n.path === 'a.md')!
+    // create 事件用檔案的 birthtime（真實時間），所以只檢查包含編輯那天
+    expect(a.activeDays).toContain('2026-10-09')
     expect(v.activity(clock, clock + 1)).toEqual([
       { path: 'a.md', title: 'a', ts: clock, kind: 'edit' }
     ])
@@ -111,9 +112,9 @@ describe('時間參數', () => {
 
   it('修改參數後時間邊立即重算', async () => {
     const v = await open()
-    expect(edges(v, 'same_day')).toEqual([])
+    expect(await edges(v, 'same_day')).toEqual([])
     await v.setTimeSettings({ sameDayWindowDays: 1 })
-    expect(edges(v, 'same_day')).toEqual(['日記/2026-10-04.md – 日記/2026-10-05.md'])
+    expect(await edges(v, 'same_day')).toEqual(['日記/2026-10-04.md – 日記/2026-10-05.md'])
   })
 
   it('settings.json 損毀時用預設值，寫入時保留其他欄位', async () => {
@@ -130,6 +131,24 @@ describe('時間參數', () => {
   })
 })
 
+describe('semantic 參數', () => {
+  it('與時間參數存在同一個檔案的不同欄位，重開 vault 仍保留', async () => {
+    let v = await open()
+    expect(v.getSemanticSettings()).toEqual(DEFAULT_SEMANTIC_SETTINGS)
+    await v.setTimeSettings({ sessionGapMinutes: 60 })
+    expect(
+      await v.setSemanticSettings({ semanticThreshold: 0.123, semanticMaxPerNote: 8 })
+    ).toEqual({ semanticThreshold: 0.3, semanticMaxPerNote: 8 })
+    const file = JSON.parse(fs.readFileSync(settingsFile(), 'utf8'))
+    expect(file.time.sessionGapMinutes).toBe(60)
+    expect(file.semantic.semanticMaxPerNote).toBe(8)
+    await v.close()
+    v = await open()
+    expect(v.getSemanticSettings().semanticMaxPerNote).toBe(8)
+    expect(v.getTimeSettings().sessionGapMinutes).toBe(60)
+  })
+})
+
 describe('刪掉資料庫後重建', () => {
   it('時間邊與 activeDays 和重建前一致', async () => {
     let v = await open()
@@ -137,7 +156,7 @@ describe('刪掉資料庫後重建', () => {
     clock += 5 * MIN
     await v.write('b.md', 'b 2')
     await v.setTimeSettings({ sameDayWindowDays: 1 })
-    const before = v.graph()
+    const before = await v.graph()
     expect(before.edges.some((e) => e.type === 'same_session')).toBe(true)
     await v.close()
     vault = null
@@ -145,6 +164,6 @@ describe('刪掉資料庫後重建', () => {
       if (f.startsWith('index.db')) fs.rmSync(path.join(root, '.knowmon', f))
     }
     v = await open()
-    expect(v.graph()).toEqual(before)
+    expect(await v.graph()).toEqual(before)
   })
 })

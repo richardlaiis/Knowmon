@@ -93,7 +93,10 @@ export function GlobalGraph(props: GlobalGraphProps): React.JSX.Element {
         >
           Re-layout
         </button>
-        <button onClick={props.onOpenSettings} title="Time settings (session length…)">
+        <button
+          onClick={props.onOpenSettings}
+          title="Time & link settings (session length, semantic links…)"
+        >
           Settings
         </button>
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { basicSetup } from 'codemirror'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import type { NoteSummary } from '../../shared/types'
 import { livePreview, markdownSupport } from './livePreview'
@@ -20,6 +20,10 @@ export interface EditorProps {
   onOpenLink: (target: string, newTab: boolean) => void
   /** 所在分頁是否為目前的分頁；切回來時取得焦點（隱藏的分頁不搶焦點） */
   active?: boolean
+  /** 選取範圍改變（總結選取文字用），沒有選取時為空字串 */
+  onSelectionChange?: (text: string) => void
+  /** 捲到這一行並把游標放在行首；n 改變時再跳一次（同一行也會跳） */
+  reveal?: { line: number; n: number } | null
 }
 
 const previewMode = new Compartment()
@@ -33,12 +37,14 @@ export function Editor({
   livePreview: preview,
   getNotes,
   onOpenLink,
-  active = true
+  active = true,
+  onSelectionChange,
+  reveal = null
 }: EditorProps): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   // 用 ref 存 callback，讓 CodeMirror extension 只建立一次
-  const callbacks = useRef({ onChange, onSave, getNotes, onOpenLink })
+  const callbacks = useRef({ onChange, onSave, getNotes, onOpenLink, onSelectionChange })
   const previewRef = useRef(preview)
   const activeRef = useRef(active)
 
@@ -47,7 +53,7 @@ export function Editor({
     if (active) view.current?.focus()
   }, [active])
   useEffect(() => {
-    callbacks.current = { onChange, onSave, getNotes, onOpenLink }
+    callbacks.current = { onChange, onSave, getNotes, onOpenLink, onSelectionChange }
   })
 
   // 切換即時渲染／原始碼模式，不重建編輯器（保留游標與 undo 歷史）
@@ -92,6 +98,10 @@ export function Editor({
           EditorView.lineWrapping,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) callbacks.current.onChange(u.state.doc.toString())
+            if (u.selectionSet || u.docChanged) {
+              const { from, to } = u.state.selection.main
+              callbacks.current.onSelectionChange?.(u.state.sliceDoc(from, to))
+            }
           })
         ]
       })
@@ -100,6 +110,24 @@ export function Editor({
     // doc 只在 docKey 改變時才套用，打字造成的 doc 變化不重設
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey])
+
+  // 跳到指定的行（搜尋結果）；在載入內容的 effect 之後執行，所以第一次開啟筆記時也有效
+  // 外部修改重新載入時（docKey 改變）不再跳回同一個位置
+  const revealLine = reveal?.line
+  const revealN = reveal?.n
+  const revealed = useRef<number | null>(null)
+  useEffect(() => {
+    const v = view.current
+    if (!v || revealLine === undefined || revealN === undefined) return
+    if (revealed.current === revealN) return
+    revealed.current = revealN
+    const line = v.state.doc.line(Math.min(Math.max(1, revealLine), v.state.doc.lines))
+    v.dispatch({
+      selection: EditorSelection.cursor(line.from),
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' })
+    })
+    if (activeRef.current) v.focus()
+  }, [docKey, revealLine, revealN])
 
   return <div className="editor" ref={host} />
 }

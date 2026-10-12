@@ -1,18 +1,21 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IPC } from '../shared/channels'
-import type { KnowmonAPI, VaultChange } from '../shared/types'
+import type { KnowmonAPI, LlmStatus, SummaryChunk, VaultChange } from '../shared/types'
+
+/** 訂閱 main 推送的事件，回傳取消訂閱的函式 */
+function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
+  const listener = (_e: Electron.IpcRendererEvent, payload: T): void => cb(payload)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
 
 const api: KnowmonAPI = {
   vault: {
     pick: () => ipcRenderer.invoke(IPC.vaultPick),
     getCurrent: () => ipcRenderer.invoke(IPC.vaultGetCurrent),
     tree: () => ipcRenderer.invoke(IPC.vaultTree),
-    onChange: (cb) => {
-      const listener = (_e: Electron.IpcRendererEvent, c: VaultChange): void => cb(c)
-      ipcRenderer.on(IPC.vaultChanged, listener)
-      return () => ipcRenderer.removeListener(IPC.vaultChanged, listener)
-    }
+    onChange: (cb) => subscribe<VaultChange>(IPC.vaultChanged, cb)
   },
   notes: {
     read: (path) => ipcRenderer.invoke(IPC.notesRead, path),
@@ -37,7 +40,19 @@ const api: KnowmonAPI = {
   },
   settings: {
     getTime: () => ipcRenderer.invoke(IPC.settingsGetTime),
-    setTime: (s) => ipcRenderer.invoke(IPC.settingsSetTime, s)
+    setTime: (s) => ipcRenderer.invoke(IPC.settingsSetTime, s),
+    getSemantic: () => ipcRenderer.invoke(IPC.settingsGetSemantic),
+    setSemantic: (s) => ipcRenderer.invoke(IPC.settingsSetSemantic, s)
+  },
+  llm: {
+    status: () => ipcRenderer.invoke(IPC.llmStatus),
+    retry: () => ipcRenderer.invoke(IPC.llmRetry),
+    onStatus: (cb) => subscribe<LlmStatus>(IPC.llmStatusChanged, cb),
+    setSettings: (s) => ipcRenderer.invoke(IPC.llmSetSettings, s),
+    retrieve: (q, opts) => ipcRenderer.invoke(IPC.llmRetrieve, q, opts),
+    summarize: (req) => ipcRenderer.invoke(IPC.llmSummarize, req),
+    cancel: (id) => ipcRenderer.invoke(IPC.llmCancel, id),
+    onSummary: (cb) => subscribe<SummaryChunk>(IPC.llmSummary, cb)
   }
 }
 

@@ -1,7 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DEFAULT_SEMANTIC_SETTINGS } from '../../shared/llm'
 import { resolveLink } from '../../shared/links'
 import { DEFAULT_TIME_SETTINGS } from '../../shared/time'
-import type { NoteSummary, TimeSettings, TreeNode, VaultChange } from '../../shared/types'
+import type {
+  LlmSettings,
+  NoteSummary,
+  SemanticSettings,
+  TimeSettings,
+  TreeNode,
+  VaultChange
+} from '../../shared/types'
+import {
+  AiPanel,
+  LlmSettingsDialog,
+  applyChunk,
+  describeStatus,
+  failSummary,
+  loadSummaryLanguage,
+  saveSummaryLanguage,
+  startSummary,
+  stopSummary,
+  useLlmStatus,
+  withId,
+  type SummaryState
+} from '../chat'
 import { createAutosave } from '../editor'
 import { GlobalGraph, LocalGraph, type Point } from '../graph'
 import { TimelineView } from '../timeline'
@@ -53,9 +75,12 @@ function saveFlag(key: string, on: boolean): void {
   }
 }
 
-function loadSideTab(): 'backlinks' | 'local' {
+type SideTab = 'backlinks' | 'local' | 'ai'
+
+function loadSideTab(): SideTab {
   try {
-    return localStorage.getItem(SIDE_TAB_KEY) === 'local' ? 'local' : 'backlinks'
+    const v = localStorage.getItem(SIDE_TAB_KEY)
+    return v === 'local' || v === 'ai' ? v : 'backlinks'
   } catch {
     return 'backlinks'
   }
@@ -104,7 +129,7 @@ function App(): React.JSX.Element {
     recent: string[]
     newTab: boolean
   } | null>(null)
-  const [sideTab, setSideTab] = useState<'backlinks' | 'local'>(() => loadSideTab())
+  const [sideTab, setSideTab] = useState<SideTab>(() => loadSideTab())
   // 圖譜節點座標快取，換 vault 時重新開始
   const graphPositions = useMemo(
     () => ({ global: new Map<string, Point>(), local: new Map<string, Point>(), vault }),
@@ -112,7 +137,17 @@ function App(): React.JSX.Element {
   )
   /** 這個 vault 的時間參數（時間軸的 session 切分用；時間邊由 main 計算） */
   const [timeSettings, setTimeSettings] = useState<TimeSettings>(DEFAULT_TIME_SETTINGS)
+  const [semanticSettings, setSemanticSettings] =
+    useState<SemanticSettings>(DEFAULT_SEMANTIC_SETTINGS)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [llmSettingsOpen, setLlmSettingsOpen] = useState(false)
+  const llmStatus = useLlmStatus(vault)
+  const [summary, setSummary] = useState<SummaryState | null>(null)
+  const [summaryLanguage, setSummaryLanguage] = useState(loadSummaryLanguage)
+  /** 各筆記編輯器目前選取的文字（總結選取文字用） */
+  const selections = useRef(new Map<string, string>())
+  /** 搜尋結果要捲到的行；n 每次遞增，同一行也會再跳 */
+  const [jump, setJump] = useState<{ path: string; line: number; n: number } | null>(null)
   const [theme, setTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
   )
@@ -165,14 +200,28 @@ function App(): React.JSX.Element {
   useEffect(() => {
     if (!vault) return
     let stale = false
-    window.api.settings
-      .getTime()
-      .then((t) => !stale && setTimeSettings(t))
+    Promise.all([window.api.settings.getTime(), window.api.settings.getSemantic()])
+      .then(([t, s]) => {
+        if (stale) return
+        setTimeSettings(t)
+        setSemanticSettings(s)
+      })
       .catch((e) => setMessage(errorMessage(e)))
     return () => {
       stale = true
     }
   }, [vault])
+
+  // 背景 embedding 告一段落時，semantic 邊與混合檢索的結果可能改變
+  const embedBusy = llmStatus?.busy ?? false
+  const wasBusy = useRef(false)
+  useEffect(() => {
+    if (wasBusy.current && !embedBusy) setIndexVersion((v) => v + 1)
+    wasBusy.current = embedBusy
+  }, [embedBusy])
+
+  // 總結的串流片段
+  useEffect(() => window.api.llm.onSummary((c) => setSummary((s) => s && applyChunk(s, c))), [])
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
@@ -200,14 +249,14 @@ function App(): React.JSX.Element {
       .catch((e) => setMessage(errorMessage(e)))
   }, [])
 
-  const chooseSideTab = (tab: 'backlinks' | 'local'): void => {
+  const chooseSideTab = useCallback((tab: SideTab): void => {
     setSideTab(tab)
     try {
       localStorage.setItem(SIDE_TAB_KEY, tab)
     } catch {
       // 無法儲存偏好時仍可切換
     }
-  }
+  }, [])
 
   const openSearch = useCallback(() => {
     updateLayout({ leftOpen: true })
@@ -325,15 +374,64 @@ function App(): React.JSX.Element {
     [autosave]
   )
 
+  /** 搜尋結果：開啟筆記並捲到命中的段落 */
+  const openAt = async (path: string, newTab: boolean, line?: number): Promise<void> => {
+    await openNote(path, newTab)
+    if (line) setJump((j) => ({ path, line, n: (j?.n ?? 0) + 1 }))
+  }
+
+  /** 總結目前的筆記；編輯器有選取文字時只總結選取的部分 */
+  const summarize = useCallback(async (): Promise<void> => {
+    const path = currentNote
+    if (!path) return
+    const selection = (selections.current.get(path) ?? '').trim()
+    setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
+    chooseSideTab('ai')
+    setSummary((s) => {
+      if (s?.id && s.status === 'running') void window.api.llm.cancel(s.id)
+      return startSummary(path, selection.length > 0)
+    })
+    try {
+      // main 從索引讀內文，先寫出未儲存的內容
+      await autosave.flush()
+      const id = await window.api.llm.summarize({
+        path,
+        ...(selection ? { selection } : {}),
+        language: summaryLanguage
+      })
+      setSummary((s) => (s && s.id === null && s.path === path ? withId(s, id) : s))
+    } catch (e) {
+      setSummary((s) => s && failSummary(s, errorMessage(e)))
+    }
+  }, [currentNote, autosave, chooseSideTab, summaryLanguage])
+
+  const stopSummarizing = (): void => {
+    if (summary?.id) void window.api.llm.cancel(summary.id)
+    setSummary((s) => s && stopSummary(s))
+  }
+
+  const saveLlmSettings = async (next: LlmSettings): Promise<void> => {
+    try {
+      await window.api.llm.setSettings(next)
+      setLlmSettingsOpen(false)
+    } catch (e) {
+      showError(e)
+    }
+  }
+
   const openGraph = useCallback(() => setTabs((s) => T.openView(s, 'graph')), [])
   const openTimeline = useCallback(() => setTabs((s) => T.openView(s, 'timeline')), [])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
 
-  const saveTimeSettings = async (next: TimeSettings): Promise<void> => {
+  const saveTimeSettings = async (
+    next: TimeSettings,
+    semantic: SemanticSettings
+  ): Promise<void> => {
     try {
       setTimeSettings(await window.api.settings.setTime(next))
+      setSemanticSettings(await window.api.settings.setSemantic(semantic))
       setSettingsOpen(false)
-      // 時間邊已重算，讓圖譜重新取得資料
+      // 時間邊與 semantic 邊會重算，讓圖譜重新取得資料
       setIndexVersion((v) => v + 1)
     } catch (e) {
       showError(e)
@@ -442,6 +540,7 @@ function App(): React.JSX.Element {
       else if (e.altKey) return
       else if (e.shiftKey && key === 'f') openSearch()
       else if (e.shiftKey && key === 't') openTimeline()
+      else if (e.shiftKey && key === 's') void summarize()
       else if (e.shiftKey) return
       else if (key === 'e') togglePreview()
       else if (key === 'o') openSwitcher(false)
@@ -468,7 +567,8 @@ function App(): React.JSX.Element {
     openTimeline,
     closeTab,
     toggleLeft,
-    toggleRight
+    toggleRight,
+    summarize
   ])
 
   if (!ready) return <div className="empty" />
@@ -542,7 +642,7 @@ function App(): React.JSX.Element {
                 focusKey={searchFocus}
                 version={indexVersion}
                 selected={currentNote}
-                onOpen={(p, newTab) => void openNote(p, newTab)}
+                onOpen={(p, newTab, line) => void openAt(p, newTab, line)}
               />
             )}
             {sidebarTab === 'files' && tree && (
@@ -559,6 +659,14 @@ function App(): React.JSX.Element {
                 onRemove={removeNode}
               />
             )}
+            <LlmBadge
+              status={describeStatus(llmStatus)}
+              detail={llmStatus?.error ?? null}
+              onClick={() => {
+                setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
+                chooseSideTab('ai')
+              }}
+            />
           </aside>
           <Splitter
             side="left"
@@ -625,6 +733,9 @@ function App(): React.JSX.Element {
               onTogglePreview={togglePreview}
               onOpenLink={(target, newTab) => void openLink(target, newTab)}
               onError={showError}
+              onSummarize={() => void summarize()}
+              onSelectionChange={(p, text) => selections.current.set(p, text)}
+              reveal={jump && jump.path === t.path ? jump : null}
             />
           ) : null
         )}
@@ -633,7 +744,7 @@ function App(): React.JSX.Element {
             <p>Select a note on the left, or right-click to create one.</p>
             <p className="hint">
               Ctrl+O to jump to a note · Ctrl+Shift+F to search · Ctrl+G for the graph ·
-              Ctrl+Shift+T for the timeline
+              Ctrl+Shift+T for the timeline · Ctrl+Shift+S to summarize
             </p>
           </div>
         )}
@@ -660,8 +771,31 @@ function App(): React.JSX.Element {
               >
                 Local graph
               </button>
+              <button
+                className={sideTab === 'ai' ? 'active' : ''}
+                onClick={() => chooseSideTab('ai')}
+                title="Summaries and AI status (Ctrl+Shift+S summarizes)"
+              >
+                AI
+              </button>
             </nav>
-            {!currentNote ? (
+            {sideTab === 'ai' ? (
+              <AiPanel
+                status={llmStatus}
+                note={currentNote}
+                summary={summary}
+                language={summaryLanguage}
+                onLanguageChange={(l) => {
+                  setSummaryLanguage(l)
+                  saveSummaryLanguage(l)
+                }}
+                onSummarize={() => void summarize()}
+                onStop={stopSummarizing}
+                onRetry={() => void window.api.llm.retry().catch(showError)}
+                onOpenSettings={() => setLlmSettingsOpen(true)}
+                onOpenLink={(target, newTab) => void openLink(target, newTab)}
+              />
+            ) : !currentNote ? (
               <p className="panel-note">No note is open in this tab.</p>
             ) : sideTab === 'backlinks' ? (
               <BacklinksPanel
@@ -685,8 +819,16 @@ function App(): React.JSX.Element {
       {settingsOpen && (
         <TimeSettingsDialog
           value={timeSettings}
+          semantic={semanticSettings}
           onSave={saveTimeSettings}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {llmSettingsOpen && llmStatus && (
+        <LlmSettingsDialog
+          status={llmStatus}
+          onSave={saveLlmSettings}
+          onClose={() => setLlmSettingsOpen(false)}
         />
       )}
       {switcher && (
@@ -731,6 +873,24 @@ function NewFolderIcon(): React.JSX.Element {
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <path d="M12 10v6M9 13h6" />
     </svg>
+  )
+}
+
+/** 側欄底部的 AI 狀態（點擊打開右側的 AI 分頁） */
+function LlmBadge({
+  status,
+  detail,
+  onClick
+}: {
+  status: ReturnType<typeof describeStatus>
+  detail: string | null
+  onClick: () => void
+}): React.JSX.Element {
+  return (
+    <button className="llm-badge" onClick={onClick} title={detail ?? 'Local AI (Ollama)'}>
+      <span className={`status-dot ${status.tone}`} aria-hidden="true" />
+      {status.label}
+    </button>
   )
 }
 
