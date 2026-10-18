@@ -149,7 +149,10 @@ export function createLinkFilter(allowed: readonly string[]): {
         const inner = m[1]
         const target = wikilinkTarget(inner)
         const label = inner.includes('|') ? inner.slice(inner.indexOf('|') + 1) : target || inner
-        out += target && keys.has(linkKey(target)) ? m[0] : label
+        if (!target || !keys.has(linkKey(target))) out += label
+        // 模型把路徑寫成顯示文字（[[標題 | 資料夾/標題.md]]）或寫了多餘的空白：只留標題
+        else if (inner.includes('|') && isPathLabel(label, target)) out += `[[${target}]]`
+        else out += m[0]
         pending = pending.slice(m[0].length)
         continue
       }
@@ -169,6 +172,11 @@ export function createLinkFilter(allowed: readonly string[]): {
       return process(true)
     }
   }
+}
+
+function isPathLabel(label: string, target: string): boolean {
+  const l = label.trim()
+  return /\.md$/i.test(l) || l.includes('/') || linkKey(l) === linkKey(target)
 }
 
 /** 把過長的文字依章節與段落分成每段不超過 max 字 */

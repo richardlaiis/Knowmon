@@ -1,6 +1,7 @@
-// 右側面板的 AI 分頁：Ollama 連線與 embedding 進度，下面切換對話（問答）與目前筆記的總結
+// 右側面板的 AI 分頁：Ollama 連線與 embedding 進度，下面切換對話（問答）、agent 與目前筆記的總結
 import { useState } from 'react'
 import type { LlmStatus, SummaryLanguage } from '../../shared/types'
+import { AgentPanel, type AgentPanelProps } from './AgentPanel'
 import { ChatPanel, type ChatPanelProps } from './ChatPanel'
 import type { AiMode } from './conversation'
 import { describeStatus } from './status'
@@ -12,6 +13,9 @@ export interface AiPanelProps {
   mode: AiMode
   onModeChange: (mode: AiMode) => void
   chat: Omit<ChatPanelProps, 'online'>
+  agent: Omit<AgentPanelProps, 'online'>
+  /** agent 有寫入提案在等待確認（模式按鈕上顯示提醒點） */
+  agentWaiting: boolean
   /** 目前開著的筆記；沒有時只顯示狀態 */
   note: string | null
   summary: SummaryState | null
@@ -26,6 +30,7 @@ export interface AiPanelProps {
 
 const MODES: [AiMode, string, string][] = [
   ['chat', 'Chat', 'Ask questions about your notes (Ctrl+Shift+A)'],
+  ['agent', 'Agent', 'Multi-step tasks: search, organize, create notes, add tags (Ctrl+Shift+G)'],
   ['summary', 'Summary', 'Summarize the current note (Ctrl+Shift+S)']
 ]
 
@@ -81,6 +86,9 @@ export function AiPanel(props: AiPanelProps): React.JSX.Element {
               onClick={() => props.onModeChange(value)}
             >
               {label}
+              {value === 'agent' && props.agentWaiting && (
+                <span className="attention-dot" aria-label="waiting for confirmation" />
+              )}
             </button>
           ))}
         </div>
@@ -88,6 +96,8 @@ export function AiPanel(props: AiPanelProps): React.JSX.Element {
 
       {props.mode === 'chat' ? (
         <ChatPanel {...props.chat} online={!!status?.online} />
+      ) : props.mode === 'agent' ? (
+        <AgentPanel {...props.agent} online={!!status?.online} />
       ) : !note ? (
         <p className="panel-note">Open a note to summarize it.</p>
       ) : (

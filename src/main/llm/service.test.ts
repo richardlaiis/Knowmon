@@ -4,8 +4,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_LLM_SETTINGS } from '../../shared/llm'
-import type { AnswerChunk, LlmSettings, LlmStatus, SummaryChunk } from '../../shared/types'
+import type {
+  AgentChunk,
+  AnswerChunk,
+  LlmSettings,
+  LlmStatus,
+  SummaryChunk
+} from '../../shared/types'
 import { Vault } from '../vault'
+import { OllamaError } from './ollama'
 import { LlmService } from './service'
 import { fakeOllama, type FakeOllama } from './test-utils'
 
@@ -17,6 +24,7 @@ let saved: LlmSettings | null
 let statuses: LlmStatus[]
 let chunks: SummaryChunk[]
 let answers: AnswerChunk[]
+let agentChunks: AgentChunk[]
 
 function write(rel: string, content: string): void {
   fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
@@ -31,6 +39,7 @@ async function start(): Promise<{ v: Vault; s: LlmService }> {
     onStatus: (s) => statuses.push(s),
     onSummary: (c) => chunks.push(c),
     onAnswer: (c) => answers.push(c),
+    onAgent: (c) => agentChunks.push(c),
     createClient: () => ollama,
     retryMs: 20,
     now: () => new Date(2026, 9, 14, 12).getTime()
@@ -62,6 +71,7 @@ beforeEach(() => {
   statuses = []
   chunks = []
   answers = []
+  agentChunks = []
   write('跑步.md', '# 跑步\n\n早上跑步五公里。')
   write('慢跑.md', '早上慢跑五公里。')
   write('料理.md', '晚餐煮了番茄炒蛋。')
@@ -298,6 +308,94 @@ describe('LlmService', () => {
       expect(mine(offline)[0].sources?.[0].path).toBe('跑步.md')
 
       expect(() => s.ask({ question: '  ' })).toThrow('empty')
+    })
+  })
+
+  describe('agent', () => {
+    const mine = (id: string): AgentChunk[] => agentChunks.filter((c) => c.id === id)
+    const finished = (id: string) => (): boolean => mine(id).some((c) => c.done)
+    const waiting = (id: string) => (): boolean =>
+      mine(id).some((c) => c.step?.status === 'confirm')
+    const create = {
+      content: '',
+      toolCalls: [{ name: 'create_note', arguments: { path: '整理.md', content: '見 [[跑步]]' } }]
+    }
+
+    it('執行工具、推送步驟與文字，結束時送出 done', async () => {
+      ollama.toolReplies = [
+        { content: '', toolCalls: [{ name: 'search_notes', arguments: { query: '跑步' } }] },
+        { content: '[[跑步]] 是早上跑五公里。', toolCalls: [] }
+      ]
+      const { s } = await start()
+      await until(idle(s))
+      const id = s.agent({ task: '我跑了多遠？' })
+      await until(finished(id))
+      const steps = mine(id).flatMap((c) => (c.step ? [c.step] : []))
+      expect(steps.map((x) => x.status)).toEqual(['running', 'done'])
+      expect(steps[1].notes.map((n) => n.path)).toContain('跑步.md')
+      expect(
+        mine(id)
+          .map((c) => c.delta)
+          .join('')
+      ).toBe('[[跑步]] 是早上跑五公里。')
+      expect(mine(id).at(-1)).toMatchObject({ done: true })
+      expect(mine(id).at(-1)?.error).toBeUndefined()
+      // 系統提示詞帶上今天的日期（now 注入）
+      expect(ollama.chatCalls[0][0].content).toContain('2026-10-14')
+    })
+
+    it('寫入要等使用者確認：Apply 後才建立筆記', async () => {
+      ollama.toolReplies = [create, { content: '已建立。', toolCalls: [] }]
+      const { s } = await start()
+      const id = s.agent({ task: '建立整理筆記' })
+      await until(waiting(id))
+      expect(fs.existsSync(path.join(root, '整理.md'))).toBe(false)
+      s.confirm(id, 0, { approved: true })
+      await until(finished(id))
+      expect(fs.readFileSync(path.join(root, '整理.md'), 'utf8')).toBe('見 [[跑步]]')
+      expect(
+        mine(id)
+          .filter((c) => c.step)
+          .at(-1)?.step?.status
+      ).toBe('applied')
+    })
+
+    it('Reject 與停止都不寫入；重複或過期的確認被忽略', async () => {
+      ollama.toolReplies = [create, { content: '好的。', toolCalls: [] }]
+      const { s } = await start()
+      const rejected = s.agent({ task: '建立' })
+      await until(waiting(rejected))
+      s.confirm(rejected, 0, { approved: false })
+      s.confirm(rejected, 0, { approved: true })
+      await until(finished(rejected))
+      expect(fs.existsSync(path.join(root, '整理.md'))).toBe(false)
+
+      ollama.toolsOffered = []
+      const stopped = s.agent({ task: '建立' })
+      await until(waiting(stopped))
+      s.cancel(stopped)
+      await until(finished(stopped))
+      s.confirm(stopped, 0, { approved: true })
+      expect(mine(stopped).at(-1)?.error).toBeUndefined()
+      expect(fs.existsSync(path.join(root, '整理.md'))).toBe(false)
+    })
+
+    it('離線、模型不支援工具與空白任務', async () => {
+      const { s } = await start()
+      ollama.online = false
+      const offline = s.agent({ task: '跑步' })
+      await until(finished(offline))
+      expect(mine(offline).at(-1)?.error).toContain('ollama serve')
+
+      ollama.online = true
+      ollama.chatTools = async () => {
+        throw new OllamaError('Ollama error 400: qwen2:0.5b does not support tools', 'http')
+      }
+      const noTools = s.agent({ task: '跑步' })
+      await until(finished(noTools))
+      expect(mine(noTools).at(-1)?.error).toContain('does not support tool calling')
+
+      expect(() => s.agent({ task: ' ' })).toThrow('empty')
     })
   })
 

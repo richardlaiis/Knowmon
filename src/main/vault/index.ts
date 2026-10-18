@@ -240,20 +240,48 @@ export class Vault {
     })
   }
 
-  create(rel: string): Promise<void> {
+  /** 建立新筆記；已存在時丟出錯誤（不覆蓋）。content 不是空的時同時記一筆 edit */
+  create(rel: string, content = ''): Promise<void> {
     return this.exclusive(async () => {
       rel = normalizeRel(rel)
       if (!isNotePath(rel)) throw new Error(`Notes must be .md files: ${rel}`)
       const abs = resolveInVault(this.root, rel)
       await fs.mkdir(path.dirname(abs), { recursive: true })
-      await fs.writeFile(abs, '', { flag: 'wx' }).catch((e) => {
+      await fs.writeFile(abs, content, { flag: 'wx' }).catch((e) => {
         if (e.code === 'EEXIST') throw new Error(`A note with this name already exists: ${rel}`)
         throw e
       })
-      const { id } = await this.indexFile(rel, '')
+      const { id } = await this.indexFile(rel, content)
       this.relink()
-      this.record(id, rel, 'create', this.now())
+      const ts = this.now()
+      this.record(id, rel, 'create', ts)
+      if (content) this.record(id, rel, 'edit', ts)
       this.emit({ type: 'add', path: rel })
+    })
+  }
+
+  /** 讀取筆記內容，不記 open 事件（agent 工具用：不是使用者打開的） */
+  async peek(rel: string): Promise<string> {
+    return fs.readFile(resolveInVault(this.root, normalizeRel(rel)), 'utf8')
+  }
+
+  /**
+   * 讀取目前的內容、套用 f 後寫回（在佇列中執行，讀寫之間不會插入其他操作）。
+   * 內容有改變時記 edit 並通知 renderer（開著這篇的分頁會重新載入），回傳新的內容。
+   */
+  update(rel: string, f: (content: string) => string): Promise<string> {
+    return this.exclusive(async () => {
+      rel = normalizeRel(rel)
+      if (!isNotePath(rel)) throw new Error(`Only .md files can be written: ${rel}`)
+      const abs = resolveInVault(this.root, rel)
+      const before = await fs.readFile(abs, 'utf8')
+      const after = f(before)
+      if (after === before) return before
+      await fs.writeFile(abs, after, 'utf8')
+      const { id } = await this.indexFile(rel, after)
+      this.record(id, rel, 'edit', this.now())
+      this.emit({ type: 'change', path: rel })
+      return after
     })
   }
 

@@ -141,6 +141,13 @@ describe('createLinkFilter', () => {
     expect(run([], ['[[a\nb]] ok'])).toBe('[[a\nb]] ok')
   })
 
+  it('顯示文字是路徑或與目標相同時只留標題', () => {
+    expect(
+      run(['深度工作', '原子習慣'], ['[[深度工作 | 讀書筆記/深度工作.md]]、[[原子習慣|原子習慣]]'])
+    ).toBe('[[深度工作]]、[[原子習慣]]')
+    expect(run(['深度工作'], ['[[深度工作|DW]]'])).toBe('[[深度工作|DW]]')
+  })
+
   it('沒有連結時不暫存，片段立刻輸出', () => {
     const f = createLinkFilter([])
     expect(f.push('- 第一點')).toBe('- 第一點')

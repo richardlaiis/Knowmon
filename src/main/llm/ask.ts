@@ -331,7 +331,7 @@ export function noSourcesMessage(language: SummaryLanguage, range: DateRange | n
 }
 
 /** 歷史訊息：去掉舊的引用編號（對應的是之前的來源），過長的截斷 */
-function historyMessages(history: readonly ChatTurn[]): ChatMessage[] {
+export function historyMessages(history: readonly ChatTurn[]): ChatMessage[] {
   return history
     .filter((t) => (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
     .slice(-HISTORY_MESSAGES)

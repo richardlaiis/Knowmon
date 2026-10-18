@@ -14,8 +14,36 @@ export class OllamaError extends Error {
 }
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  /** assistant 要求的工具呼叫（送回 Ollama 時原樣附上） */
+  tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[]
+  /** role = 'tool' 時：結果屬於哪個工具 */
+  tool_name?: string
+}
+
+/** Ollama 的工具定義（JSON schema） */
+export interface ToolDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: {
+      type: 'object'
+      properties: Record<string, unknown>
+      required?: string[]
+    }
+  }
+}
+
+export interface ToolCall {
+  name: string
+  arguments: Record<string, unknown>
+}
+
+export interface ChatResult {
+  content: string
+  toolCalls: ToolCall[]
 }
 
 export interface ChatOptions {
@@ -23,6 +51,8 @@ export interface ChatOptions {
   /** 串流回來的每個片段 */
   onDelta?: (text: string) => void
   temperature?: number
+  /** context 長度（tokens）；不設時用模型的預設值 */
+  numCtx?: number
 }
 
 export interface OllamaClient {
@@ -32,7 +62,18 @@ export interface OllamaClient {
   embed(model: string, input: string[], signal?: AbortSignal): Promise<number[][]>
   /** 串流對話，回傳完整的回覆 */
   chat(model: string, messages: ChatMessage[], opts?: ChatOptions): Promise<string>
+  /** 帶工具的串流對話：回傳文字與模型要求的工具呼叫 */
+  chatTools(
+    model: string,
+    messages: ChatMessage[],
+    tools: readonly ToolDefinition[],
+    opts?: ChatOptions
+  ): Promise<ChatResult>
 }
+
+/** 模型不支援工具呼叫時 Ollama 回傳的錯誤 */
+export const isNoToolsError = (e: unknown): boolean =>
+  e instanceof OllamaError && e.kind === 'http' && /does not support tools/i.test(e.message)
 
 export const CHECK_TIMEOUT_MS = 2_000
 export const EMBED_TIMEOUT_MS = 60_000
@@ -108,44 +149,89 @@ export function createOllama(baseUrl: string, fetchImpl: Fetch = fetch): OllamaC
     },
 
     async chat(model, messages, opts = {}) {
-      const send = (think: boolean): Promise<Response> =>
-        request(
-          '/api/chat',
-          {
-            model,
-            messages,
-            stream: true,
-            // qwen3 等思考模型不輸出思考過程；不支援 think 的模型改用不帶參數重送
-            ...(think ? { think: false } : {}),
-            ...(opts.temperature === undefined
-              ? {}
-              : { options: { temperature: opts.temperature } })
-          },
-          { signal: opts.signal, model }
-        )
-      let res: Response
-      try {
-        res = await send(true)
-      } catch (e) {
-        if (!(e instanceof OllamaError && e.kind === 'http' && /think/i.test(e.message))) throw e
-        res = await send(false)
-      }
-      let out = ''
-      try {
-        await readNdjson(res.body, (obj) => {
-          const o = obj as { message?: { content?: string }; error?: string }
-          if (o.error) throw new OllamaError(o.error, 'http')
-          const delta = o.message?.content ?? ''
-          if (delta) {
-            out += delta
-            opts.onDelta?.(delta)
-          }
-        })
-      } catch (e) {
-        throw e instanceof OllamaError ? e : toError(e, opts.signal)
-      }
-      return out
+      return (await stream(model, messages, undefined, opts)).content
+    },
+
+    chatTools(model, messages, tools, opts = {}) {
+      return stream(model, messages, tools, opts)
     }
+  }
+
+  async function stream(
+    model: string,
+    messages: ChatMessage[],
+    tools: readonly ToolDefinition[] | undefined,
+    opts: ChatOptions
+  ): Promise<ChatResult> {
+    const options = {
+      ...(opts.temperature === undefined ? {} : { temperature: opts.temperature }),
+      ...(opts.numCtx === undefined ? {} : { num_ctx: opts.numCtx })
+    }
+    const send = (think: boolean): Promise<Response> =>
+      request(
+        '/api/chat',
+        {
+          model,
+          messages,
+          stream: true,
+          ...(tools && tools.length > 0 ? { tools } : {}),
+          // qwen3 等思考模型不輸出思考過程；不支援 think 的模型改用不帶參數重送
+          ...(think ? { think: false } : {}),
+          ...(Object.keys(options).length > 0 ? { options } : {})
+        },
+        { signal: opts.signal, model }
+      )
+    let res: Response
+    try {
+      res = await send(true)
+    } catch (e) {
+      if (!(e instanceof OllamaError && e.kind === 'http' && /think/i.test(e.message))) throw e
+      res = await send(false)
+    }
+    let content = ''
+    const toolCalls: ToolCall[] = []
+    try {
+      await readNdjson(res.body, (obj) => {
+        const o = obj as {
+          message?: { content?: string; tool_calls?: unknown[] }
+          error?: string
+        }
+        if (o.error) throw new OllamaError(o.error, 'http')
+        const delta = o.message?.content ?? ''
+        if (delta) {
+          content += delta
+          opts.onDelta?.(delta)
+        }
+        for (const c of o.message?.tool_calls ?? []) {
+          const call = toToolCall(c)
+          if (call) toolCalls.push(call)
+        }
+      })
+    } catch (e) {
+      throw e instanceof OllamaError ? e : toError(e, opts.signal)
+    }
+    return { content, toolCalls }
+  }
+}
+
+/** Ollama 回傳的工具呼叫；arguments 通常是物件，有些模型給 JSON 字串 */
+function toToolCall(c: unknown): ToolCall | null {
+  const f = (c as { function?: { name?: unknown; arguments?: unknown } })?.function
+  if (!f || typeof f.name !== 'string') return null
+  let args = f.arguments
+  if (typeof args === 'string') {
+    try {
+      args = JSON.parse(args)
+    } catch {
+      args = {}
+    }
+  }
+  return {
+    name: f.name,
+    arguments:
+      args && typeof args === 'object' && !Array.isArray(args)
+        ? (args as Record<string, unknown>)
+        : {}
   }
 }
 

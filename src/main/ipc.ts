@@ -2,6 +2,9 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/channels'
 import type {
+  AgentChunk,
+  AgentDecision,
+  AgentProposal,
   AnswerChunk,
   ChatTurn,
   DateRange,
@@ -21,7 +24,10 @@ export interface IpcContext {
 let current: Vault | null = null
 let llm: LlmService | null = null
 
-function broadcast(channel: string, payload: LlmStatus | SummaryChunk | AnswerChunk): void {
+function broadcast(
+  channel: string,
+  payload: LlmStatus | SummaryChunk | AnswerChunk | AgentChunk
+): void {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, payload)
 }
 
@@ -67,7 +73,8 @@ export function registerIpc(ctx: IpcContext): void {
       saveSettings(ctx.settingsDir, { ...loadSettings(ctx.settingsDir), llm: s }),
     onStatus: (s) => broadcast(IPC.llmStatusChanged, s),
     onSummary: (c) => broadcast(IPC.llmSummary, c),
-    onAnswer: (c) => broadcast(IPC.llmAnswer, c)
+    onAnswer: (c) => broadcast(IPC.llmAnswer, c),
+    onAgent: (c) => broadcast(IPC.llmAgentChunk, c)
   })
 
   ipcMain.handle(IPC.vaultPick, async (event) => {
@@ -144,7 +151,37 @@ export function registerIpc(ctx: IpcContext): void {
           : {})
     })
   })
+  ipcMain.handle(IPC.llmAgent, (_e, req: unknown) => {
+    requireVault()
+    const r = (req && typeof req === 'object' ? req : {}) as Record<string, unknown>
+    return requireLlm().agent({ task: String(r.task ?? ''), history: chatHistory(r.history) })
+  })
+  ipcMain.handle(IPC.llmConfirm, (_e, id: unknown, step: unknown, decision: unknown) =>
+    requireLlm().confirm(String(id ?? ''), Number(step), agentDecision(decision))
+  )
   ipcMain.handle(IPC.llmCancel, (_e, id: unknown) => requireLlm().cancel(String(id ?? '')))
+}
+
+/** renderer 傳來的確認結果；不合法時視為拒絕 */
+function agentDecision(input: unknown): AgentDecision {
+  if (!input || typeof input !== 'object') return { approved: false }
+  const o = input as Record<string, unknown>
+  const edited = agentProposal(o.edited)
+  return { approved: o.approved === true, ...(edited ? { edited } : {}) }
+}
+
+/** 使用者修改後的提案：只取能修改的欄位，其餘由 main 沿用原本的提案 */
+function agentProposal(input: unknown): AgentProposal | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const o = input as Record<string, unknown>
+  if (o.kind === 'create_note' && typeof o.path === 'string' && typeof o.content === 'string') {
+    return { kind: 'create_note', path: o.path, content: o.content, missingLinks: [] }
+  }
+  if (o.kind === 'add_tags' && Array.isArray(o.tags)) {
+    const tags = o.tags.filter((t): t is string => typeof t === 'string')
+    return { kind: 'add_tags', path: '', title: '', tags, before: '', after: '' }
+  }
+  return undefined
 }
 
 const day = (v: unknown): string | undefined =>

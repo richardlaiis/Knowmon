@@ -207,6 +207,59 @@ export interface AnswerChunk {
   cited?: number[]
 }
 
+export type AgentToolName =
+  'search_notes' | 'get_note' | 'get_neighbors' | 'list_notes_in_range' | 'create_note' | 'add_tags'
+
+export interface AgentRequest {
+  task: string
+  /** 之前的任務與最終回答（舊 → 新），只作為脈絡 */
+  history?: ChatTurn[]
+}
+
+/** 寫入工具的提案，等待使用者確認 */
+export type AgentProposal =
+  | { kind: 'create_note'; path: string; content: string; missingLinks: string[] }
+  | {
+      kind: 'add_tags'
+      path: string
+      title: string
+      tags: string[]
+      /** 修改前後的 frontmatter（沒有 frontmatter 時 before 為空字串） */
+      before: string
+      after: string
+    }
+
+export interface AgentStep {
+  /** 第幾步（0-based），confirm 時用 */
+  index: number
+  tool: AgentToolName
+  args: Record<string, unknown>
+  status: 'running' | 'done' | 'error' | 'confirm' | 'applied' | 'rejected'
+  /** 給使用者看的一行說明 */
+  label: string
+  /** 結果中的筆記（可點擊） */
+  notes: { path: string; title: string }[]
+  error?: string
+  /** status = 'confirm' 時帶上；applied / rejected 時保留最後的版本 */
+  proposal?: AgentProposal
+}
+
+export interface AgentChunk {
+  id: string
+  /** 模型輸出的文字（工具呼叫之間的說明，或最終回答） */
+  delta: string
+  done: boolean
+  error?: string
+  /** 新增或更新的步驟（同 index 取代） */
+  step?: AgentStep
+}
+
+export interface AgentDecision {
+  approved: boolean
+  /** 使用者修改後的提案（只能改 create_note 的 path / content、add_tags 的 tags） */
+  edited?: AgentProposal
+}
+
 export interface TreeNode {
   name: string
   path: string
@@ -270,5 +323,10 @@ export interface KnowmonAPI {
     /** 開始串流回答，回傳 request id；片段經 onAnswer 推送。取消沿用 cancel(id) */
     ask(req: AskRequest): Promise<string>
     onAnswer(cb: (c: AnswerChunk) => void): () => void
+    /** 開始執行 agent 任務，回傳 request id；過程經 onAgent 推送。取消沿用 cancel(id) */
+    agent(req: AgentRequest): Promise<string>
+    onAgent(cb: (c: AgentChunk) => void): () => void
+    /** 回覆寫入提案（AgentStep.status = 'confirm'） */
+    confirm(id: string, step: number, decision: AgentDecision): Promise<void>
   }
 }

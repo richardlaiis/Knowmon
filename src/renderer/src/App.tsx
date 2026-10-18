@@ -3,6 +3,8 @@ import { DEFAULT_SEMANTIC_SETTINGS } from '../../shared/llm'
 import { resolveLink } from '../../shared/links'
 import { DEFAULT_TIME_SETTINGS } from '../../shared/time'
 import type {
+  AgentDecision,
+  AgentStep,
   AskSource,
   DateRange,
   LlmSettings,
@@ -28,6 +30,17 @@ import {
   withAnswerId,
   type AiMode,
   type Conversation,
+  agentHistory,
+  applyAgentChunk,
+  emptySession,
+  failTask,
+  isTaskRunning,
+  lastTask,
+  pendingConfirm,
+  startTask,
+  stopTask,
+  withTaskId,
+  type AgentSession,
   describeStatus,
   failSummary,
   loadSummaryLanguage,
@@ -163,6 +176,10 @@ function App(): React.JSX.Element {
   const [conversation, setConversation] = useState<Conversation>(emptyConversation)
   /** 遞增時聚焦對話輸入框 */
   const [chatFocus, setChatFocus] = useState(0)
+  /** agent 任務，只存在記憶體；換 vault 時清空 */
+  const [agentSession, setAgentSession] = useState<AgentSession>(emptySession)
+  const [agentFocus, setAgentFocus] = useState(0)
+  const agentWaiting = pendingConfirm(agentSession) !== null
   /** 各筆記編輯器目前選取的文字（總結選取文字用） */
   const selections = useRef(new Map<string, string>())
   /** 搜尋結果要捲到的行；n 每次遞增，同一行也會再跳 */
@@ -245,6 +262,7 @@ function App(): React.JSX.Element {
     () => window.api.llm.onAnswer((c) => setConversation((s) => applyAnswerChunk(s, c))),
     []
   )
+  useEffect(() => window.api.llm.onAgent((c) => setAgentSession((s) => applyAgentChunk(s, c))), [])
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
@@ -386,6 +404,7 @@ function App(): React.JSX.Element {
       restoredFor.current = null
       setTabs(T.emptyTabs)
       resetConversation()
+      resetAgent()
       setVault(root)
       await refreshTree()
     } catch (e) {
@@ -442,6 +461,53 @@ function App(): React.JSX.Element {
     chooseAiMode('chat')
     setChatFocus((n) => n + 1)
   }, [chooseSideTab, chooseAiMode])
+
+  /** 打開右側 AI 分頁的 agent 並聚焦輸入框 */
+  const openAgent = useCallback((): void => {
+    setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
+    chooseSideTab('ai')
+    chooseAiMode('agent')
+    setAgentFocus((n) => n + 1)
+  }, [chooseSideTab, chooseAiMode])
+
+  const runAgent = async (task: string): Promise<void> => {
+    const turns = agentHistory(agentSession)
+    setAgentSession((s) => startTask(s, task))
+    try {
+      // 工具從索引讀取，先寫出未儲存的內容
+      await autosave.flush()
+      const id = await window.api.llm.agent({ task, history: turns })
+      setAgentSession((s) => withTaskId(s, id))
+    } catch (e) {
+      setAgentSession((s) => failTask(s, errorMessage(e)))
+    }
+  }
+
+  const stopAgent = (): void => {
+    const t = lastTask(agentSession)
+    if (t?.id) void window.api.llm.cancel(t.id)
+    setAgentSession(stopTask)
+  }
+
+  function resetAgent(): void {
+    setAgentSession((s) => {
+      const t = lastTask(s)
+      if (t?.id && isTaskRunning(s)) void window.api.llm.cancel(t.id)
+      return emptySession()
+    })
+  }
+
+  const decideAgentStep = async (step: AgentStep, decision: AgentDecision): Promise<void> => {
+    const t = lastTask(agentSession)
+    if (!t?.id) return
+    try {
+      // add_tags 會在 main 重新讀檔，先寫出未儲存的內容
+      if (decision.approved) await autosave.flush()
+      await window.api.llm.confirm(t.id, step.index, decision)
+    } catch (e) {
+      showError(e)
+    }
+  }
 
   const askNotes = async (question: string, range: DateRange | null | undefined): Promise<void> => {
     const turns = chatHistory(conversation)
@@ -612,6 +678,7 @@ function App(): React.JSX.Element {
       else if (e.shiftKey && key === 't') openTimeline()
       else if (e.shiftKey && key === 's') void summarize()
       else if (e.shiftKey && key === 'a') openChat()
+      else if (e.shiftKey && key === 'g') openAgent()
       else if (e.shiftKey) return
       else if (key === 'e') togglePreview()
       else if (key === 'o') openSwitcher(false)
@@ -640,7 +707,8 @@ function App(): React.JSX.Element {
     toggleLeft,
     toggleRight,
     summarize,
-    openChat
+    openChat,
+    openAgent
   ])
 
   if (!ready) return <div className="empty" />
@@ -732,9 +800,18 @@ function App(): React.JSX.Element {
               />
             )}
             <LlmBadge
-              status={describeStatus(llmStatus)}
-              detail={llmStatus?.error ?? null}
+              status={
+                agentWaiting
+                  ? { tone: 'warn', label: 'Agent: confirm a change' }
+                  : describeStatus(llmStatus)
+              }
+              detail={
+                agentWaiting
+                  ? 'The agent is waiting for you to apply or reject a change'
+                  : (llmStatus?.error ?? null)
+              }
               onClick={() => {
+                if (agentWaiting) return openAgent()
                 setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
                 chooseSideTab('ai')
               }}
@@ -846,9 +923,12 @@ function App(): React.JSX.Element {
               <button
                 className={sideTab === 'ai' ? 'active' : ''}
                 onClick={() => chooseSideTab('ai')}
-                title="Ask your notes, summaries and AI status (Ctrl+Shift+A / Ctrl+Shift+S)"
+                title="Ask your notes, agent, summaries and AI status (Ctrl+Shift+A / Ctrl+Shift+G / Ctrl+Shift+S)"
               >
                 AI
+                {agentWaiting && (
+                  <span className="attention-dot" aria-label="waiting for confirmation" />
+                )}
               </button>
             </nav>
             {sideTab === 'ai' ? (
@@ -865,6 +945,17 @@ function App(): React.JSX.Element {
                   onOpenSource: openSource,
                   onOpenLink: (target, newTab) => void openLink(target, newTab)
                 }}
+                agent={{
+                  session: agentSession,
+                  focusKey: agentFocus,
+                  onRun: (task) => void runAgent(task),
+                  onStop: stopAgent,
+                  onReset: resetAgent,
+                  onDecide: (step, decision) => void decideAgentStep(step, decision),
+                  onOpenNote: (p, newTab) => void openNote(p, newTab),
+                  onOpenLink: (target, newTab) => void openLink(target, newTab)
+                }}
+                agentWaiting={agentWaiting}
                 note={currentNote}
                 summary={summary}
                 language={summaryLanguage}

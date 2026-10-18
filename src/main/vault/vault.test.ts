@@ -130,6 +130,40 @@ describe('App 內操作', () => {
     expect(kinds(v, '新/檔.md')).toEqual(['create', 'edit'])
   })
 
+  it('create 帶內容時寫入內容、記 create 與 edit，並解析連結', async () => {
+    const v = await open()
+    await v.create('整理.md', '見 [[歡迎]]')
+    expect(fs.readFileSync(abs('整理.md'), 'utf8')).toBe('見 [[歡迎]]')
+    expect(kinds(v, '整理.md')).toEqual(['create', 'edit'])
+    expect(v.backlinks('歡迎.md').map((b) => b.path)).toContain('整理.md')
+    await expect(v.create('整理.md', '覆蓋')).rejects.toThrow('already exists')
+    expect(fs.readFileSync(abs('整理.md'), 'utf8')).toBe('見 [[歡迎]]')
+  })
+
+  it('peek 讀取內容但不記 open', async () => {
+    const v = await open()
+    expect(await v.peek('歡迎.md')).toBe('# 歡迎\n')
+    expect(kinds(v, '歡迎.md')).toEqual(['create'])
+    await expect(v.peek('.knowmon/settings.json')).rejects.toThrow()
+  })
+
+  it('update 讀取目前的內容再寫回，通知變更；沒有改變時不寫', async () => {
+    const v = await open()
+    const changes: VaultChange[] = []
+    v.onChange((c) => changes.push(c))
+    writeExternal('歡迎.md', '外部改過\n')
+    expect(await v.update('歡迎.md', (c) => c + '加一行\n')).toBe('外部改過\n加一行\n')
+    expect(fs.readFileSync(abs('歡迎.md'), 'utf8')).toBe('外部改過\n加一行\n')
+    expect(kinds(v, '歡迎.md')).toEqual(['create', 'edit'])
+    expect(changes).toEqual([{ type: 'change', path: '歡迎.md' }])
+    // 寫入後 reconcile 不會再回報
+    expect(await v.reconcile()).toEqual([])
+
+    await v.update('歡迎.md', (c) => c)
+    expect(changes).toHaveLength(1)
+    await expect(v.update('沒有.md', (c) => c)).rejects.toThrow()
+  })
+
   it('read 回傳內容並記 open（節流）', async () => {
     const v = await open()
     expect(await v.read('日記/2026-10-06.md')).toBe('今天開始寫 [[歡迎]]')

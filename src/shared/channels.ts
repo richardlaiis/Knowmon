@@ -28,5 +28,8 @@ export const IPC = {
   llmCancel: 'llm:cancel',
   llmSummary: 'llm:summary',
   llmAsk: 'llm:ask',
-  llmAnswer: 'llm:answer'
+  llmAnswer: 'llm:answer',
+  llmAgent: 'llm:agent',
+  llmAgentChunk: 'llm:agentChunk',
+  llmConfirm: 'llm:confirm'
 } as const

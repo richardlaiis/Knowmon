@@ -27,7 +27,7 @@ export interface LinkCount {
   count: number
 }
 
-const FRONTMATTER = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/
+export const FRONTMATTER = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/
 const WIKILINK = /!?\[\[([^[\]\n]+?)\]\]/g
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
 

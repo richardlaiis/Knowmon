@@ -144,12 +144,13 @@ export function splitSources(a: Answer): { cited: AskSource[]; other: AskSource[
 }
 
 const MODE_KEY = 'knowmon.ai.mode'
-export type AiMode = 'chat' | 'summary'
+export type AiMode = 'chat' | 'agent' | 'summary'
 
-/** AI 分頁目前顯示對話或總結（所有 vault 共用），預設對話 */
+/** AI 分頁目前顯示對話、agent 或總結（所有 vault 共用），預設對話 */
 export function loadAiMode(): AiMode {
   try {
-    return localStorage.getItem(MODE_KEY) === 'summary' ? 'summary' : 'chat'
+    const v = localStorage.getItem(MODE_KEY)
+    return v === 'summary' || v === 'agent' ? v : 'chat'
   } catch {
     return 'chat'
   }

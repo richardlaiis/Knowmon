@@ -153,11 +153,11 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 ### 階段 7：Agent
 
-完成標準：能執行多步驟檢索與整理，所有寫入動作都需確認。
+完成標準：能執行多步驟檢索與整理，所有寫入動作都需確認。計畫與實作決定見 `docs/plans/phase7-agent.md`。
 
-- [ ] 唯讀工具：`search_notes`、`get_note`、`get_neighbors`、`list_notes_in_range`
-- [ ] 多步驟執行與過程顯示
-- [ ] 寫入工具（建立摘要筆記、加標籤），附使用者確認流程
+- [x] 唯讀工具：`search_notes`、`get_note`、`get_neighbors`、`list_notes_in_range`
+- [x] 多步驟執行與過程顯示
+- [x] 寫入工具（建立摘要筆記、加標籤），附使用者確認流程
 
 ### 階段 8：打磨與打包
 

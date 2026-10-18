@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createOllama, OllamaError, readNdjson } from './ollama'
+import {
+  createOllama,
+  isNoToolsError,
+  OllamaError,
+  readNdjson,
+  type ToolDefinition
+} from './ollama'
 
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>
 
@@ -166,5 +172,75 @@ describe('createOllama', () => {
     const p = createOllama('http://host', slow.fetch).chat('m', [], { signal: ac.signal })
     ac.abort()
     expect((await rejection(p)).kind).toBe('aborted')
+  })
+
+  it('chatTools 送出工具定義與 num_ctx，回傳文字與工具呼叫', async () => {
+    const lines = [
+      { message: { role: 'assistant', content: '我先搜尋' } },
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            { function: { index: 0, name: 'search_notes', arguments: { query: '習慣' } } },
+            // 有些模型的 arguments 是 JSON 字串
+            { function: { name: 'get_note', arguments: '{"path":"原子習慣"}' } },
+            { function: { name: 'broken', arguments: 'not json' } },
+            { nothing: true }
+          ]
+        }
+      },
+      { message: { role: 'assistant', content: '' }, done: true }
+    ]
+    const { fetch, calls } = fakeFetch(
+      () => new Response(stream(lines.map((l) => JSON.stringify(l) + '\n')))
+    )
+    const tools: ToolDefinition[] = [
+      {
+        type: 'function',
+        function: {
+          name: 'search_notes',
+          description: 'd',
+          parameters: { type: 'object', properties: {} }
+        }
+      }
+    ]
+    const deltas: string[] = []
+    const out = await createOllama('http://host', fetch).chatTools(
+      'qwen3:8b',
+      [{ role: 'user', content: '找' }],
+      tools,
+      { onDelta: (d) => deltas.push(d), numCtx: 16384, temperature: 0.2 }
+    )
+    expect(out).toEqual({
+      content: '我先搜尋',
+      toolCalls: [
+        { name: 'search_notes', arguments: { query: '習慣' } },
+        { name: 'get_note', arguments: { path: '原子習慣' } },
+        { name: 'broken', arguments: {} }
+      ]
+    })
+    expect(deltas).toEqual(['我先搜尋'])
+    expect(calls[0].body).toMatchObject({
+      tools,
+      think: false,
+      options: { temperature: 0.2, num_ctx: 16384 }
+    })
+  })
+
+  it('沒有工具時不送 tools 參數；模型不支援工具時可辨識', async () => {
+    const { fetch, calls } = fakeFetch(
+      () => new Response(stream([JSON.stringify({ message: { content: 'ok' } }) + '\n']))
+    )
+    await createOllama('http://host', fetch).chatTools('m', [], [])
+    expect(calls[0].body).not.toHaveProperty('tools')
+    expect(calls[0].body).not.toHaveProperty('options')
+
+    const bad = fakeFetch(() =>
+      json({ error: 'registry.ollama.ai/library/gemma:2b does not support tools' }, 400)
+    )
+    const e = await rejection(createOllama('http://host', bad.fetch).chatTools('gemma:2b', [], []))
+    expect(isNoToolsError(e)).toBe(true)
+    expect(isNoToolsError(new OllamaError('x', 'http'))).toBe(false)
   })
 })

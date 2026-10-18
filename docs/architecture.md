@@ -104,6 +104,20 @@
 - 回答語言依問題（漢字數 ≥ 英文單字數時用繁體中文）；英文時在內容後重申語言。多輪對話附最近 3 輪（6 則，各截到 1000 字），舊回答的 `[n]` 先去掉（對應的是之前的來源）。追問（沒有關鍵字或語氣像追問）時向量查詢加上前一個問題。
 - Renderer：AI 分頁上方「Chat / Summary」切換（`knowmon.ai.mode`），`Ctrl/Cmd+Shift+A` 打開對話並聚焦輸入框；`Ctrl/Cmd+Shift+S` 切到 Summary。對話狀態是純函式（`renderer/chat/conversation.ts`），只存在 App 的記憶體，換 vault 時清空。`Markdown` 元件的 `citations` 選項把 `[n]` 解析成引用（lezer inline 擴充，排在 Link 之前，`[1][2]` 不會被當成參考連結）。複製回答時 `[n]` 換成 `[[來源標題]]`。輸入法選字時的 Enter 不送出。
 
+## Agent（階段 7）
+
+計畫與決定見 `docs/plans/phase7-agent.md`。程式在 `src/main/llm/agent/`。
+
+- 使用 Ollama 原生的工具呼叫（`/api/chat` 帶 `tools`）。`OllamaClient.chatTools` 回傳文字與 `tool_calls`（`arguments` 是字串時先解析 JSON）；模型不支援工具時（`does not support tools`）回報清楚的錯誤，請使用者在 Settings 換模型。agent 請求帶 `num_ctx = 16384`（`AGENT_NUM_CTX`）。
+- 迴圈（`loop.ts` 的 `runAgent`，chat／工具／確認都由呼叫者注入）：模型回覆工具呼叫 → 依序執行 → 結果以 `role: 'tool'` 加回 → 下一步，直到模型直接回答。最多 8 次工具呼叫，用完後不再提供工具並要求作答。相同工具＋參數（不分順序）的重複呼叫不執行；工具錯誤、不認得的工具都把錯誤當結果回給模型，不中止任務。每個結果截到 3000 字，總量超過 16000 字時從最舊的換成一行說明（該呼叫可以再做一次）。
+- 工具（`tools.ts`）回傳精簡的純文字（不是 JSON），每篇筆記「標題 | 路徑 | 日期」。路徑參數也接受標題或 `[[標題]]`（`shared/links.ts` 的規則）。時間範圍由 `period` 參數以 `parseTimeRange` 解析，**不讓模型自己換算日期**（實測 qwen3:8b 把「上週」算錯一天、且只給 `from`）；寫在 `query` 裡的時間片語也會被取出。`search_notes` 沿用問答的關鍵字 OR＋向量檢索。`get_note` 用 `Vault.peek` 讀檔，**不記 `open` 事件**（不是使用者打開的），長筆記以 `offset` 分段。`get_neighbors` 先 `await vault.graph()` 讓時間邊與 semantic 邊是最新的，依類型分組，並列出尚未建立的連結目標。
+- 寫入工具只產生提案（`AgentStep.status = 'confirm'` 帶 `proposal`），`LlmService` 以 `${request id}:${step}` 等待 `llm.confirm`。停止、換 vault、關閉 App 時等待中的提案視為拒絕。使用者可修改提案（`create_note` 的路徑與內容、`add_tags` 刪掉個別標籤），IPC 只取這些欄位，其餘沿用 main 端原本的提案。
+  - `create_note` 走 `Vault.create(path, content)`（`wx`，絕不覆蓋；帶內容時記 `create` 與 `edit`）。路徑補 `.md`，經 `normalizeRel` 拒絕 `..` 與隱藏資料夾。
+  - `add_tags` 走 `Vault.update(path, f)`：在佇列中重新讀檔、套用、寫回，所以等待確認期間使用者改過筆記也不會被蓋掉。寫入後推送 `vault:changed`（`change`），開著的分頁沿用外部修改的處理（沒有未儲存內容就重新載入）。
+- 標籤寫在 frontmatter 的 `tags:`（使用者決定，2026-10-18）。`addTags`（`tags.ts`，純函式）只改 `tags` 那幾行：flow 清單加在 `]` 前、區塊清單照縮排加在後面、單一字串或多行 flow 改寫成 `tags: [...]`、沒有 `tags` 時加在結尾的 `---` 前、沒有 frontmatter 時在開頭新增；保留 CRLF。比對既有標籤不分大小寫、忽略 `#`；YAML 損毀時拒絕修改。
+- 最終回答經 `createLinkFilter`，只保留工具結果中出現過的筆記標題與讀到的內文裡的連結。系統提示詞附今天的日期與星期，語言依任務（`detectLanguage`）。多輪只附之前的任務與最終回答（不含工具過程）。
+- Renderer：AI 分頁上方改為「Chat / Agent / Summary」（使用者決定保留 Chat，2026-10-18）（`knowmon.ai.mode` 多了 `agent`）；`Ctrl/Cmd+Shift+G` 打開 Agent 並聚焦輸入框。任務狀態是純函式（`renderer/chat/agentRun.ts`）：文字與步驟依到達順序排列，同 index 的步驟取代；最後一個步驟之後的文字是最終回答，之前的以淡色顯示。等待確認時 Agent 按鈕、AI 分頁與側欄底部的狀態都顯示提醒。只存在記憶體，換 vault 時清空。
+
 ## 工作區：分頁與面板
 
 計畫與決定見 `docs/plans/workspace-tabs.md`。

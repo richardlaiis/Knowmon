@@ -3,6 +3,9 @@
 import crypto from 'node:crypto'
 import { cleanLlmSettings, sameModel } from '../../shared/llm'
 import type {
+  AgentChunk,
+  AgentDecision,
+  AgentRequest,
   AnswerChunk,
   AskRequest,
   LlmSettings,
@@ -17,7 +20,9 @@ import { embedProgress, vecAvailable, vectorModel } from '../db/vectors'
 import { normalizeRel } from '../vault/paths'
 import type { Vault } from '../vault'
 import { Embedder } from './embedder'
-import { createOllama, OllamaError, type OllamaClient } from './ollama'
+import { agentMessages, AGENT_NUM_CTX, runAgent, type ToolChat } from './agent/loop'
+import { applyProposal, runTool, TOOL_DEFINITIONS, type ToolContext } from './agent/tools'
+import { createOllama, isNoToolsError, OllamaError, type OllamaClient } from './ollama'
 import {
   answer,
   askMessages,
@@ -41,6 +46,7 @@ export interface LlmServiceOptions {
   onStatus: (s: LlmStatus) => void
   onSummary: (c: SummaryChunk) => void
   onAnswer: (c: AnswerChunk) => void
+  onAgent: (c: AgentChunk) => void
   /** 測試時注入假的 Ollama */
   createClient?: (baseUrl: string) => OllamaClient
   retryMs?: number
@@ -60,6 +66,8 @@ export class LlmService {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private checking: Promise<void> | null = null
   private readonly requests = new Map<string, AbortController>()
+  /** 等待使用者確認的寫入提案：`${request id}:${step}` → 回覆 */
+  private readonly confirmations = new Map<string, (d: AgentDecision) => void>()
   private disposed = false
 
   constructor(private readonly opts: LlmServiceOptions) {
@@ -226,6 +234,87 @@ export class LlmService {
         .finally(() => this.requests.delete(id))
     })
     return id
+  }
+
+  /** 開始執行 agent 任務，回傳 request id；步驟與文字經 onAgent 推送 */
+  agent(req: AgentRequest): string {
+    const vault = this.requireVault()
+    const task = String(req.task ?? '').trim()
+    if (!task) throw new Error('The task is empty.')
+    const history = Array.isArray(req.history) ? req.history : []
+
+    const id = crypto.randomUUID()
+    const ac = new AbortController()
+    this.requests.set(id, ac)
+    const send = (c: Omit<AgentChunk, 'id'>): void => {
+      if (!this.disposed) this.opts.onAgent({ id, ...c })
+    }
+    const model = this.settings.chatModel
+    const now = (this.opts.now ?? Date.now)()
+    const ctx: ToolContext = { vault, now, queryVector: (text) => this.queryVector(vault, text) }
+    const chat: ToolChat = (messages, tools, onDelta) =>
+      this.client.chatTools(model, messages, tools ?? [], {
+        signal: ac.signal,
+        onDelta,
+        temperature: 0.2,
+        numCtx: AGENT_NUM_CTX
+      })
+    const confirm = (step: { index: number }): Promise<AgentDecision> =>
+      new Promise((resolve) => {
+        const key = `${id}:${step.index}`
+        const done = (d: AgentDecision): void => {
+          this.confirmations.delete(key)
+          ac.signal.removeEventListener('abort', onAbort)
+          resolve(d)
+        }
+        // 停止、換 vault、關閉 App：視為拒絕，什麼都不寫
+        const onAbort = (): void => done({ approved: false })
+        if (ac.signal.aborted) return onAbort()
+        ac.signal.addEventListener('abort', onAbort)
+        this.confirmations.set(key, done)
+      })
+
+    const language = detectLanguage(task)
+    const run = (): Promise<void> =>
+      runAgent(
+        {
+          chat,
+          tools: {
+            definitions: TOOL_DEFINITIONS,
+            run: (name, args) => runTool(ctx, name, args),
+            apply: (proposal, edited) => applyProposal(ctx, proposal, edited)
+          },
+          emit: (c) => send({ ...c, done: false }),
+          confirm,
+          signal: ac.signal
+        },
+        agentMessages(task, history, language, now),
+        language
+      )
+
+    // 先回傳 id，讓 renderer 能對上之後推送的片段
+    setImmediate(() => {
+      run()
+        .then(() => send({ delta: '', done: true }))
+        .catch((e) => {
+          if (ac.signal.aborted) send({ delta: '', done: true })
+          else if (isNoToolsError(e)) {
+            send({
+              delta: '',
+              done: true,
+              error: `The chat model ${model} does not support tool calling. Choose a model with tool support (for example qwen3:8b) in Settings.`
+            })
+          } else send({ delta: '', done: true, error: errorMessage(e) })
+          if (e instanceof OllamaError && e.kind === 'offline') void this.check()
+        })
+        .finally(() => this.requests.delete(id))
+    })
+    return id
+  }
+
+  /** 回覆 agent 的寫入提案；已經沒有在等待（停止、重複回覆）時忽略 */
+  confirm(id: string, step: number, decision: AgentDecision): void {
+    this.confirmations.get(`${id}:${step}`)?.(decision)
   }
 
   cancel(id: string): void {

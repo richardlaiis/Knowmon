@@ -6,7 +6,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { DEFAULT_LLM_SETTINGS } from '../../shared/llm'
-import type { AnswerChunk, SummaryChunk } from '../../shared/types'
+import matter from 'gray-matter'
+import { createLinkResolver } from '../../shared/links'
+import type { AgentChunk, AgentStep, AnswerChunk, SummaryChunk } from '../../shared/types'
 import { Vault } from '../vault'
 import { createOllama } from './ollama'
 import { LlmService } from './service'
@@ -61,7 +63,8 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       saveSettings: () => {},
       onStatus: () => {},
       onSummary: (c) => chunks.push(c),
-      onAnswer: () => {}
+      onAnswer: () => {},
+      onAgent: () => {}
     })
     try {
       await service.attach(vault)
@@ -125,7 +128,8 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       saveSettings: () => {},
       onStatus: () => {},
       onSummary: () => {},
-      onAnswer: (c) => answers.push(c)
+      onAnswer: (c) => answers.push(c),
+      onAgent: () => {}
     })
     const ask = async (
       question: string
@@ -180,4 +184,110 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       await vault.close()
     }
   }, 600_000)
+
+  it('test-vault：agent 多步驟檢索、建立筆記與加標籤都要確認', async () => {
+    const root = path.join(tmp, 'vault-agent')
+    fs.cpSync(path.resolve(__dirname, '../../../test-vault'), root, {
+      recursive: true,
+      filter: (src) => !path.basename(src).startsWith('.')
+    })
+    const vault = await Vault.open(root)
+    const chunks: AgentChunk[] = []
+    // 自動回覆確認：依序取用 decisions
+    let decisions: boolean[] = []
+    const service: LlmService = new LlmService({
+      loadSettings: () => null,
+      saveSettings: () => {},
+      onStatus: () => {},
+      onSummary: () => {},
+      onAnswer: () => {},
+      onAgent: (c) => {
+        chunks.push(c)
+        if (c.step?.status === 'confirm') {
+          const approved = decisions.shift() ?? false
+          setTimeout(() => service.confirm(c.id, c.step!.index, { approved }), 0)
+        }
+      }
+    })
+    const run = async (task: string): Promise<{ text: string; steps: AgentStep[] }> => {
+      const t0 = Date.now()
+      const id = service.agent({ task })
+      const report = (): { text: string; steps: AgentStep[] } => {
+        const mine = chunks.filter((c) => c.id === id)
+        const byIndex = new Map<number, AgentStep>()
+        for (const c of mine) if (c.step) byIndex.set(c.step.index, c.step)
+        const steps = [...byIndex.values()]
+        const text = mine.map((c) => c.delta).join('')
+        console.log(
+          `Agent「${task}」（${((Date.now() - t0) / 1000).toFixed(1)}s）\n` +
+            steps
+              .map((s) => `  [${s.status}] ${s.tool} ${JSON.stringify(s.args)} → ${s.label}`)
+              .join('\n') +
+            `\n${text}`
+        )
+        return { text, steps }
+      }
+      while (!chunks.some((c) => c.id === id && c.done)) {
+        if (Date.now() - t0 > 600_000) {
+          report()
+          service.cancel(id)
+          throw new Error('agent timeout')
+        }
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      expect(chunks.filter((c) => c.id === id).at(-1)?.error).toBeUndefined()
+      return report()
+    }
+    const linksResolve = (text: string): void => {
+      const resolve = createLinkResolver(vault.list().map((n) => n.path))
+      for (const m of text.matchAll(/\[\[([^\]|#]+)/g)) expect(resolve(m[1]), m[1]).not.toBeNull()
+    }
+    try {
+      await service.attach(vault)
+      const end = Date.now() + 120_000
+      for (;;) {
+        const s = service.status()
+        if (!s.busy && s.embedded === s.total) break
+        if (Date.now() > end) throw new Error(`embedding timeout: ${JSON.stringify(s)}`)
+        await new Promise((r) => setTimeout(r, 200))
+      }
+
+      const read = await run('2026-10-04 到 2026-10-06 之間寫了哪些筆記？它們各自連到哪些筆記？')
+      const tools = read.steps.map((s) => s.tool)
+      expect(tools.some((t) => t === 'list_notes_in_range' || t === 'search_notes')).toBe(true)
+      expect(tools).toContain('get_neighbors')
+      expect(read.steps.every((s) => s.status === 'done')).toBe(true)
+      linksResolve(read.text)
+
+      const before = new Set(vault.list().map((n) => n.path))
+      const task =
+        '把「原子習慣」和「深度工作」兩篇筆記的重點整理成一篇比較筆記，存在「整理」資料夾'
+      decisions = [false]
+      const rejected = await run(task)
+      expect(rejected.steps.some((s) => s.tool === 'create_note' && s.status === 'rejected')).toBe(
+        true
+      )
+      expect(vault.list().map((n) => n.path)).toEqual([...before])
+
+      decisions = [true]
+      const created = await run(task)
+      const applied = created.steps.find((s) => s.tool === 'create_note' && s.status === 'applied')
+      expect(applied).toBeDefined()
+      const proposal = applied!.proposal!
+      expect(proposal.kind).toBe('create_note')
+      if (proposal.kind === 'create_note') {
+        expect(fs.readFileSync(path.join(root, proposal.path), 'utf8')).toBe(proposal.content)
+        console.log(`建立的筆記 ${proposal.path}：\n${proposal.content}`)
+      }
+
+      decisions = [true]
+      const tagged = await run('幫 2026-10-04 這篇日記加上「回顧」標籤')
+      expect(tagged.steps.some((s) => s.tool === 'add_tags' && s.status === 'applied')).toBe(true)
+      const diary = fs.readFileSync(path.join(root, '日記/2026-10-04.md'), 'utf8')
+      expect(matter(diary, {}).data.tags).toContain('回顧')
+    } finally {
+      await service.dispose()
+      await vault.close()
+    }
+  }, 2_400_000)
 })
