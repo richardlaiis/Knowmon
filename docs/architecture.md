@@ -91,6 +91,19 @@
 - Renderer：右側面板新增「AI」分頁（狀態、總結），側欄底部顯示狀態；搜尋面板有 Keyword / Hybrid 切換（`knowmon.search.mode`），Hybrid 按 Enter 才查詢，結果點擊後捲到最相關的段落。背景 embedding 結束時（busy → false）遞增 `indexVersion`，讓圖譜取得新的 semantic 邊。
 - 圖譜邊類型偏好的儲存格式改為「`a,-b`」（記錄開與關）；舊格式沒有提到的新類型（semantic）預設開啟。
 
+## 問答（階段 6）
+
+計畫與決定見 `docs/plans/phase6-rag.md`。
+
+- `llm.ask(req)` 回傳 request id，片段經 `llm:answer` 推送（與總結相同的模式，取消沿用 `llm.cancel`）。第一個片段帶 `sources`、實際套用的 `range` 與 `vector`，最後的 `done` 帶回答中實際引用的編號 `cited`。
+- 流程（`src/main/llm/ask.ts`）：解析時間範圍 → 決定關鍵字與向量查詢（`planQuery`）→ `retrieve`（前 8 篇）→ 每篇取最相關的 chunk、再依名次輪流補相鄰的 chunk，總共約 8000 字（`gatherSources`）→ 提示詞附編號來源 → 串流過濾。
+- 全文改用關鍵字 OR：中文問句沒有空白，`searchNotes` 的 AND 整句比對不會命中。`keywords()` 去掉標點、疑問詞、虛詞與「第二點」之類的序數；`retrieve()` 的內部參數 `keywords` 讓每個關鍵字各自搜尋，命中越多個的排越前面（側欄搜尋仍是 AND）。
+- 只有時間、沒有關鍵字（「上個月寫了什麼？」），或檢索結果為空但有時間範圍時，改列出範圍內的筆記（新 → 舊）。完全找不到來源時直接回覆固定文字，不呼叫模型。
+- 時間範圍解析是純函式 `src/shared/timeRange.ts`（main 與 renderer 共用，renderer 輸入時即時顯示偵測到的範圍）：今天／昨天、這週／上週（週一開始）、這個月／上個月、今年／去年、最近 N 天／週／個月、`YYYY-MM`、日期與日期範圍、沒寫年份的月份（取最近一次）及對應的英文。只取最前面的一個片語，並從檢索查詢中移除。`AskRequest.range`：`undefined` 由 main 解析、`null` 不篩選、有值則直接使用。
+- 引用格式 `[n]`：對應到段落（路徑＋行號），點擊捲到該行。`createCitationFilter` 把 `[1, 2]`、`【1】` 統一成 `[1][2]`，超出範圍的拿掉；再經 `createLinkFilter`，只保留來源中出現過的 wikilink 與來源標題。
+- 回答語言依問題（漢字數 ≥ 英文單字數時用繁體中文）；英文時在內容後重申語言。多輪對話附最近 3 輪（6 則，各截到 1000 字），舊回答的 `[n]` 先去掉（對應的是之前的來源）。追問（沒有關鍵字或語氣像追問）時向量查詢加上前一個問題。
+- Renderer：AI 分頁上方「Chat / Summary」切換（`knowmon.ai.mode`），`Ctrl/Cmd+Shift+A` 打開對話並聚焦輸入框；`Ctrl/Cmd+Shift+S` 切到 Summary。對話狀態是純函式（`renderer/chat/conversation.ts`），只存在 App 的記憶體，換 vault 時清空。`Markdown` 元件的 `citations` 選項把 `[n]` 解析成引用（lezer inline 擴充，排在 Link 之前，`[1][2]` 不會被當成參考連結）。複製回答時 `[n]` 換成 `[[來源標題]]`。輸入法選字時的 Enter 不送出。
+
 ## 工作區：分頁與面板
 
 計畫與決定見 `docs/plans/workspace-tabs.md`。

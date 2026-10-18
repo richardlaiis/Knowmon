@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { DEFAULT_LLM_SETTINGS } from '../../shared/llm'
-import type { SummaryChunk } from '../../shared/types'
+import type { AnswerChunk, SummaryChunk } from '../../shared/types'
 import { Vault } from '../vault'
 import { createOllama } from './ollama'
 import { LlmService } from './service'
@@ -60,7 +60,8 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       loadSettings: () => null,
       saveSettings: () => {},
       onStatus: () => {},
-      onSummary: (c) => chunks.push(c)
+      onSummary: (c) => chunks.push(c),
+      onAnswer: () => {}
     })
     try {
       await service.attach(vault)
@@ -110,4 +111,73 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       await vault.close()
     }
   }, 300_000)
+
+  it('test-vault：問答附引用、時間範圍、無相關筆記時不編造', async () => {
+    const root = path.join(tmp, 'vault-ask')
+    fs.cpSync(path.resolve(__dirname, '../../../test-vault'), root, {
+      recursive: true,
+      filter: (src) => !path.basename(src).startsWith('.')
+    })
+    const vault = await Vault.open(root)
+    const answers: AnswerChunk[] = []
+    const service = new LlmService({
+      loadSettings: () => null,
+      saveSettings: () => {},
+      onStatus: () => {},
+      onSummary: () => {},
+      onAnswer: (c) => answers.push(c)
+    })
+    const ask = async (
+      question: string
+    ): Promise<{ text: string; done: AnswerChunk; first: AnswerChunk }> => {
+      const t0 = Date.now()
+      const id = service.ask({ question })
+      while (!answers.some((c) => c.id === id && c.done)) {
+        if (Date.now() - t0 > 180_000) throw new Error('answer timeout')
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      const mine = answers.filter((c) => c.id === id)
+      const text = mine.map((c) => c.delta).join('')
+      const first = mine[0]
+      console.log(
+        `問「${question}」（${((Date.now() - t0) / 1000).toFixed(1)}s）\n` +
+          `  範圍 ${JSON.stringify(first.range)}，來源：${first.sources?.map((s) => `[${s.n}] ${s.path}`).join('、')}\n` +
+          text
+      )
+      return { text, done: mine.at(-1)!, first }
+    }
+    try {
+      await service.attach(vault)
+      const end = Date.now() + 120_000
+      for (;;) {
+        const s = service.status()
+        if (!s.busy && s.embedded === s.total) break
+        if (Date.now() > end) throw new Error(`embedding timeout: ${JSON.stringify(s)}`)
+        await new Promise((r) => setTimeout(r, 200))
+      }
+
+      const general = await ask('深度工作的重點是什麼？')
+      expect(general.done.error).toBeUndefined()
+      expect(general.first.sources?.some((s) => s.path.includes('深度工作'))).toBe(true)
+      expect(general.done.cited?.length).toBeGreaterThan(0)
+      const n = general.first.sources!.length
+      expect(general.done.cited!.every((c) => c >= 1 && c <= n)).toBe(true)
+
+      const dated = await ask('2026-10-04 到 2026-10-06 之間做了什麼？')
+      expect(dated.first.range).toEqual({ from: '2026-10-04', to: '2026-10-06' })
+      expect(
+        dated.first.sources?.every((s) => s.date >= '2026-10-04' && s.date <= '2026-10-06')
+      ).toBe(true)
+
+      const english = await ask('What are the key ideas of Atomic Habits?')
+      expect(english.done.error).toBeUndefined()
+      expect(english.text).toMatch(/[A-Za-z]{4,}/)
+
+      // 無相關筆記：只記錄輸出，人工檢查是否編造
+      await ask('薛丁格方程式怎麼推導？')
+    } finally {
+      await service.dispose()
+      await vault.close()
+    }
+  }, 600_000)
 })

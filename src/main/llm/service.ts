@@ -1,8 +1,10 @@
-// LLM 服務：Ollama 連線狀態、背景 embedding、混合檢索、總結。
+// LLM 服務：Ollama 連線狀態、背景 embedding、混合檢索、總結、問答。
 // Ollama 是可選的：連不上時狀態為離線、每隔一段時間重試，其餘功能照常。
 import crypto from 'node:crypto'
 import { cleanLlmSettings, sameModel } from '../../shared/llm'
 import type {
+  AnswerChunk,
+  AskRequest,
   LlmSettings,
   LlmStatus,
   RetrieveOptions,
@@ -16,6 +18,17 @@ import { normalizeRel } from '../vault/paths'
 import type { Vault } from '../vault'
 import { Embedder } from './embedder'
 import { createOllama, OllamaError, type OllamaClient } from './ollama'
+import {
+  answer,
+  askMessages,
+  ASK_SOURCES,
+  toAskSource,
+  detectLanguage,
+  gatherSources,
+  noSourcesMessage,
+  notesInRange,
+  planQuery
+} from './ask'
 import { retrieve } from './retrieve'
 import { summarize, type Chat } from './summarize'
 
@@ -27,9 +40,12 @@ export interface LlmServiceOptions {
   saveSettings: (s: LlmSettings) => void
   onStatus: (s: LlmStatus) => void
   onSummary: (c: SummaryChunk) => void
+  onAnswer: (c: AnswerChunk) => void
   /** 測試時注入假的 Ollama */
   createClient?: (baseUrl: string) => OllamaClient
   retryMs?: number
+  /** 解析「上個月」等時間片語用的現在時間（測試用） */
+  now?: () => number
 }
 
 export class LlmService {
@@ -43,7 +59,7 @@ export class LlmService {
   private offChunks: (() => void) | null = null
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private checking: Promise<void> | null = null
-  private readonly summaries = new Map<string, AbortController>()
+  private readonly requests = new Map<string, AbortController>()
   private disposed = false
 
   constructor(private readonly opts: LlmServiceOptions) {
@@ -107,17 +123,7 @@ export class LlmService {
 
   async retrieve(query: string, opts: RetrieveOptions = {}): Promise<RetrieveResult> {
     const vault = this.requireVault()
-    let queryVector: number[] | null = null
-    const vm = vectorModel(vault.db)
-    if (this.online && vm && sameModel(vm.model, this.settings.embedModel) && query.trim()) {
-      try {
-        ;[queryVector] = await this.client.embed(this.settings.embedModel, [query.trim()])
-      } catch (e) {
-        // 退回只用全文；離線時順便更新狀態
-        if (e instanceof OllamaError && e.kind === 'offline') void this.check()
-      }
-    }
-    return retrieve(vault.db, query, queryVector, opts)
+    return retrieve(vault.db, query, await this.queryVector(vault, query), opts)
   }
 
   /** 開始串流總結，回傳 request id；結果經 onSummary 推送 */
@@ -131,7 +137,7 @@ export class LlmService {
 
     const id = crypto.randomUUID()
     const ac = new AbortController()
-    this.summaries.set(id, ac)
+    this.requests.set(id, ac)
     const send = (c: Omit<SummaryChunk, 'id'>): void => {
       if (!this.disposed) this.opts.onSummary({ id, ...c })
     }
@@ -154,18 +160,81 @@ export class LlmService {
           else send({ delta: '', done: true, error: errorMessage(e) })
           if (e instanceof OllamaError && e.kind === 'offline') void this.check()
         })
-        .finally(() => this.summaries.delete(id))
+        .finally(() => this.requests.delete(id))
+    })
+    return id
+  }
+
+  /** 開始串流回答，回傳 request id；來源與回答經 onAnswer 推送 */
+  ask(req: AskRequest): string {
+    const vault = this.requireVault()
+    const question = String(req.question ?? '').trim()
+    if (!question) throw new Error('The question is empty.')
+    const history = Array.isArray(req.history) ? req.history : []
+
+    const id = crypto.randomUUID()
+    const ac = new AbortController()
+    this.requests.set(id, ac)
+    const send = (c: Omit<AnswerChunk, 'id'>): void => {
+      if (!this.disposed) this.opts.onAnswer({ id, ...c })
+    }
+    const model = this.settings.chatModel
+    const chat: Chat = (messages, onDelta) =>
+      this.client.chat(model, messages, { signal: ac.signal, onDelta, temperature: 0.2 })
+
+    const run = async (): Promise<number[]> => {
+      const plan = planQuery(question, history, req.range, (this.opts.now ?? Date.now)())
+      const opts = { limit: ASK_SOURCES, ...(plan.range ?? {}) }
+      let hits: RetrieveResult['hits'] = []
+      let vector = false
+      // 只有時間、沒有可檢索的內容（「上個月寫了什麼？」）：直接列出範圍內的筆記
+      if (plan.keywords.length > 0 || !plan.range) {
+        const qv = await this.queryVector(vault, plan.vectorText)
+        if (ac.signal.aborted) return []
+        const r = retrieve(vault.db, plan.vectorText, qv, opts, plan.keywords)
+        hits = r.hits
+        vector = r.vector
+      }
+      if (hits.length === 0 && plan.range) hits = notesInRange(vault.db, plan.range)
+      const sources = gatherSources(vault.db, hits)
+      send({
+        delta: '',
+        done: false,
+        sources: sources.map(toAskSource),
+        range: plan.range,
+        vector
+      })
+      const language = detectLanguage(question)
+      if (sources.length === 0) {
+        send({ delta: noSourcesMessage(language, plan.range), done: false })
+        return []
+      }
+      const messages = askMessages(question, sources, history, plan.range, language)
+      const result = await answer(chat, messages, sources, (delta) => send({ delta, done: false }))
+      return result.cited
+    }
+
+    // 先回傳 id，讓 renderer 能對上之後推送的片段
+    setImmediate(() => {
+      run()
+        .then((cited) => send({ delta: '', done: true, cited }))
+        .catch((e) => {
+          if (ac.signal.aborted) send({ delta: '', done: true })
+          else send({ delta: '', done: true, error: errorMessage(e) })
+          if (e instanceof OllamaError && e.kind === 'offline') void this.check()
+        })
+        .finally(() => this.requests.delete(id))
     })
     return id
   }
 
   cancel(id: string): void {
-    this.summaries.get(id)?.abort()
+    this.requests.get(id)?.abort()
   }
 
   async dispose(): Promise<void> {
     this.disposed = true
-    for (const ac of this.summaries.values()) ac.abort()
+    for (const ac of this.requests.values()) ac.abort()
     await this.detach()
   }
 
@@ -184,6 +253,22 @@ export class LlmService {
   private requireVault(): Vault {
     if (!this.vault) throw new Error('No vault is open')
     return this.vault
+  }
+
+  /** 查詢向量；離線、向量尚未建好或模型不同時為 null（檢索退回全文） */
+  private async queryVector(vault: Vault, text: string): Promise<number[] | null> {
+    const vm = vectorModel(vault.db)
+    if (!this.online || !vm || !sameModel(vm.model, this.settings.embedModel) || !text.trim()) {
+      return null
+    }
+    try {
+      const [v] = await this.client.embed(this.settings.embedModel, [text.trim()])
+      return v
+    } catch (e) {
+      // 離線時順便更新狀態
+      if (e instanceof OllamaError && e.kind === 'offline') void this.check()
+      return null
+    }
   }
 
   private makeClient(): OllamaClient {

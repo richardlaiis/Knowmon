@@ -161,6 +161,52 @@ export interface SummaryChunk {
   error?: string
 }
 
+/** 日期範圍（YYYY-MM-DD，含兩端） */
+export interface DateRange {
+  from: string
+  to: string
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AskRequest {
+  question: string
+  /** 之前的問答（舊 → 新），只作為對話脈絡 */
+  history?: ChatTurn[]
+  /** 時間範圍。undefined = 從問題中解析；null = 使用者取消了範圍，不篩選 */
+  range?: DateRange | null
+}
+
+export interface AskSource {
+  /** 回答中的引用編號 [n]（1-based） */
+  n: number
+  path: string
+  title: string
+  /** 段落起始行（1-based） */
+  line: number
+  snippet: TextSegment[]
+  /** event_date，沒有的話用最後修改日 */
+  date: string
+}
+
+export interface AnswerChunk {
+  id: string
+  delta: string
+  done: boolean
+  error?: string
+  /** 檢索完成時推送一次（第一個片段之前） */
+  sources?: AskSource[]
+  /** 實際套用的時間範圍，與 sources 一起推送；null = 未篩選 */
+  range?: DateRange | null
+  /** false = 這次沒有用到向量，與 sources 一起推送 */
+  vector?: boolean
+  /** done 時帶上：回答中實際引用的編號 */
+  cited?: number[]
+}
+
 export interface TreeNode {
   name: string
   path: string
@@ -221,5 +267,8 @@ export interface KnowmonAPI {
     summarize(req: SummaryRequest): Promise<string>
     cancel(id: string): Promise<void>
     onSummary(cb: (c: SummaryChunk) => void): () => void
+    /** 開始串流回答，回傳 request id；片段經 onAnswer 推送。取消沿用 cancel(id) */
+    ask(req: AskRequest): Promise<string>
+    onAnswer(cb: (c: AnswerChunk) => void): () => void
   }
 }

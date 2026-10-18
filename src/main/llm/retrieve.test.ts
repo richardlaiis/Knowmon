@@ -111,6 +111,25 @@ describe('retrieve', () => {
     expect(r('2026-10-06', '2026-10-31')).toEqual(['雜記.md'])
   })
 
+  it('有 keywords 時全文改為 OR，命中越多個關鍵字的排越前面', () => {
+    const db = vaultDb(notes)
+    // AND 時沒有任何一篇同時包含三個詞
+    expect(retrieve(db, '跑步 心率 番茄', null, { expand: false }).hits).toEqual([])
+    const r = retrieve(db, '問句', null, { expand: false }, ['跑步', '心率', '番茄'])
+    // 跑步紀錄命中兩個詞；其餘各命中一個，依該詞的名次（料理是「番茄」的第 1 名）
+    expect(paths(r)).toEqual(['跑步紀錄.md', '料理.md', '習慣.md'])
+    expect(r.hits[0]).toMatchObject({ via: ['fulltext'], line: 1 })
+    expect(r.hits[1].snippet.some((x) => x.match && x.text === '番茄')).toBe(true)
+  })
+
+  it('keywords 為空但有查詢向量時只用向量', () => {
+    const db = vaultDb(notes)
+    const r = retrieve(db, '番茄蛋', fakeVector('番茄蛋'), { expand: false }, [])
+    expect(r.vector).toBe(true)
+    expect(r.hits[0]).toMatchObject({ path: '料理.md', via: ['vector'] })
+    expect(retrieve(db, '番茄蛋', null, {}, []).hits).toEqual([])
+  })
+
   it('limit 限制筆數', () => {
     const many = Array.from({ length: 30 }, (_, i) => ({ path: `n${i}.md`, body: '共同詞彙' }))
     const db = vaultDb(many)

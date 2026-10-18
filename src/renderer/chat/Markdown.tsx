@@ -1,15 +1,30 @@
-// 以 React 元素渲染 parseMarkdown 的結果；wikilink 可點擊開啟筆記
+// 以 React 元素渲染 parseMarkdown 的結果；wikilink 可點擊開啟筆記，問答的 [n] 可點擊開啟來源
 import { useMemo } from 'react'
+import type { AskSource } from '../../shared/types'
 import { parseMarkdown, type MdBlock, type MdInline } from './markdown'
 
 export interface MarkdownProps {
   text: string
   className?: string
   onOpenLink: (target: string, newTab: boolean) => void
+  /** 有值時把 [n] 渲染成引用，點擊開啟對應的來源 */
+  citations?: {
+    sources: AskSource[]
+    onOpen: (source: AskSource, newTab: boolean) => void
+  }
 }
 
-export function Markdown({ text, className, onOpenLink }: MarkdownProps): React.JSX.Element {
-  const tree = useMemo(() => parseMarkdown(text), [text])
+export function Markdown({
+  text,
+  className,
+  onOpenLink,
+  citations
+}: MarkdownProps): React.JSX.Element {
+  const withCitations = !!citations
+  const tree = useMemo(
+    () => parseMarkdown(text, { citations: withCitations }),
+    [text, withCitations]
+  )
 
   const inline = (nodes: MdInline[]): React.ReactNode[] =>
     nodes.map((n, i) => {
@@ -30,6 +45,20 @@ export function Markdown({ text, className, onOpenLink }: MarkdownProps): React.
               {inline(n.children)}
             </a>
           )
+        case 'cite': {
+          const source = citations?.sources.find((s) => s.n === n.n)
+          if (!source) return `[${n.n}]`
+          return (
+            <button
+              key={i}
+              className="cite"
+              title={`${source.title} · ${source.path}:${source.line} (Ctrl+click opens a new tab)`}
+              onClick={(e) => citations!.onOpen(source, e.ctrlKey || e.metaKey)}
+            >
+              {n.n}
+            </button>
+          )
+        }
         case 'wikilink':
           return (
             <a

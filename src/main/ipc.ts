@@ -1,7 +1,15 @@
 // IPC handler：renderer 只能透過這裡（以及 preload 暴露的 KnowmonAPI）存取檔案與 DB
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '../shared/channels'
-import type { LlmStatus, RetrieveOptions, SummaryChunk, TreeNode } from '../shared/types'
+import type {
+  AnswerChunk,
+  ChatTurn,
+  DateRange,
+  LlmStatus,
+  RetrieveOptions,
+  SummaryChunk,
+  TreeNode
+} from '../shared/types'
 import { LlmService } from './llm/service'
 import { loadSettings, saveSettings } from './settings'
 import { Vault } from './vault'
@@ -13,7 +21,7 @@ export interface IpcContext {
 let current: Vault | null = null
 let llm: LlmService | null = null
 
-function broadcast(channel: string, payload: LlmStatus | SummaryChunk): void {
+function broadcast(channel: string, payload: LlmStatus | SummaryChunk | AnswerChunk): void {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, payload)
 }
 
@@ -58,7 +66,8 @@ export function registerIpc(ctx: IpcContext): void {
     saveSettings: (s) =>
       saveSettings(ctx.settingsDir, { ...loadSettings(ctx.settingsDir), llm: s }),
     onStatus: (s) => broadcast(IPC.llmStatusChanged, s),
-    onSummary: (c) => broadcast(IPC.llmSummary, c)
+    onSummary: (c) => broadcast(IPC.llmSummary, c),
+    onAnswer: (c) => broadcast(IPC.llmAnswer, c)
   })
 
   ipcMain.handle(IPC.vaultPick, async (event) => {
@@ -122,15 +131,51 @@ export function registerIpc(ctx: IpcContext): void {
       language: r.language === 'en' ? 'en' : 'zh-TW'
     })
   })
+  ipcMain.handle(IPC.llmAsk, (_e, req: unknown) => {
+    requireVault()
+    const r = (req && typeof req === 'object' ? req : {}) as Record<string, unknown>
+    return requireLlm().ask({
+      question: String(r.question ?? ''),
+      history: chatHistory(r.history),
+      ...(r.range === null
+        ? { range: null }
+        : dateRange(r.range)
+          ? { range: dateRange(r.range) }
+          : {})
+    })
+  })
   ipcMain.handle(IPC.llmCancel, (_e, id: unknown) => requireLlm().cancel(String(id ?? '')))
+}
+
+const day = (v: unknown): string | undefined =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined
+
+/** renderer 傳來的時間範圍；不合法時 undefined（改從問題解析） */
+function dateRange(input: unknown): DateRange | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const o = input as Record<string, unknown>
+  const from = day(o.from)
+  const to = day(o.to)
+  if (!from || !to) return undefined
+  return from <= to ? { from, to } : { from: to, to: from }
+}
+
+/** renderer 傳來的對話紀錄只取合法的訊息 */
+function chatHistory(input: unknown): ChatTurn[] {
+  if (!Array.isArray(input)) return []
+  return input.flatMap((t): ChatTurn[] => {
+    if (!t || typeof t !== 'object') return []
+    const { role, content } = t as Record<string, unknown>
+    return (role === 'user' || role === 'assistant') && typeof content === 'string'
+      ? [{ role, content }]
+      : []
+  })
 }
 
 /** renderer 傳來的檢索選項只取合法欄位 */
 function retrieveOptions(input: unknown): RetrieveOptions {
   if (!input || typeof input !== 'object') return {}
   const o = input as Record<string, unknown>
-  const day = (v: unknown): string | undefined =>
-    typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined
   return {
     ...(typeof o.limit === 'number' ? { limit: o.limit } : {}),
     ...(day(o.from) ? { from: day(o.from) } : {}),

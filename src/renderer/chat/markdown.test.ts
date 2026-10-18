@@ -108,4 +108,33 @@ describe('parseMarkdown', () => {
       }
     ])
   })
+
+  it('citations 開啟時 [n] 解析成引用，程式碼與 wikilink 內不解析', () => {
+    expect(parseMarkdown('跑了五公里 [1][2]，見 [[筆記]]。', { citations: true })).toEqual([
+      {
+        t: 'p',
+        children: [
+          { t: 'text', text: '跑了五公里 ' },
+          { t: 'cite', n: 1 },
+          { t: 'cite', n: 2 },
+          { t: 'text', text: '，見 ' },
+          { t: 'wikilink', target: '筆記', label: '筆記' },
+          { t: 'text', text: '。' }
+        ]
+      }
+    ])
+    expect(parseMarkdown('`a[1]` [x]', { citations: true })).toEqual([
+      {
+        t: 'p',
+        children: [
+          { t: 'code', text: 'a[1]' },
+          { t: 'text', text: ' x' }
+        ]
+      }
+    ])
+    // 總結（未開啟）時 [1] 照舊當成沒有網址的連結，只顯示文字
+    expect(parseMarkdown('結果 [1]')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: '結果 1' }] }
+    ])
+  })
 })

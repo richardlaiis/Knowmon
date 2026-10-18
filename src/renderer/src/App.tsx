@@ -3,6 +3,8 @@ import { DEFAULT_SEMANTIC_SETTINGS } from '../../shared/llm'
 import { resolveLink } from '../../shared/links'
 import { DEFAULT_TIME_SETTINGS } from '../../shared/time'
 import type {
+  AskSource,
+  DateRange,
   LlmSettings,
   NoteSummary,
   SemanticSettings,
@@ -13,7 +15,19 @@ import type {
 import {
   AiPanel,
   LlmSettingsDialog,
+  applyAnswerChunk,
   applyChunk,
+  askQuestion,
+  emptyConversation,
+  failAnswer,
+  chatHistory,
+  lastAnswer,
+  loadAiMode,
+  saveAiMode,
+  stopAnswer,
+  withAnswerId,
+  type AiMode,
+  type Conversation,
   describeStatus,
   failSummary,
   loadSummaryLanguage,
@@ -144,6 +158,11 @@ function App(): React.JSX.Element {
   const llmStatus = useLlmStatus(vault)
   const [summary, setSummary] = useState<SummaryState | null>(null)
   const [summaryLanguage, setSummaryLanguage] = useState(loadSummaryLanguage)
+  const [aiMode, setAiMode] = useState<AiMode>(loadAiMode)
+  /** 問答對話，只存在記憶體；換 vault 時清空 */
+  const [conversation, setConversation] = useState<Conversation>(emptyConversation)
+  /** 遞增時聚焦對話輸入框 */
+  const [chatFocus, setChatFocus] = useState(0)
   /** 各筆記編輯器目前選取的文字（總結選取文字用） */
   const selections = useRef(new Map<string, string>())
   /** 搜尋結果要捲到的行；n 每次遞增，同一行也會再跳 */
@@ -220,8 +239,12 @@ function App(): React.JSX.Element {
     wasBusy.current = embedBusy
   }, [embedBusy])
 
-  // 總結的串流片段
+  // 總結與問答的串流片段
   useEffect(() => window.api.llm.onSummary((c) => setSummary((s) => s && applyChunk(s, c))), [])
+  useEffect(
+    () => window.api.llm.onAnswer((c) => setConversation((s) => applyAnswerChunk(s, c))),
+    []
+  )
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
@@ -256,6 +279,11 @@ function App(): React.JSX.Element {
     } catch {
       // 無法儲存偏好時仍可切換
     }
+  }, [])
+
+  const chooseAiMode = useCallback((mode: AiMode): void => {
+    setAiMode(mode)
+    saveAiMode(mode)
   }, [])
 
   const openSearch = useCallback(() => {
@@ -357,6 +385,7 @@ function App(): React.JSX.Element {
       if (!root) return
       restoredFor.current = null
       setTabs(T.emptyTabs)
+      resetConversation()
       setVault(root)
       await refreshTree()
     } catch (e) {
@@ -387,6 +416,7 @@ function App(): React.JSX.Element {
     const selection = (selections.current.get(path) ?? '').trim()
     setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
     chooseSideTab('ai')
+    chooseAiMode('summary')
     setSummary((s) => {
       if (s?.id && s.status === 'running') void window.api.llm.cancel(s.id)
       return startSummary(path, selection.length > 0)
@@ -403,7 +433,47 @@ function App(): React.JSX.Element {
     } catch (e) {
       setSummary((s) => s && failSummary(s, errorMessage(e)))
     }
-  }, [currentNote, autosave, chooseSideTab, summaryLanguage])
+  }, [currentNote, autosave, chooseSideTab, chooseAiMode, summaryLanguage])
+
+  /** 打開右側 AI 分頁的對話並聚焦輸入框 */
+  const openChat = useCallback((): void => {
+    setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
+    chooseSideTab('ai')
+    chooseAiMode('chat')
+    setChatFocus((n) => n + 1)
+  }, [chooseSideTab, chooseAiMode])
+
+  const askNotes = async (question: string, range: DateRange | null | undefined): Promise<void> => {
+    const turns = chatHistory(conversation)
+    setConversation((c) => askQuestion(c, question))
+    try {
+      // main 從索引檢索，先寫出未儲存的內容
+      await autosave.flush()
+      const id = await window.api.llm.ask({ question, history: turns, range })
+      setConversation((c) => withAnswerId(c, id))
+    } catch (e) {
+      setConversation((c) => failAnswer(c, errorMessage(e)))
+    }
+  }
+
+  const stopAsking = (): void => {
+    const a = lastAnswer(conversation)
+    if (a?.id) void window.api.llm.cancel(a.id)
+    setConversation(stopAnswer)
+  }
+
+  function resetConversation(): void {
+    setConversation((c) => {
+      const a = lastAnswer(c)
+      if (a?.id && (a.status === 'searching' || a.status === 'running')) {
+        void window.api.llm.cancel(a.id)
+      }
+      return emptyConversation()
+    })
+  }
+
+  const openSource = (source: AskSource, newTab: boolean): void =>
+    void openAt(source.path, newTab, source.line)
 
   const stopSummarizing = (): void => {
     if (summary?.id) void window.api.llm.cancel(summary.id)
@@ -541,6 +611,7 @@ function App(): React.JSX.Element {
       else if (e.shiftKey && key === 'f') openSearch()
       else if (e.shiftKey && key === 't') openTimeline()
       else if (e.shiftKey && key === 's') void summarize()
+      else if (e.shiftKey && key === 'a') openChat()
       else if (e.shiftKey) return
       else if (key === 'e') togglePreview()
       else if (key === 'o') openSwitcher(false)
@@ -568,7 +639,8 @@ function App(): React.JSX.Element {
     closeTab,
     toggleLeft,
     toggleRight,
-    summarize
+    summarize,
+    openChat
   ])
 
   if (!ready) return <div className="empty" />
@@ -774,7 +846,7 @@ function App(): React.JSX.Element {
               <button
                 className={sideTab === 'ai' ? 'active' : ''}
                 onClick={() => chooseSideTab('ai')}
-                title="Summaries and AI status (Ctrl+Shift+S summarizes)"
+                title="Ask your notes, summaries and AI status (Ctrl+Shift+A / Ctrl+Shift+S)"
               >
                 AI
               </button>
@@ -782,6 +854,17 @@ function App(): React.JSX.Element {
             {sideTab === 'ai' ? (
               <AiPanel
                 status={llmStatus}
+                mode={aiMode}
+                onModeChange={chooseAiMode}
+                chat={{
+                  conversation,
+                  focusKey: chatFocus,
+                  onAsk: (q, range) => void askNotes(q, range),
+                  onStop: stopAsking,
+                  onReset: resetConversation,
+                  onOpenSource: openSource,
+                  onOpenLink: (target, newTab) => void openLink(target, newTab)
+                }}
                 note={currentNote}
                 summary={summary}
                 language={summaryLanguage}

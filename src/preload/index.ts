@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IPC } from '../shared/channels'
-import type { KnowmonAPI, LlmStatus, SummaryChunk, VaultChange } from '../shared/types'
+import type { AnswerChunk, KnowmonAPI, LlmStatus, SummaryChunk, VaultChange } from '../shared/types'
 
 /** 訂閱 main 推送的事件，回傳取消訂閱的函式 */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -52,7 +52,9 @@ const api: KnowmonAPI = {
     retrieve: (q, opts) => ipcRenderer.invoke(IPC.llmRetrieve, q, opts),
     summarize: (req) => ipcRenderer.invoke(IPC.llmSummarize, req),
     cancel: (id) => ipcRenderer.invoke(IPC.llmCancel, id),
-    onSummary: (cb) => subscribe<SummaryChunk>(IPC.llmSummary, cb)
+    onSummary: (cb) => subscribe<SummaryChunk>(IPC.llmSummary, cb),
+    ask: (req) => ipcRenderer.invoke(IPC.llmAsk, req),
+    onAnswer: (cb) => subscribe<AnswerChunk>(IPC.llmAnswer, cb)
   }
 }
 

@@ -1,7 +1,7 @@
 // 混合檢索：全文（FTS5）+ 向量（sqlite-vec）以 Reciprocal Rank Fusion 合併，
 // 再把前幾名的圖譜鄰居加進來，並可依日期篩選。查詢向量由呼叫者提供（null = 只用全文）。
 import { localDay } from '../../shared/time'
-import type { RetrieveHit, RetrieveOptions, RetrieveResult } from '../../shared/types'
+import type { RetrieveHit, RetrieveOptions, RetrieveResult, SearchHit } from '../../shared/types'
 import { getNoteBody, type DB } from '../db'
 import { searchNotes, searchTerms } from '../db/search'
 import { clip, findAll, toSegments, type Range } from '../db/segments'
@@ -53,14 +53,19 @@ export function noteDay(n: Pick<NoteRow, 'eventDate' | 'modifiedAt'>): string {
   return n.eventDate ?? localDay(n.modifiedAt)
 }
 
+/**
+ * keywords 有值時（問答用），全文改為每個關鍵字各自搜尋（OR），命中越多個關鍵字的排越前面；
+ * 沒有關鍵字但有查詢向量時只用向量。
+ */
 export function retrieve(
   db: DB,
   query: string,
   queryVector: ArrayLike<number> | null,
-  opts: RetrieveOptions = {}
+  opts: RetrieveOptions = {},
+  keywords?: readonly string[]
 ): RetrieveResult {
-  const terms = searchTerms(query)
-  if (terms.length === 0) return { hits: [], vector: false }
+  const terms = keywords ? [...keywords] : searchTerms(query)
+  if (terms.length === 0 && !(keywords && queryVector)) return { hits: [], vector: false }
   const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 20)))
 
   const notes = new Map(
@@ -93,7 +98,8 @@ export function retrieve(
 
   // 1. 全文
   const fulltext: number[] = []
-  for (const h of searchNotes(db, query, filtered ? 500 : SOURCE_DEPTH)) {
+  const depth = filtered ? 500 : SOURCE_DEPTH
+  for (const h of keywords ? searchAny(db, terms, depth) : searchNotes(db, query, depth)) {
     const id = byPath.get(h.path)
     if (id === undefined || !allowed(id)) continue
     fulltext.push(id)
@@ -170,6 +176,23 @@ export function retrieve(
       }
     })
   return { hits, vector: queryVector !== null }
+}
+
+/** 每個詞各自搜尋，依命中的詞數排序，同數時依各詞名次的 RRF 分數 */
+function searchAny(db: DB, terms: readonly string[], limit: number): SearchHit[] {
+  const found = new Map<string, { hit: SearchHit; count: number; score: number }>()
+  for (const term of terms) {
+    searchNotes(db, term, limit).forEach((hit, i) => {
+      const f = found.get(hit.path) ?? { hit, count: 0, score: 0 }
+      f.count++
+      f.score += 1 / (RRF_K + i + 1)
+      found.set(hit.path, f)
+    })
+  }
+  return [...found.values()]
+    .sort((a, b) => b.count - a.count || b.score - a.score)
+    .slice(0, limit)
+    .map((f) => f.hit)
 }
 
 /** 結果顯示的段落：向量命中的 chunk、全文摘要，或筆記的第一塊 */

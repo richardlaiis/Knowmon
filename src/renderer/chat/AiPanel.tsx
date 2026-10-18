@@ -1,12 +1,17 @@
-// 右側面板的 AI 分頁：Ollama 連線與 embedding 進度、目前筆記的總結
+// 右側面板的 AI 分頁：Ollama 連線與 embedding 進度，下面切換對話（問答）與目前筆記的總結
 import { useState } from 'react'
 import type { LlmStatus, SummaryLanguage } from '../../shared/types'
+import { ChatPanel, type ChatPanelProps } from './ChatPanel'
+import type { AiMode } from './conversation'
 import { describeStatus } from './status'
 import { Markdown } from './Markdown'
 import type { SummaryState } from './summary'
 
 export interface AiPanelProps {
   status: LlmStatus | null
+  mode: AiMode
+  onModeChange: (mode: AiMode) => void
+  chat: Omit<ChatPanelProps, 'online'>
   /** 目前開著的筆記；沒有時只顯示狀態 */
   note: string | null
   summary: SummaryState | null
@@ -18,6 +23,11 @@ export interface AiPanelProps {
   onOpenSettings: () => void
   onOpenLink: (target: string, newTab: boolean) => void
 }
+
+const MODES: [AiMode, string, string][] = [
+  ['chat', 'Chat', 'Ask questions about your notes (Ctrl+Shift+A)'],
+  ['summary', 'Summary', 'Summarize the current note (Ctrl+Shift+S)']
+]
 
 const LANGUAGES: [SummaryLanguage, string][] = [
   ['zh-TW', '中文'],
@@ -61,9 +71,24 @@ export function AiPanel(props: AiPanelProps): React.JSX.Element {
           </p>
         )}
         {status?.error && <p className="ai-status-detail error">{status.error}</p>}
+        <div className="segmented ai-mode" role="group" aria-label="AI mode">
+          {MODES.map(([value, label, hint]) => (
+            <button
+              key={value}
+              className={props.mode === value ? 'on' : ''}
+              aria-pressed={props.mode === value}
+              title={hint}
+              onClick={() => props.onModeChange(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </section>
 
-      {!note ? (
+      {props.mode === 'chat' ? (
+        <ChatPanel {...props.chat} online={!!status?.online} />
+      ) : !note ? (
         <p className="panel-note">Open a note to summarize it.</p>
       ) : (
         <section className="ai-summary">

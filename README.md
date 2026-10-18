@@ -6,7 +6,7 @@
 
 - Node.js 22 以上（目前開發使用 v24）
 - Linux / macOS / Windows。以下 Linux 專屬步驟會特別標註。
-- AI 功能（可選）：[Ollama](https://ollama.com)，並下載模型 `ollama pull bge-m3`（embedding）與 `ollama pull qwen3:8b`（總結）。沒有 Ollama 時其他功能照常，側欄底部顯示「AI offline」。
+- AI 功能（可選）：[Ollama](https://ollama.com)，並下載模型 `ollama pull bge-m3`（embedding）與 `ollama pull qwen3:8b`（總結與問答）。沒有 Ollama 時其他功能照常，側欄底部顯示「AI offline」。
 
 ## 安裝
 
@@ -74,6 +74,7 @@ macOS 上把 `Ctrl` 換成 `Cmd`（`Ctrl+Tab` 除外）。
 | `Ctrl+Alt+B`                  | 開關右側面板（Backlinks、Local graph、AI）    |
 | `Ctrl+E`                      | 切換即時渲染／原始碼模式                      |
 | `Ctrl+Shift+S`                | 總結目前的筆記；有選取文字時只總結選取的部分  |
+| `Ctrl+Shift+A`                | 打開 AI 分頁的對話（問答）並聚焦輸入框        |
 
 ### 編輯器
 
@@ -153,8 +154,9 @@ npm run lint         # ESLint + Prettier 檢查
 - `src/renderer/editor/autosave.test.ts`、`src/renderer/src/lib/tree.test.ts`：自動儲存、檔案樹路徑工具（含拖曳）
 - `src/main/indexer/timeLinks.test.ts`、`src/main/db/time.test.ts`、`src/main/vault/time.test.ts`：時間邊（same_session、same_day、sequence）的推導、何時重算、時間參數的讀寫、DB 重建
 - `src/shared/time.test.ts`、`src/renderer/graph/timeFilter.test.ts`、`src/renderer/timeline/model.test.ts`：session 切分、圖譜時間篩選、時間軸分組
+- `src/shared/timeRange.test.ts`、`src/renderer/chat/conversation.test.ts`：從問題解析時間範圍（「上個月」「最近 7 天」「last week」）、對話狀態
 - `src/main/indexer/chunk.test.ts`、`src/main/db/vectors.test.ts`：切塊、向量表（sqlite-vec）、semantic 邊與 1000 篇的效能
-- `src/main/llm/*.test.ts`：Ollama client（假的 fetch）、背景 embedding、混合檢索、總結；`service.test.ts` 用真的 Vault 加假的 Ollama 測離線、模型未下載、換模型
+- `src/main/llm/*.test.ts`：Ollama client（假的 fetch）、背景 embedding、混合檢索、總結、問答（關鍵字、context 組裝、引用過濾）；`service.test.ts` 用真的 Vault 加假的 Ollama 測離線、模型未下載、換模型
 
 與真的 Ollama 連線的整合測試預設跳過，需要時執行：
 
@@ -243,6 +245,24 @@ npm run dev
 | 45  | AI 分頁切到「EN」再按 Regenerate                               | 用英文條列總結，`[[原子習慣]]` 等連結保持原文、可點擊；切回「中文」恢復繁體中文；重開 App 後仍記得選擇          |
 | 46  | 總結內容有粗體、清單、程式碼時                                 | 以格式顯示（不是原始 Markdown 符號）；串流途中未完成的語法先顯示為文字                                          |
 | 47  | 總結一篇沒有任何 `[[連結]]` 的筆記                             | 總結裡沒有可點的連結，也沒有 `[[` 符號；有連結的筆記只會出現原文中的連結                                        |
+
+### 問答（階段 6）
+
+同樣需要 Ollama。AI 分頁上方切換「Chat / Summary」，`Ctrl+Shift+A` 直接打開對話。
+
+| #   | 操作                                                   | 預期結果                                                                                                      |
+| --- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 48  | `Ctrl+Shift+A`，輸入 `深度工作的重點是什麼？` 按 Enter | 先顯示「Searching notes…」，再逐字顯示繁體中文回答（約 5 秒）；句子後面有上標的引用編號，下方列出被引用的來源 |
+| 49  | 點回答裡的引用編號或下方的來源                         | 開啟該筆記並捲到引用的段落；`Ctrl+點擊`開在新分頁                                                             |
+| 50  | 輸入 `2026-10-04 到 2026-10-06 之間做了什麼？`         | 輸入時輸入框上方出現「2026-10-04 – 2026-10-06」；回答上方顯示「Notes from …」，來源只有這三天的日記           |
+| 51  | 輸入 `上週寫了什麼？` 後按範圍旁的 ×，再送出           | 範圍變成刪除線的「No date filter」，送出後不篩選日期                                                          |
+| 52  | 按「Date range…」選日期再送出                          | 只用該範圍的筆記回答；送出後範圍恢復成自動偵測                                                                |
+| 53  | 接著問 `那第二點呢？`                                  | 沿用前一題的主題回答（對話脈絡）                                                                              |
+| 54  | 問 `What are the key ideas of Atomic Habits?`          | 用英文回答，引用「原子習慣」                                                                                  |
+| 55  | 問筆記裡沒有的問題（例如 `薛丁格方程式怎麼推導？`）    | 回答「筆記裡沒有相關內容」，不自己編造；來源收在「sources searched」裡                                        |
+| 56  | 回答中按「Copy」貼到筆記                               | 引用編號變成 `[[來源標題]]` 連結                                                                              |
+| 57  | 回答途中按「Stop」；按「New chat」                     | 停止並顯示「Stopped.」；清空對話。換 vault 時對話也會清空                                                     |
+| 58  | Ollama 停止時                                          | 輸入框顯示「Ollama is offline」，Ask 按鈕停用                                                                 |
 
 ### 大型 vault 效能測試
 

@@ -12,6 +12,8 @@ export type MdInline =
   | { t: 'code'; text: string }
   | { t: 'wikilink'; target: string; label: string }
   | { t: 'link'; href: string; children: MdInline[] }
+  /** 問答的引用編號 [n]（parseMarkdown 的 citations 選項開啟時） */
+  | { t: 'cite'; n: number }
 
 export type MdBlock =
   | { t: 'p'; children: MdInline[] }
@@ -36,7 +38,25 @@ const WikiLink: MarkdownConfig = {
   ]
 }
 
-const parser = (markdownLanguage.parser as MarkdownParser).configure([WikiLink])
+/** [1]、[12]：問答回答中的來源編號。在 Link 之前解析，[1][2] 不會被當成參考連結 */
+const Citation: MarkdownConfig = {
+  defineNodes: ['Citation'],
+  parseInline: [
+    {
+      name: 'Citation',
+      before: 'Link',
+      parse(cx, next, pos) {
+        if (next !== 91 /* [ */ || cx.char(pos + 1) === 91) return -1
+        const m = /^\[\d{1,3}\]/.exec(cx.slice(pos, Math.min(cx.end, pos + 6)))
+        return m ? cx.addElement(cx.elt('Citation', pos, pos + m[0].length)) : -1
+      }
+    }
+  ]
+}
+
+const base = markdownLanguage.parser as MarkdownParser
+const parser = base.configure([WikiLink])
+const citationParser = base.configure([WikiLink, Citation])
 
 /** 不輸出內容的語法標記 */
 const MARKS = new Set([
@@ -59,7 +79,12 @@ function children(node: SyntaxNode): SyntaxNode[] {
   return out
 }
 
-export function parseMarkdown(text: string): MdBlock[] {
+export interface ParseOptions {
+  /** 把 [n] 解析成引用編號 */
+  citations?: boolean
+}
+
+export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] {
   const src = text
   const slice = (from: number, to: number): string => src.slice(from, to)
 
@@ -119,6 +144,9 @@ export function parseMarkdown(text: string): MdBlock[] {
             }
           break
         }
+        case 'Citation':
+          out.push({ t: 'cite', n: Number(slice(c.from + 1, c.to - 1)) })
+          break
         case 'Escape':
           push(slice(c.from + 1, c.to))
           break
@@ -186,5 +214,5 @@ export function parseMarkdown(text: string): MdBlock[] {
     return out
   }
 
-  return blocks(parser.parse(src).topNode)
+  return blocks((opts.citations ? citationParser : parser).parse(src).topNode)
 }
