@@ -13,7 +13,7 @@ import type {
 } from '../../shared/types'
 import { Vault } from '../vault'
 import { OllamaError } from './ollama'
-import { LlmService } from './service'
+import { CHAT_NUM_CTX, LlmService } from './service'
 import { fakeOllama, type FakeOllama } from './test-utils'
 
 let root: string
@@ -309,6 +309,23 @@ describe('LlmService', () => {
 
       expect(() => s.ask({ question: '  ' })).toThrow('empty')
     })
+  })
+
+  it('總結、問答、agent 都帶同一個 num_ctx（不同時 Ollama 會重新載入模型）', async () => {
+    ollama.toolReplies = [
+      { content: '', toolCalls: [{ name: 'search_notes', arguments: { query: '跑步' } }] },
+      { content: '五公里。', toolCalls: [] }
+    ]
+    const { s } = await start()
+    await until(idle(s))
+    const sum = s.summarize({ path: '跑步.md' })
+    await until(() => chunks.some((c) => c.id === sum && c.done))
+    const ask = s.ask({ question: '跑步 跑了多遠？' })
+    await until(() => answers.some((c) => c.id === ask && c.done))
+    const task = s.agent({ task: '我跑了多遠？' })
+    await until(() => agentChunks.some((c) => c.id === task && c.done))
+    expect(ollama.numCtx).toHaveLength(4)
+    expect(ollama.numCtx.every((n) => n === CHAT_NUM_CTX)).toBe(true)
   })
 
   describe('agent', () => {

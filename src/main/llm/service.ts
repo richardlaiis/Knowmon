@@ -20,7 +20,7 @@ import { embedProgress, vecAvailable, vectorModel } from '../db/vectors'
 import { normalizeRel } from '../vault/paths'
 import type { Vault } from '../vault'
 import { Embedder } from './embedder'
-import { agentMessages, AGENT_NUM_CTX, runAgent, type ToolChat } from './agent/loop'
+import { agentMessages, runAgent, type ToolChat } from './agent/loop'
 import { applyProposal, runTool, TOOL_DEFINITIONS, type ToolContext } from './agent/tools'
 import { createOllama, isNoToolsError, OllamaError, type OllamaClient } from './ollama'
 import {
@@ -38,6 +38,12 @@ import { retrieve } from './retrieve'
 import { summarize, type Chat } from './summarize'
 
 export const RETRY_MS = 30_000
+/**
+ * 所有對話（總結、問答、agent）共用的 context 長度（tokens）。
+ * Ollama 的預設是 4096，問答的來源與 agent 的工具結果會被截掉開頭；
+ * 而且 num_ctx 不同時 Ollama 會重新載入模型（約 10 秒）、清掉 prompt 快取，所以統一用同一個值。
+ */
+export const CHAT_NUM_CTX = 8_192
 
 export interface LlmServiceOptions {
   /** 讀取已存的設定（未設定的欄位用預設值） */
@@ -151,7 +157,12 @@ export class LlmService {
     }
     const model = this.settings.chatModel
     const chat: Chat = (messages, onDelta) =>
-      this.client.chat(model, messages, { signal: ac.signal, onDelta, temperature: 0.3 })
+      this.client.chat(model, messages, {
+        signal: ac.signal,
+        onDelta,
+        temperature: 0.3,
+        numCtx: CHAT_NUM_CTX
+      })
     // 先回傳 id，讓 renderer 能對上之後推送的片段
     setImmediate(() => {
       summarize(
@@ -188,7 +199,12 @@ export class LlmService {
     }
     const model = this.settings.chatModel
     const chat: Chat = (messages, onDelta) =>
-      this.client.chat(model, messages, { signal: ac.signal, onDelta, temperature: 0.2 })
+      this.client.chat(model, messages, {
+        signal: ac.signal,
+        onDelta,
+        temperature: 0.2,
+        numCtx: CHAT_NUM_CTX
+      })
 
     const run = async (): Promise<number[]> => {
       const plan = planQuery(question, history, req.range, (this.opts.now ?? Date.now)())
@@ -257,7 +273,7 @@ export class LlmService {
         signal: ac.signal,
         onDelta,
         temperature: 0.2,
-        numCtx: AGENT_NUM_CTX
+        numCtx: CHAT_NUM_CTX
       })
     const confirm = (step: { index: number }): Promise<AgentDecision> =>
       new Promise((resolve) => {

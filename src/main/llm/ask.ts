@@ -331,15 +331,19 @@ export function noSourcesMessage(language: SummaryLanguage, range: DateRange | n
 }
 
 /** 歷史訊息：去掉舊的引用編號（對應的是之前的來源），過長的截斷 */
-export function historyMessages(history: readonly ChatTurn[]): ChatMessage[] {
+export function historyMessages(
+  history: readonly ChatTurn[],
+  maxMessages = HISTORY_MESSAGES,
+  maxChars = HISTORY_CHARS
+): ChatMessage[] {
   return history
     .filter((t) => (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
-    .slice(-HISTORY_MESSAGES)
+    .slice(-maxMessages)
     .map((t) => {
       const text = t.content.replace(/\[\d+\]/g, '').trim()
       return {
         role: t.role,
-        content: text.length > HISTORY_CHARS ? text.slice(0, HISTORY_CHARS) + '…' : text
+        content: text.length > maxChars ? text.slice(0, maxChars) + '…' : text
       }
     })
 }

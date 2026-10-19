@@ -9,11 +9,14 @@ import type {
 import type { ChatMessage, ChatResult, ToolCall, ToolDefinition } from '../ollama'
 import {
   AGENT_CONTEXT_MAX,
+  AGENT_HISTORY_CHARS,
+  AGENT_HISTORY_MESSAGES,
   agentMessages,
   REJECTED,
   REPEATED,
   runAgent,
   TOOL_RESULT_MAX,
+  TOOL_RESULT_MIN,
   type AgentTools,
   type ToolChat
 } from './loop'
@@ -290,23 +293,61 @@ describe('runAgent', () => {
     expect(h.calls).toHaveLength(1)
   })
 
-  it('工具結果過長時截斷；總量超過上限時舊結果換成一行說明，之後可以重新呼叫', async () => {
+  it('工具結果過長時截斷；字數預算用完後不再提供工具，舊結果不改寫', async () => {
     const big = TOOL_RESULT_MAX + 500
-    const n = Math.ceil(AGENT_CONTEXT_MAX / TOOL_RESULT_MAX) + 1
-    const replies = Array.from({ length: n }, (_, i) =>
+    const replies = Array.from({ length: 20 }, (_, i) =>
       reply('', call('get_note', { path: `p${i}`, big }))
     )
-    replies.push(reply('', call('get_note', { path: 'p0', big })), reply('完成'))
     const h = harness(replies, { maxSteps: 20 })
     await h.run()
-    const results = toolMessages(h.calls[h.calls.length - 1].messages)
-    expect(results[results.length - 1].content).toMatch(/…truncated\)$/)
-    expect(results[0].content).toMatch(/^\(Earlier result omitted/)
+    const n = Math.ceil(AGENT_CONTEXT_MAX / TOOL_RESULT_MAX)
+    expect(h.steps()).toHaveLength(n)
+    expect(h.calls.map((c) => c.tools !== null)).toEqual([...Array<boolean>(n).fill(true), false])
+    const last = h.calls[h.calls.length - 1].messages
+    expect(last[last.length - 1]).toMatchObject({ role: 'user' })
+    const results = toolMessages(last)
+    expect(results[0].content).toBe(`${'x'.repeat(TOOL_RESULT_MAX)}\n(…truncated)`)
+    expect(results.every((m) => m.content.endsWith('(…truncated)'))).toBe(true)
     expect(results.reduce((s, m) => s + m.content.length, 0)).toBeLessThanOrEqual(
-      AGENT_CONTEXT_MAX + TOOL_RESULT_MAX
+      AGENT_CONTEXT_MAX + TOOL_RESULT_MIN + 20
     )
-    // p0 的結果被省略後，再次呼叫不算重複
-    expect(h.steps()[n].label).not.toContain('repeated')
+    // 每次送出的對話都以上一次的對話開頭（Ollama 的 prompt 快取才有效）
+    for (let i = 1; i < h.calls.length; i++) {
+      expect(h.calls[i].messages.slice(0, h.calls[i - 1].messages.length)).toEqual(
+        h.calls[i - 1].messages
+      )
+    }
+  })
+
+  it('預算快用完時，新的結果截到剩下的預算，但至少保留 TOOL_RESULT_MIN 字', async () => {
+    const first = AGENT_CONTEXT_MAX - TOOL_RESULT_MIN / 2
+    const h = harness(
+      [
+        reply(
+          '',
+          call('get_note', { path: 'a', big: TOOL_RESULT_MAX }),
+          call('get_note', { path: 'b', big: TOOL_RESULT_MAX }),
+          call('get_note', { path: 'c', big: TOOL_RESULT_MAX }),
+          call('get_note', { path: 'd', big: first - 3 * TOOL_RESULT_MAX })
+        ),
+        reply('', call('get_note', { path: 'e', big: TOOL_RESULT_MAX })),
+        reply('完成')
+      ],
+      { maxSteps: 20 }
+    )
+    await h.run()
+    const results = toolMessages(h.calls[1].messages)
+    expect(results.map((m) => m.content.length)).toEqual([
+      TOOL_RESULT_MAX,
+      TOOL_RESULT_MAX,
+      TOOL_RESULT_MAX,
+      first - 3 * TOOL_RESULT_MAX
+    ])
+    // 還有一點預算：再提供一次工具，結果至少 TOOL_RESULT_MIN 字
+    expect(h.calls[1].tools).not.toBeNull()
+    const e = toolMessages(h.calls[2].messages)[4].content
+    expect(e).toBe(`${'x'.repeat(TOOL_RESULT_MIN)}\n(…truncated)`)
+    expect(h.calls[2].tools).toBeNull()
   })
 
   it('回答中只保留工具結果裡出現過的連結', async () => {
@@ -338,5 +379,17 @@ describe('agentMessages', () => {
       { role: 'user', content: '整理上週的筆記' }
     ])
     expect(agentMessages('x', [], 'en', NOW)[0].content).toContain('Today is 2026-10-18 (Sunday)')
+  })
+
+  it('之前的對話只附最近幾則，每則截短', () => {
+    const history = Array.from({ length: 10 }, (_, i) => ({
+      role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+      content: `${i}`.repeat(AGENT_HISTORY_CHARS + 100)
+    }))
+    const m = agentMessages('任務', history, 'zh-TW', NOW)
+    const past = m.slice(1, -1)
+    expect(past).toHaveLength(AGENT_HISTORY_MESSAGES)
+    expect(past[0].content.startsWith('6')).toBe(true)
+    expect(past.every((p) => p.content.length === AGENT_HISTORY_CHARS + 1)).toBe(true)
   })
 })

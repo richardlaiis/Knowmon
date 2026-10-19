@@ -22,8 +22,10 @@ import { noteDay, retrieve } from '../retrieve'
 import { linkTargets } from '../summarize'
 import { addTags, existingTags, normalizeTag } from './tags'
 
-/** get_note 每次最多回傳幾個字的內文 */
-export const NOTE_CHARS = 2_500
+/** get_note 每次最多回傳幾個字的內文（加上標頭後仍在 TOOL_RESULT_MAX 內） */
+export const NOTE_CHARS = 1_200
+/** 搜尋與列表結果中，每篇摘要最多幾個字 */
+export const HIT_SNIPPET_CHARS = 80
 /** get_neighbors 每一類最多列幾篇 */
 export const NEIGHBORS_PER_TYPE = 10
 
@@ -82,7 +84,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         type: 'string',
         description: `Only when the user's request mentions a time: the time range of the notes. Otherwise leave it out. ${PERIOD_HELP}`
       },
-      limit: { type: 'integer', description: 'Maximum number of notes (default 8, at most 20)' }
+      limit: { type: 'integer', description: 'Maximum number of notes (default 5, at most 10)' }
     },
     ['query']
   ),
@@ -118,7 +120,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       period: { type: 'string', description: `The time range. ${PERIOD_HELP}` },
       from: { type: 'string', description: 'Start date YYYY-MM-DD (instead of period)' },
       to: { type: 'string', description: 'End date YYYY-MM-DD (instead of period)' },
-      limit: { type: 'integer', description: 'Maximum number of notes (default 20, at most 30)' }
+      limit: { type: 'integer', description: 'Maximum number of notes (default 10, at most 15)' }
     },
     []
   ),
@@ -205,7 +207,9 @@ function hitList(ctx: ToolContext, hits: readonly RetrieveHit[]): string {
     .map((h, i) => {
       const note = getNoteByPath(ctx.vault.db, h.path)
       const date = note ? noteDay(note) : ''
-      const snippet = plain(h.snippet)
+      const full = plain(h.snippet)
+      const snippet =
+        full.length > HIT_SNIPPET_CHARS ? `${full.slice(0, HIT_SNIPPET_CHARS)}…` : full
       return `${i + 1}. ${h.title} (path: ${h.path}, date: ${date})${snippet ? `\n   ${snippet}` : ''}`
     })
     .join('\n')
@@ -262,7 +266,7 @@ async function searchNotesTool(
 ): Promise<ToolOutcome> {
   const query = str(args.query).trim()
   const period = str(args.period).trim()
-  const limit = int(args.limit, 8, 1, 20)
+  const limit = int(args.limit, 5, 1, 10)
   let range = period ? parsePeriod(period, ctx.now) : null
   let text = query
   // 模型常把時間寫在 query 裡（「上週 深度工作」）
@@ -398,7 +402,7 @@ function listInRangeTool(ctx: ToolContext, args: Record<string, unknown>): ToolO
     const b = DAY.test(to) ? to : '2100-12-31'
     range = a <= b ? { from: a, to: b } : { from: b, to: a }
   } else throw new ToolError(`Give a period or from/to dates (YYYY-MM-DD). ${PERIOD_HELP}`)
-  const hits = notesInRange(ctx.vault.db, range, int(args.limit, 20, 1, 30))
+  const hits = notesInRange(ctx.vault.db, range, int(args.limit, 10, 1, 15))
   const label = `Notes from ${fmtRange(range)} → ${plural(hits.length, 'note')}`
   if (hits.length === 0) return { text: `No notes from ${fmtRange(range)}.`, label, notes: [] }
   return {

@@ -16,14 +16,21 @@ import { OllamaError, type ChatMessage, type ChatResult, type ToolDefinition } f
 import { createLinkFilter } from '../summarize'
 import { callLabel, isToolName, type ToolOutcome } from './tools'
 
+// 在 CPU 上讀入 prompt 只有約 17 tokens/s（中文約一字一 token），工具結果的長度直接決定任務時間。
 /** 最多呼叫幾次工具；用完後要求模型直接回答 */
-export const AGENT_MAX_STEPS = 8
+export const AGENT_MAX_STEPS = 5
 /** 每個工具結果最多幾個字 */
-export const TOOL_RESULT_MAX = 3_000
-/** 所有工具結果加起來超過這個字數時，較早的結果換成一行說明 */
-export const AGENT_CONTEXT_MAX = 16_000
-/** agent 請求的 context 長度（tokens）；Ollama 的預設值太小，多步驟後會被截斷 */
-export const AGENT_NUM_CTX = 16_384
+export const TOOL_RESULT_MAX = 1_500
+/**
+ * 所有工具結果加起來的字數預算。新的結果截到剩下的預算（至少 TOOL_RESULT_MIN），
+ * 用完後不再提供工具。舊結果一律不改寫：改了前面的訊息，Ollama 的 prompt 快取就失效，整段要重新讀入。
+ */
+export const AGENT_CONTEXT_MAX = 6_000
+/** 預算快用完時，每個結果仍至少保留幾個字 */
+export const TOOL_RESULT_MIN = 300
+/** 之前的任務與回答：最多幾則、每則幾個字 */
+export const AGENT_HISTORY_MESSAGES = 4
+export const AGENT_HISTORY_CHARS = 600
 
 /** tools 為 null 時不提供工具（要求模型直接回答） */
 export type ToolChat = (
@@ -54,7 +61,6 @@ export const REJECTED =
   'REJECTED: the user declined this change, so it was NOT made and nothing was written. In your reply, say clearly that this change was not made; never say it was done. Do not try it again unless the user asks.'
 export const REPEATED =
   'You already called this tool with the same arguments; use the earlier result above.'
-const OMITTED = '(Earlier result omitted to save space. Call the tool again if you still need it.)'
 const LIMIT: Record<SummaryLanguage, string> = {
   'zh-TW': '工具的使用次數已經用完。請根據上面的結果直接完成任務並回覆。',
   en: 'You have used all the tool calls. Finish the task now using the results above.'
@@ -74,6 +80,7 @@ function systemPrompt(language: SummaryLanguage, now: number): string {
       `今天是 ${today}。`,
       '- 一律使用繁體中文。',
       '- 先用 search_notes 或 list_notes_in_range 找出相關的筆記，需要細節時再用 get_note 讀全文；要找與某篇相關的筆記時用 get_neighbors。',
+      `- 工具最多只能用 ${AGENT_MAX_STEPS} 次，而且每次都很花時間：搜尋結果的摘要足以回答時就直接回答，不要再讀全文。`,
       '- 只有使用者提到時間時才使用 period 參數，照抄使用者的說法（例如「上週」「2026-09」），不要自己換算日期；沒提到時間就不要加。',
       '- 只根據工具的結果回答，不要編造筆記內容，也不要用自己的知識補充。找不到就直接說。',
       '- 提到筆記時，用雙中括號包住筆記標題（就是 wikilink），括號裡只寫標題，不要加路徑或日期；只能使用工具結果中出現過的標題。',
@@ -87,6 +94,7 @@ function systemPrompt(language: SummaryLanguage, now: number): string {
     `Today is ${localDay(now)} (${WEEKDAYS.en[new Date(now).getDay()]}).`,
     '- Always write in English, even when the notes are in another language.',
     '- First find relevant notes with search_notes or list_notes_in_range; use get_note to read a note in full when you need details, and get_neighbors to find notes related to a note.',
+    `- You can use tools at most ${AGENT_MAX_STEPS} times, and each call is slow: when the search passages are enough to answer, answer without reading full notes.`,
     '- Use the period parameter only when the user mentions a time, copying their own words (e.g. "last week", "2026-09"); never calculate dates yourself, and leave it out otherwise.',
     '- Answer only from the tool results. Never invent note contents or add outside knowledge. If nothing is found, say so.',
     '- When you mention a note, write only its title inside double square brackets (a wikilink), without the path or date. Only use titles that appeared in tool results.',
@@ -104,7 +112,7 @@ export function agentMessages(
 ): ChatMessage[] {
   return [
     { role: 'system', content: systemPrompt(language, now) },
-    ...historyMessages(history),
+    ...historyMessages(history, AGENT_HISTORY_MESSAGES, AGENT_HISTORY_CHARS),
     { role: 'user', content: task.trim() }
   ]
 }
@@ -122,15 +130,15 @@ function callKey(name: string, args: Record<string, unknown>): string {
   return `${name}:${JSON.stringify(sorted(args))}`
 }
 
-function clipResult(text: string): string {
-  return text.length > TOOL_RESULT_MAX ? `${text.slice(0, TOOL_RESULT_MAX)}\n(…truncated)` : text
+function clipResult(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}\n(…truncated)` : text
 }
 
 const aborted = (): OllamaError => new OllamaError('Cancelled', 'aborted')
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 /**
- * 執行任務。messages 會被修改（加入工具呼叫與結果）。
+ * 執行任務。messages 只會在後面加入工具呼叫與結果，已有的訊息不改（保住 Ollama 的 prompt 快取）。
  * 最終回答中的 [[連結]] 只保留工具結果中出現過的筆記與連結。
  */
 export async function runAgent(
@@ -145,8 +153,8 @@ export async function runAgent(
     for (const t of targets) allowed.set(linkKey(t), t)
   }
   const seen = new Set<string>()
-  /** 工具結果的訊息與呼叫的 key（省略舊結果時要讓同一個呼叫可以重做） */
-  const results: { message: ChatMessage; key: string }[] = []
+  /** 工具結果已用掉的字數 */
+  let used = 0
   let steps = 0
 
   const step = (s: AgentStep): void => emit({ delta: '', step: s })
@@ -155,7 +163,7 @@ export async function runAgent(
     index: number,
     name: AgentToolName,
     args: Record<string, unknown>
-  ): Promise<{ text: string; key: string }> => {
+  ): Promise<string> => {
     const base: AgentStep = {
       index,
       tool: name,
@@ -168,7 +176,7 @@ export async function runAgent(
     const key = callKey(name, args)
     if (seen.has(key)) {
       step({ ...base, status: 'done', label: `${base.label} (repeated, skipped)` })
-      return { text: REPEATED, key }
+      return REPEATED
     }
     seen.add(key)
     try {
@@ -179,7 +187,7 @@ export async function runAgent(
       const result = { ...base, label: out.label, notes: out.notes }
       if (!out.proposal) {
         step({ ...result, status: 'done' })
-        return { text: out.text, key }
+        return out.text
       }
       const waiting: AgentStep = { ...result, status: 'confirm', proposal: out.proposal }
       step(waiting)
@@ -187,7 +195,7 @@ export async function runAgent(
       if (signal.aborted) throw aborted()
       if (!decision.approved) {
         step({ ...waiting, status: 'rejected' })
-        return { text: REJECTED, key }
+        return REJECTED
       }
       try {
         const applied = await tools.apply(out.proposal, decision.edited)
@@ -199,24 +207,24 @@ export async function runAgent(
           notes: applied.notes,
           proposal: applied.proposal ?? out.proposal
         })
-        return { text: applied.text, key }
+        return applied.text
       } catch (e) {
         // 寫入失敗（例如等待期間有人建立了同名筆記）：保留提案讓使用者看到寫了什麼
         step({ ...waiting, status: 'error', error: errorMessage(e) })
-        return { text: `Error: ${errorMessage(e)}`, key }
+        return `Error: ${errorMessage(e)}`
       }
     } catch (e) {
       if (signal.aborted) throw aborted()
       // 同一個呼叫出錯後，模型修正參數前不必擋下重試
       seen.delete(key)
       step({ ...base, status: 'error', error: errorMessage(e) })
-      return { text: `Error: ${errorMessage(e)}`, key }
+      return `Error: ${errorMessage(e)}`
     }
   }
 
   let index = 0
   for (;;) {
-    const offer = steps < max
+    const offer = steps < max && used < AGENT_CONTEXT_MAX
     const filter = createLinkFilter([...allowed.values()])
     const res = await chat(messages, offer ? tools.definitions : null, (d) => {
       const t = filter.push(d)
@@ -235,29 +243,22 @@ export async function runAgent(
     })
     for (const call of calls) {
       let text: string
-      let key = ''
       if (!isToolName(call.name)) {
         const names = tools.definitions.map((d) => d.function.name).join(', ')
         text = `Error: unknown tool "${call.name}". Available tools: ${names}.`
       } else if (steps >= max) {
         text = 'Not executed: the tool call limit was reached.'
       } else {
-        ;({ text, key } = await execute(index++, call.name, call.arguments))
+        text = await execute(index++, call.name, call.arguments)
       }
       steps++
-      const message: ChatMessage = { role: 'tool', tool_name: call.name, content: clipResult(text) }
-      messages.push(message)
-      if (key) results.push({ message, key })
+      const room = Math.max(TOOL_RESULT_MIN, Math.min(TOOL_RESULT_MAX, AGENT_CONTEXT_MAX - used))
+      const content = clipResult(text, room)
+      used += content.length
+      messages.push({ role: 'tool', tool_name: call.name, content })
     }
-    // 工具結果太多時，從最舊的開始換成一行說明
-    let total = results.reduce((n, r) => n + r.message.content.length, 0)
-    for (const r of results) {
-      if (total <= AGENT_CONTEXT_MAX) break
-      if (r.message.content === OMITTED) continue
-      total -= r.message.content.length - OMITTED.length
-      r.message.content = OMITTED
-      seen.delete(r.key)
+    if (steps >= max || used >= AGENT_CONTEXT_MAX) {
+      messages.push({ role: 'user', content: LIMIT[language] })
     }
-    if (steps >= max) messages.push({ role: 'user', content: LIMIT[language] })
   }
 }

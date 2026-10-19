@@ -20,6 +20,8 @@ export interface FakeOllama extends OllamaClient {
   installed: string[]
   embedCalls: string[][]
   chatCalls: ChatMessage[][]
+  /** chat 與 chatTools 每次收到的 numCtx（依呼叫次序） */
+  numCtx: (number | undefined)[]
   /** chat 的回覆（依呼叫次序），用完後重複最後一個 */
   replies: string[]
   /** chatTools 的回覆（依呼叫次序），用完後重複最後一個；沒有時回傳 replies 的文字 */
@@ -40,6 +42,7 @@ export function fakeOllama(): FakeOllama {
     installed: ['bge-m3:latest', 'qwen3:8b'],
     embedCalls: [],
     chatCalls: [],
+    numCtx: [],
     replies: ['- 重點'],
     toolReplies: [],
     toolsOffered: [],
@@ -74,6 +77,7 @@ export function fakeOllama(): FakeOllama {
     async chat(_model, messages, opts = {}) {
       if (!fake.online) throw offline()
       fake.chatCalls.push(messages)
+      fake.numCtx.push(opts.numCtx)
       const reply = fake.replies[Math.min(fake.chatCalls.length - 1, fake.replies.length - 1)]
       for (const ch of reply) {
         if (opts.signal?.aborted) throw new OllamaError('Cancelled', 'aborted')
@@ -85,6 +89,7 @@ export function fakeOllama(): FakeOllama {
     async chatTools(_model, messages, tools, opts = {}) {
       if (!fake.online) throw offline()
       fake.toolsOffered.push(tools)
+      fake.numCtx.push(opts.numCtx)
       const n = fake.toolsOffered.length - 1
       const reply = fake.toolReplies.length
         ? fake.toolReplies[Math.min(n, fake.toolReplies.length - 1)]
