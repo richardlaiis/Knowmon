@@ -1,6 +1,6 @@
 # Quickstart
 
-This page takes you from opening Knowmon to a small set of linked notes in about five minutes.
+This page takes you from opening Knowmon to a small set of linked notes in about five minutes. If you haven't installed it yet, start with [Installation](installation.md).
 
 > Shortcuts in this guide are written for Windows and Linux. On macOS, use `Cmd` instead of `Ctrl` (except for `Ctrl+Tab`).
 

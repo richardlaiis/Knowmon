@@ -9,10 +9,11 @@ Knowmon is a local-first Markdown note-taking app. Your notes are plain `.md` fi
 
 ## Start here
 
-| If you want to…                               | Read                           |
-| --------------------------------------------- | ------------------------------ |
-| Write your first linked notes in five minutes | [Quickstart](quickstart.md)    |
-| Learn what each part of the window does       | [Interface tour](interface.md) |
+| If you want to…                               | Read                            |
+| --------------------------------------------- | ------------------------------- |
+| Install and launch Knowmon                    | [Installation](installation.md) |
+| Write your first linked notes in five minutes | [Quickstart](quickstart.md)     |
+| Learn what each part of the window does       | [Interface tour](interface.md)  |
 
 ## The basics
 

@@ -40,7 +40,7 @@ sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 ```bash
 npm run dev       # 開發模式（renderer 支援熱更新）
 npm run build     # 型別檢查 + 建置到 out/
-npm start         # 執行 out/ 裡建置好的版本
+npm start         # 建置後執行正式版本（每次都會重新建置；加 -- --skipBuild 直接執行 out/ 裡上次建置的版本）
 ```
 
 啟動後按「Open folder」選一個資料夾作為 vault。App 不會自動開啟上次的 vault，但選擇對話框會從上次的位置開始。

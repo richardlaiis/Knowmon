@@ -1,6 +1,6 @@
 # 快速開始
 
-這一頁帶你從開啟 Knowmon 到寫出第一組互相連結的筆記，大約五分鐘。
+這一頁帶你從開啟 Knowmon 到寫出第一組互相連結的筆記，大約五分鐘。還沒安裝的話，請先看 [安裝](installation.md)。
 
 > 本說明的快捷鍵以 Windows / Linux 為準，macOS 請把 `Ctrl` 換成 `Cmd`（`Ctrl+Tab` 除外）。
 
