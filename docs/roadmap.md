@@ -40,7 +40,7 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 
 ## 目前進度
 
-階段 0（骨架與基礎設施）除了 Ollama 安裝之外已全部完成，尚未實作任何功能。
+階段 1–7 已完成，目前進行階段 8（打磨與打包），詳見下方「開發路線圖」。以下是階段 0（骨架與基礎設施）的交接清單，保留作為紀錄：
 
 - [x] 用 electron-vite 建立專案，`npm run dev` 可開出視窗
 - [x] 安裝相依套件：better-sqlite3、sqlite-vec、chokidar、gray-matter、CodeMirror、Cytoscape.js、vitest
@@ -161,19 +161,20 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 ### 階段 8：打磨與打包
 
-- [ ] 設定頁
-- [ ] 效能優化
-- [ ] 產出安裝檔
+完成標準：三個平台都有可安裝、功能完整（含 AI）的安裝檔，設定集中在一個地方。打包的計畫與實作決定見 `docs/plans/phase8-packaging.md`。
+
+- [x] Linux 試打包：deb 與 AppImage 可安裝，打包版的向量功能（sqlite-vec）正常、設定沿用開發版（2026-10-20）
+- [ ] 設定頁：整合時間與 Semantic 參數、AI 設定、主題與介面偏好
+- [ ] 效能優化：先以 `scripts/gen-vault.mjs` 量測 1000／3000 篇，再決定目標（已知弱點：圖譜 hover、首次建立索引）
+- [ ] 產出安裝檔：Windows 與 macOS 打包（需在各自的作業系統或 CI 上建置）、正式圖示、授權（LICENSE）、版本號，並更新使用說明的安裝頁
 
 ## 下一步
 
-Claude Code 接手後，先檢查骨架，再開始階段 1 的第一個任務。
+階段 8 剩下的任務，每個任務一個 session，先在 plan mode 寫計畫（存到 `docs/plans/`），經使用者同意後再實作：
 
-1. **骨架檢查（只讀不改）**：閱讀 `CLAUDE.md`、`src/shared/types.ts`、schema 與資料夾結構，對照本文件列出缺漏或不一致之處，交給使用者決定是否修改。
-2. **確認開發指令可用**：`npm run dev`、`npx vitest run`、`npx tsc --noEmit` 都能正常執行，並寫一個最小的範例測試確認 vitest 設定正確。
-3. **階段 1 第一個任務**：在 plan mode 下為「選擇 vault 資料夾與檔案樹」寫出實作計畫，存到 `docs/plans/phase1-vault.md`，經使用者同意後再實作。
-
-建議使用者把本文件匯出為 Markdown，存成 `docs/roadmap.md`，在 `CLAUDE.md` 中用 `@docs/roadmap.md` 引用，每個 session 開始時請 Claude Code 讀取並確認目前進度。
+1. **設定頁**：設定頁做成分頁或對話框、快捷鍵、這次是否新增設定項目，需要先由使用者決定。新增設定若要修改 `src/shared/types.ts`，照規則先詢問。
+2. **效能優化**：先量測，與使用者確認目標規模後再調整；換用 sigma.js 屬於大改動，需使用者同意。
+3. **正式打包**：Windows／macOS 安裝檔、圖示、授權、程式碼簽章與否；`toolsets.appimage`（static runtime）目前是 electron-builder 的 beta 選項，屆時再確認一次。
 
 ## 協作方式
 
