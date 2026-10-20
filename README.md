@@ -2,6 +2,8 @@
 
 類 Obsidian 的本地筆記軟體，特色是時間脈絡連結與本地 LLM agent。技術架構與開發路線見 [`docs/roadmap.md`](docs/roadmap.md)，設計決定見 [`docs/architecture.md`](docs/architecture.md)。
 
+**使用說明**（給使用者，中英文）：[`docs/user-guide/`](docs/user-guide/README.md)。
+
 ## 環境需求
 
 - Node.js 22 以上（目前開發使用 v24）
