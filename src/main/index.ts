@@ -13,6 +13,9 @@ import { ASSET_SCHEME } from '../shared/assets'
 import { closeVault, currentVaultRoot, registerIpc } from './ipc'
 import { assetResponse } from './vault/assets'
 
+// 設定與 localStorage 一律放在 <appData>/knowmon：預設依 productName，打包版會變成 Knowmon，與開發版分開
+app.setPath('userData', join(app.getPath('appData'), 'knowmon'))
+
 // 筆記中的圖片經 knowmon-asset://vault/<路徑> 讀取，只提供目前 vault 內的圖片（要在 ready 前註冊）
 protocol.registerSchemesAsPrivileged([
   { scheme: ASSET_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }

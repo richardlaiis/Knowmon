@@ -85,10 +85,18 @@ export function openDb(file: string): DB {
   return db
 }
 
+/**
+ * 打包後 node_modules 在 app.asar 裡，但 SQLite 以 dlopen 直接讀檔、不經過 Electron 的 asar 轉址，
+ * 所以要換成 asarUnpack 解出的 app.asar.unpacked（見 electron-builder.yml）。不在 asar 裡的路徑原樣回傳。
+ */
+export function unpackedPath(p: string): string {
+  return p.replace(/([\\/])app\.asar(?=[\\/])/, '$1app.asar.unpacked')
+}
+
 /** 載入 sqlite-vec；失敗時（不支援的平台）向量功能停用，其餘照常 */
 function loadVectorExtension(db: DB): void {
   try {
-    sqliteVec.load(db)
+    db.loadExtension(unpackedPath(sqliteVec.getLoadablePath()))
   } catch (e) {
     console.warn('sqlite-vec is unavailable, vector search is disabled:', e)
   }

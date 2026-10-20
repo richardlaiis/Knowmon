@@ -4,7 +4,7 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SEMANTIC_SETTINGS } from '../../shared/llm'
-import { deleteNote, listLinks, openDb, SCHEMA_VERSION, upsertNote, type DB } from '.'
+import { deleteNote, listLinks, openDb, SCHEMA_VERSION, unpackedPath, upsertNote, type DB } from '.'
 import { getGraph } from './graph'
 import { rebuildSemanticLinks } from './semantic'
 import {
@@ -49,6 +49,22 @@ function embedAll(db: DB, vectors: Record<string, number[]>): number[] {
 describe('vectors', () => {
   it('sqlite-vec 已載入', () => {
     expect(vecAvailable(openDb(':memory:'))).toBe(true)
+  })
+
+  it('打包後的擴充路徑換到 app.asar.unpacked', () => {
+    expect(
+      unpackedPath('/opt/Knowmon/resources/app.asar/node_modules/sqlite-vec-linux-x64/vec0.so')
+    ).toBe('/opt/Knowmon/resources/app.asar.unpacked/node_modules/sqlite-vec-linux-x64/vec0.so')
+    expect(
+      unpackedPath('C:\\Program Files\\Knowmon\\resources\\app.asar\\node_modules\\x\\vec0.dll')
+    ).toBe('C:\\Program Files\\Knowmon\\resources\\app.asar.unpacked\\node_modules\\x\\vec0.dll')
+    const unpacked = '/opt/Knowmon/resources/app.asar.unpacked/node_modules/x/vec0.so'
+    expect(unpackedPath(unpacked)).toBe(unpacked)
+    const dev = '/home/me/Knowmon/node_modules/sqlite-vec-linux-x64/vec0.so'
+    expect(unpackedPath(dev)).toBe(dev)
+    // 只換目錄段，檔名或其他名稱含 app.asar 時不動
+    expect(unpackedPath('/home/me/my-app.asar/vec0.so')).toBe('/home/me/my-app.asar/vec0.so')
+    expect(unpackedPath('/home/me/app.asar.bak/vec0.so')).toBe('/home/me/app.asar.bak/vec0.so')
   })
 
   it('chunk 寫入後待 embedding；全部完成才算該篇完成，並建立整篇向量', () => {

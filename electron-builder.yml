@@ -9,8 +9,12 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{docs,test-vault,scripts}/**'
+  - '!{CLAUDE.md,vitest.config.ts}'
 asarUnpack:
   - resources/**
+  # SQLite 以 dlopen 載入擴充，不能放在 asar 裡（路徑轉換見 src/main/db/index.ts 的 unpackedPath）
+  - node_modules/sqlite-vec-*/**
 win:
   executableName: knowmon
 nsis:
@@ -21,23 +25,23 @@ nsis:
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    - NSDocumentsFolderUsageDescription: Knowmon reads and writes notes in vaults stored in your Documents folder.
+    - NSDownloadsFolderUsageDescription: Knowmon reads and writes notes in vaults stored in your Downloads folder.
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
-  category: Utility
+  maintainer: Richard Lai <richardlaiis@proton.me>
+  category: Office
+  syncDesktopName: true
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+# AppImage 改用 static runtime（beta）：舊的 runtime 需要 libfuse2，Ubuntu 22.04 之後預設沒有安裝
+toolsets:
+  appimage: '1.0.3'
+# 沒有自動更新；不寫的話 electron-builder 會依 git remote 自動產生 GitHub 的更新設定
+publish: null

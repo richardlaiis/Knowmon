@@ -162,7 +162,9 @@
 ## 開發環境注意事項
 
 - better-sqlite3 13 附 N-API prebuild，同一個 binary 在 Node（vitest）和 Electron 都能用，不需要 rebuild。
-- sqlite-vec 由 `openDb` 載入（`node_modules/sqlite-vec-<平台>` 裡的 `.so`）；載入失敗時向量功能停用，AI 狀態顯示原因。打包時（階段 8）要確認這個檔案沒有被包進 asar。
+- sqlite-vec 由 `openDb` 載入（`node_modules/sqlite-vec-<平台>` 裡的 `.so`）；載入失敗時向量功能停用，AI 狀態顯示原因。SQLite 以 `dlopen` 直接讀檔、不經過 Electron 的 asar 轉址，所以打包時以 `asarUnpack` 解出 `node_modules/sqlite-vec-*`，載入路徑經 `unpackedPath` 換成 `app.asar.unpacked`（階段 8，見 `docs/plans/phase8-packaging.md`）。只有建置機器所在平台的 `sqlite-vec-<平台>` 會被安裝，所以安裝檔必須在各自的作業系統上建置。
+- userData 固定為 `<appData>/knowmon`（`src/main/index.ts` 開頭的 `app.setPath`）：預設依 productName，打包版會變成 `Knowmon`，與開發版的設定和 localStorage 分開（使用者決定，2026-10-20）。
+- 打包設定（`electron-builder.yml`）：Linux 只產生 AppImage 與 deb（使用者決定，2026-10-20）；`publish: null`，沒有自動更新；AppImage 使用 `toolsets.appimage: '1.0.3'`（static runtime，beta）：舊 runtime 需要 libfuse2，Ubuntu 22.04 之後預設沒有，啟動時會出現 `error loading libfuse.so.2`；新 runtime 的 AppRun 在 user namespace 不可用時（Ubuntu 24+ 的 AppArmor）自動加 `--no-sandbox`；`package.json` 的 `desktopName` 與 `linux.syncDesktopName` 讓 Wayland 視窗對應到 `knowmon.desktop`。
 - Cytoscape 的 canvas 以整數像素取高度，容器高度有小數時會溢出 1px，所以 `.graph-canvas` 設 `overflow: hidden`（工具列換行時曾讓整頁出現捲軸）。
 - chokidar 5 只有 ESM，在 `electron.vite.config.ts` 中設定為打包進 main，而不是 external。
 - `npx tsc --noEmit` 搭配根目錄的 project references 不會檢查任何檔案，型別檢查請用 `npm run typecheck`。

@@ -327,5 +327,7 @@ sqlite3 ~/knowmon-test-vault/.knowmon/index.db \
 ## 建置安裝檔
 
 ```bash
-npm run build:linux   # 或 build:win / build:mac
+npm run build:linux   # 產生 dist/ 下的 AppImage 與 deb；Windows / macOS 用 build:win / build:mac
 ```
+
+安裝檔必須在各自的作業系統上建置（sqlite-vec 只會安裝建置機器所在平台的版本）。打包流程與驗證方式見 [`docs/plans/phase8-packaging.md`](docs/plans/phase8-packaging.md)。

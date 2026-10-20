@@ -144,12 +144,33 @@ If `node -v` shows a version below 22, upgrade Node.js (see nvm above), delete `
 
 ## Building installers yourself (experimental)
 
-> Packaging is still in progress (phase 8 of the roadmap) and hasn't been fully verified. In particular, **the vector search component may not be packaged correctly**, so Hybrid search and Semantic links may not work in a packaged build. For normal use, run from source as described above.
+> Packaging is still in progress (phase 8 of the roadmap). The Linux build has been verified to work, AI features included; Windows and macOS haven't been verified yet.
 
 ```bash
-npm run build:linux   # AppImage, deb, and snap (snap requires snapcraft)
-npm run build:win     # Windows installer
-npm run build:mac     # macOS dmg
+npm run build:linux   # Linux: AppImage and deb
+npm run build:win     # Windows installer (unverified)
+npm run build:mac     # macOS dmg (unverified)
 ```
 
-Output goes to `dist/`. You generally need to build on the target OS (e.g. build the macOS version on a Mac).
+Output goes to `dist/`. **You must build on the target OS** (e.g. build the macOS version on a Mac), because only the build machine's platform version of the vector search component is installed.
+
+### Installing the Linux build
+
+- **deb** (Debian, Ubuntu, and derivatives):
+
+  ```bash
+  sudo apt install ./dist/knowmon_1.0.0_amd64.deb
+  ```
+
+  Then open Knowmon from your applications menu. The installer sets up sandbox permissions, so step 3 above isn't needed. To remove it: `sudo apt remove knowmon`.
+
+- **AppImage** (other distributions):
+
+  ```bash
+  chmod +x dist/knowmon-1.0.0.AppImage
+  ./dist/knowmon-1.0.0.AppImage
+  ```
+
+  No FUSE 2 (`libfuse2`) is required. On Ubuntu 24.04 and later, AppArmor restricts Chromium's sandbox; the AppImage detects this and starts with `--no-sandbox` automatically. The app works normally but with one less layer of protection, so on Debian / Ubuntu the deb is recommended.
+
+The packaged app and the from-source version share the same app settings (`~/.config/knowmon/` on Linux), so your last vault, Ollama settings, tabs, and theme carry over.

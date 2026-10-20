@@ -144,12 +144,33 @@ ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" node node_modules/elec
 
 ## 自行打包安裝檔（實驗性）
 
-> 打包流程還在開發中（開發路線的階段 8），尚未完整驗證。特別是**向量搜尋相關的元件可能沒有被正確包進安裝檔**，打包後的版本 Hybrid 搜尋與 Semantic 邊可能無法使用。一般使用請以上面的方式從原始碼執行。
+> 打包流程還在開發中（開發路線的階段 8）。Linux 的打包版已驗證可用（包括 AI 功能）；Windows 與 macOS 尚未驗證。
 
 ```bash
-npm run build:linux   # 產生 AppImage、deb、snap（snap 需要先安裝 snapcraft）
-npm run build:win     # Windows 安裝檔
-npm run build:mac     # macOS dmg
+npm run build:linux   # Linux：產生 AppImage 與 deb
+npm run build:win     # Windows 安裝檔（未驗證）
+npm run build:mac     # macOS dmg（未驗證）
 ```
 
-產生的檔案在 `dist/` 資料夾。通常需要在目標作業系統上打包（例如在 Mac 上打包 macOS 版）。
+產生的檔案在 `dist/` 資料夾。**必須在目標作業系統上打包**（例如在 Mac 上打包 macOS 版），因為向量搜尋元件只會安裝建置機器所在平台的版本。
+
+### 安裝 Linux 版
+
+- **deb**（Debian、Ubuntu 等）：
+
+  ```bash
+  sudo apt install ./dist/knowmon_1.0.0_amd64.deb
+  ```
+
+  之後從應用程式選單開啟 Knowmon。安裝腳本會自動處理 sandbox 權限，不需要做上面第 3 步。移除：`sudo apt remove knowmon`。
+
+- **AppImage**（其他發行版）：
+
+  ```bash
+  chmod +x dist/knowmon-1.0.0.AppImage
+  ./dist/knowmon-1.0.0.AppImage
+  ```
+
+  不需要另外安裝 FUSE 2（`libfuse2`）。在 Ubuntu 24.04 之後的版本，AppArmor 會限制 Chromium 的 sandbox，AppImage 偵測到時會自動以 `--no-sandbox` 啟動。App 仍可正常使用，但少了一層保護，所以 Debian／Ubuntu 系統建議使用 deb。
+
+打包版與從原始碼執行的版本共用同一份 App 設定（Linux 為 `~/.config/knowmon/`），所以上次的 vault、Ollama 設定、分頁與主題都會沿用。
