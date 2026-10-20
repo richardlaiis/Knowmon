@@ -36,6 +36,11 @@ function requireLlm(): LlmService {
   return llm
 }
 
+/** 目前開啟的 vault 根目錄（圖片協定用） */
+export function currentVaultRoot(): string | null {
+  return current?.root ?? null
+}
+
 function requireVault(): Vault {
   if (!current) throw new Error('No vault is open')
   return current
@@ -99,6 +104,11 @@ export function registerIpc(ctx: IpcContext): void {
   )
   ipcMain.handle(IPC.notesCreate, (_e, path: string) => requireVault().create(path))
   ipcMain.handle(IPC.notesCreateFolder, (_e, path: string) => requireVault().createFolder(path))
+  ipcMain.handle(
+    IPC.notesSaveAttachment,
+    (_e, notePath: string, fileName: string, data: Uint8Array) =>
+      requireVault().saveAttachment(notePath, fileName, data)
+  )
   ipcMain.handle(IPC.notesRename, (_e, from: string, to: string) => requireVault().rename(from, to))
   ipcMain.handle(IPC.notesRemove, (_e, path: string) => requireVault().remove(path))
   ipcMain.handle(IPC.notesList, () => requireVault().list())

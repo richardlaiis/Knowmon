@@ -133,6 +133,14 @@
 - 全域快捷鍵在 `App.tsx` 以 capture 階段攔截並 `stopPropagation`，編輯器不會再處理同一個按鍵（CodeMirror 的 `Ctrl/Cmd+G`「找下一個」因此停用，改用 `F3`）。所有快捷鍵的列表在 README 的「快捷鍵」，新增或修改快捷鍵時要同步更新。
 - 快捷鍵：`Ctrl/Cmd+W` 關分頁、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切換、`Ctrl/Cmd+T` 以新分頁開 Quick switcher（Quick switcher 裡 `Ctrl/Cmd+Enter` 也是新分頁）、`Ctrl/Cmd+G` 圖譜分頁、`Ctrl/Cmd+Shift+T` 時間軸分頁。
 
+## 圖片
+
+- 筆記中只支援標準語法 `![alt](相對路徑)`，路徑相對於筆記所在資料夾（使用者決定，2026-10-20）；網址、絕對路徑、跳出 vault、隱藏檔不渲染。`<a b.png>` 與 `%20` 都認得。規則是純函式 `src/shared/assets.ts`（main 與 renderer 共用）。`![[x]]` 不支援（Markdown 解析器看成 Image 但沒有 URL，所以不受影響，仍由 wikilink 處理）。
+- 顯示：main 註冊特權協定 `knowmon-asset://vault/<路徑>`（`src/main/index.ts`，handler 在 `src/main/vault/assets.ts`），只提供目前 vault 內的圖片檔，經 `normalizeRel` 擋掉 `..` 與隱藏資料夾。CSP 的 `img-src` 加上 `knowmon-asset:`。
+- 即時渲染（`renderer/editor/images.ts` 的 `ImageWidget`）：游標不在圖片語法上時整段換成圖片，在上面時圖片接在原始語法後面。筆記路徑以 facet `notePath` 傳入，改名時 reconfigure，不重建編輯器。圖片載入後 `requestMeasure()`。原始碼模式不顯示圖片。
+- 貼上／拖進圖片：存到 vault 根目錄的 `attachments/`（`notes.saveAttachment`，2026-10-20 經使用者同意加入合約），同名加編號（`wx`，絕不覆蓋），單檔上限 50 MB。剪貼簿的截圖（Chromium 一律叫 `image.png`）改名為 `Pasted image YYYYMMDDHHmmss.png`，拖進來的保留原檔名（去掉不合法字元與 `%`、`#`）。插入相對於筆記的路徑，有空白或括號時用 `<>` 包起來。剪貼簿同時有文字時照一般文字貼上。之後使用者可自行搬移圖片，筆記中的路徑要自己調整。
+- 圖片不進 DB、不記事件；檔案樹仍只列 `.md`（`attachments` 資料夾本身會顯示）。
+
 ## 啟動
 
 - 啟動時不自動開啟上次的 vault（使用者要求，2026-10-06）。`settings.json` 仍記住上次的 vault，「Open folder」對話框會以它作為起始位置。

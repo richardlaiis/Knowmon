@@ -1,8 +1,22 @@
-import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  protocol,
+  shell,
+  type MenuItemConstructorOptions
+} from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { closeVault, registerIpc } from './ipc'
+import { ASSET_SCHEME } from '../shared/assets'
+import { closeVault, currentVaultRoot, registerIpc } from './ipc'
+import { assetResponse } from './vault/assets'
+
+// 筆記中的圖片經 knowmon-asset://vault/<路徑> 讀取，只提供目前 vault 內的圖片（要在 ready 前註冊）
+protocol.registerSchemesAsPrivileged([
+  { scheme: ASSET_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+])
 
 /**
  * 應用程式選單。Electron 預設選單把 Ctrl/Cmd+W 綁成關閉視窗，
@@ -70,6 +84,7 @@ app.whenReady().then(() => {
   })
 
   Menu.setApplicationMenu(buildMenu())
+  protocol.handle(ASSET_SCHEME, (req) => assetResponse(currentVaultRoot(), req.url))
 
   const ctx = { settingsDir: app.getPath('userData') }
   registerIpc(ctx)

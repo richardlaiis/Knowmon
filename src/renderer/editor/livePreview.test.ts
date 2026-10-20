@@ -9,15 +9,16 @@ import {
   markdownSupport,
   toggleTask
 } from './livePreview'
+import { ImageWidget, notePath } from './images'
 
 /** 用 ‸ 標示游標位置建立 state，並確保整份文件都已解析 */
-function stateOf(src: string): EditorState {
+function stateOf(src: string, path = 'note.md'): EditorState {
   const cursor = src.indexOf('‸')
   const doc = cursor >= 0 ? src.slice(0, cursor) + src.slice(cursor + 1) : src
   const state = EditorState.create({
     doc,
     selection: EditorSelection.cursor(cursor >= 0 ? cursor : doc.length),
-    extensions: [markdownSupport()]
+    extensions: [markdownSupport(), notePath.of(path)]
   })
   ensureSyntaxTree(state, state.doc.length, 5000)
   return state
@@ -245,5 +246,47 @@ describe('toggleTask', () => {
     expect(toggleTask(doc, 2)).toEqual({ from: 3, to: 4, insert: 'x' })
     expect(toggleTask(doc, 10)).toEqual({ from: 11, to: 12, insert: ' ' })
     expect(toggleTask(doc, 0)).toBeNull()
+  })
+})
+
+describe('圖片', () => {
+  /** 圖片 widget：path 為 vault 相對路徑，replaced 為被取代的原文（游標在上面時是空字串） */
+  function images(src: string, path?: string): { path: string; alt: string; replaced: string }[] {
+    const state = stateOf(src, path)
+    const out: { path: string; alt: string; replaced: string }[] = []
+    buildDecorations(state).between(0, state.doc.length, (from, to, d) => {
+      const w = (d.spec as { widget?: unknown }).widget
+      if (w instanceof ImageWidget) {
+        out.push({ path: w.path, alt: w.alt, replaced: state.doc.sliceString(from, to) })
+      }
+    })
+    return out
+  }
+
+  it('游標不在上面時整段換成圖片', () => {
+    expect(images('前面 ![架構](img/a.png) 後面\n‸')).toEqual([
+      { path: 'img/a.png', alt: '架構', replaced: '![架構](img/a.png)' }
+    ])
+  })
+
+  it('游標在上面時保留原始語法，圖片接在後面', () => {
+    expect(images('![架‸構](a.png)')).toEqual([{ path: 'a.png', alt: '架構', replaced: '' }])
+  })
+
+  it('相對路徑以筆記所在資料夾為基準，支援 <> 與 %20', () => {
+    expect(images('![](../attachments/x.png)\n‸', '日記/a.md')[0].path).toBe('attachments/x.png')
+    expect(images('![](<Pasted image 1.png>)\n‸', '日記/a.md')[0].path).toBe(
+      '日記/Pasted image 1.png'
+    )
+    expect(images('![](a%20b.png "標題")\n‸')[0].path).toBe('a b.png')
+  })
+
+  it('網址、絕對路徑、跳出 vault、![[x]]、程式碼裡的都不渲染', () => {
+    expect(images('![](https://example.com/a.png)\n‸')).toEqual([])
+    expect(images('![](/home/a.png)\n‸')).toEqual([])
+    expect(images('![](../a.png)\n‸', 'a.md')).toEqual([])
+    expect(images('![](notes.md)\n‸')).toEqual([])
+    expect(images('![[a.png]]\n‸')).toEqual([])
+    expect(images('`![](a.png)`\n\n```\n![](a.png)\n```\n‸')).toEqual([])
   })
 })

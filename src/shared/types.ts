@@ -284,6 +284,11 @@ export interface KnowmonAPI {
     write(path: string, content: string): Promise<void>
     create(path: string): Promise<void>
     createFolder(path: string): Promise<void>
+    /**
+     * 存入貼上或拖進筆記的圖片（vault 根目錄的 attachments/），同名時自動加編號、絕不覆蓋。
+     * 回傳實際存放的 vault 相對路徑。（2026-10-20 經使用者同意加入）
+     */
+    saveAttachment(notePath: string, fileName: string, data: Uint8Array): Promise<string>
     rename(from: string, to: string): Promise<void>
     remove(path: string): Promise<void>
     list(): Promise<NoteSummary[]>

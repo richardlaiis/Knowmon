@@ -42,6 +42,7 @@ import { EventsLog, movedPath, replay } from '../db/events-log'
 import { searchNotes } from '../db/search'
 import { countLinks, parseNote } from '../indexer'
 import { chunkMarkdown } from '../indexer/chunk'
+import { ATTACHMENTS_DIR, MAX_ATTACHMENT_BYTES, attachmentFileName } from '../../shared/assets'
 import { clampSemanticSettings } from '../../shared/llm'
 import { clampTimeSettings } from '../../shared/time'
 import { META_DIR, isNotePath, normalizeRel, resolveInVault, titleFromPath } from './paths'
@@ -294,6 +295,35 @@ export class Vault {
       if (await exists(abs)) throw new Error(`Already exists: ${rel}`)
       await fs.mkdir(abs, { recursive: true })
       this.emit({ type: 'add', path: rel })
+    })
+  }
+
+  /**
+   * 存入貼上的圖片：放在 vault 根目錄的 attachments/，同名時加編號，絕不覆蓋。
+   * 圖片不進 DB、也不記事件。回傳 vault 相對路徑。
+   */
+  saveAttachment(notePath: string, fileName: string, data: Uint8Array): Promise<string> {
+    return this.exclusive(async () => {
+      if (!isNotePath(normalizeRel(notePath))) throw new Error(`Not a note: ${notePath}`)
+      if (!(data instanceof Uint8Array)) throw new Error('Image data must be bytes')
+      if (data.byteLength > MAX_ATTACHMENT_BYTES) {
+        throw new Error(`Image is too large (max ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB)`)
+      }
+      const name = attachmentFileName(fileName)
+      const dot = name.lastIndexOf('.')
+      const dir = resolveInVault(this.root, ATTACHMENTS_DIR)
+      const created = !(await exists(dir))
+      await fs.mkdir(dir, { recursive: true })
+      if (created) this.emit({ type: 'add', path: ATTACHMENTS_DIR })
+      for (let i = 0; ; i++) {
+        const candidate = i === 0 ? name : `${name.slice(0, dot)} ${i}${name.slice(dot)}`
+        try {
+          await fs.writeFile(path.join(dir, candidate), data, { flag: 'wx' })
+          return `${ATTACHMENTS_DIR}/${candidate}`
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+        }
+      }
     })
   }
 

@@ -8,6 +8,7 @@ export const IPC = {
   notesWrite: 'notes:write',
   notesCreate: 'notes:create',
   notesCreateFolder: 'notes:createFolder',
+  notesSaveAttachment: 'notes:saveAttachment',
   notesRename: 'notes:rename',
   notesRemove: 'notes:remove',
   notesList: 'notes:list',

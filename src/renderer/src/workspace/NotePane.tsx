@@ -123,6 +123,7 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
       </div>
       {loaded && (
         <Editor
+          path={path}
           docKey={String(loaded.key)}
           doc={loaded.doc}
           active={active}
@@ -136,6 +137,8 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
           onOpenLink={props.onOpenLink}
           onSelectionChange={(text) => props.onSelectionChange(pathRef.current, text)}
           reveal={props.reveal}
+          saveAttachment={window.api.notes.saveAttachment}
+          onError={onError}
         />
       )}
     </div>

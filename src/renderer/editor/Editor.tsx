@@ -3,10 +3,13 @@ import { basicSetup } from 'codemirror'
 import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import type { NoteSummary } from '../../shared/types'
+import { imagePaste, notePath } from './images'
 import { livePreview, markdownSupport } from './livePreview'
 import { wikilinks } from './wikilinks'
 
 export interface EditorProps {
+  /** 筆記路徑：圖片的相對路徑以它所在的資料夾為基準；改名時改變，不重設內容 */
+  path: string
   /** 換筆記或重新載入時改變，會以 doc 重設編輯器內容（同時清掉 undo 歷史） */
   docKey: string
   doc: string
@@ -24,12 +27,17 @@ export interface EditorProps {
   onSelectionChange?: (text: string) => void
   /** 捲到這一行並把游標放在行首；n 改變時再跳一次（同一行也會跳） */
   reveal?: { line: number; n: number } | null
+  /** 存入貼上或拖進來的圖片，回傳 vault 相對路徑 */
+  saveAttachment: (notePath: string, fileName: string, data: Uint8Array) => Promise<string>
+  onError: (e: unknown) => void
 }
 
 const previewMode = new Compartment()
 const previewExtension = (on: boolean): ReturnType<typeof livePreview> => (on ? livePreview() : [])
+const pathConf = new Compartment()
 
 export function Editor({
+  path,
   docKey,
   doc,
   onChange,
@@ -39,13 +47,24 @@ export function Editor({
   onOpenLink,
   active = true,
   onSelectionChange,
-  reveal = null
+  reveal = null,
+  saveAttachment,
+  onError
 }: EditorProps): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   // 用 ref 存 callback，讓 CodeMirror extension 只建立一次
-  const callbacks = useRef({ onChange, onSave, getNotes, onOpenLink, onSelectionChange })
+  const callbacks = useRef({
+    onChange,
+    onSave,
+    getNotes,
+    onOpenLink,
+    onSelectionChange,
+    saveAttachment,
+    onError
+  })
   const previewRef = useRef(preview)
+  const pathRef = useRef(path)
   const activeRef = useRef(active)
 
   useEffect(() => {
@@ -53,8 +72,22 @@ export function Editor({
     if (active) view.current?.focus()
   }, [active])
   useEffect(() => {
-    callbacks.current = { onChange, onSave, getNotes, onOpenLink, onSelectionChange }
+    callbacks.current = {
+      onChange,
+      onSave,
+      getNotes,
+      onOpenLink,
+      onSelectionChange,
+      saveAttachment,
+      onError
+    }
   })
+
+  // 改名時只更新路徑（圖片重新解析），不重建編輯器
+  useEffect(() => {
+    pathRef.current = path
+    view.current?.dispatch({ effects: pathConf.reconfigure(notePath.of(path)) })
+  }, [path])
 
   // 切換即時渲染／原始碼模式，不重建編輯器（保留游標與 undo 歷史）
   useEffect(() => {
@@ -91,6 +124,11 @@ export function Editor({
           basicSetup,
           markdownSupport(),
           previewMode.of(previewExtension(previewRef.current)),
+          pathConf.of(notePath.of(pathRef.current)),
+          imagePaste({
+            save: (...args) => callbacks.current.saveAttachment(...args),
+            onError: (e) => callbacks.current.onError(e)
+          }),
           wikilinks({
             getNotes: () => callbacks.current.getNotes(),
             onOpen: (target, newTab) => callbacks.current.onOpenLink(target, newTab)

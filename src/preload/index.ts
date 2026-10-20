@@ -29,6 +29,8 @@ const api: KnowmonAPI = {
     write: (path, content) => ipcRenderer.invoke(IPC.notesWrite, path, content),
     create: (path) => ipcRenderer.invoke(IPC.notesCreate, path),
     createFolder: (path) => ipcRenderer.invoke(IPC.notesCreateFolder, path),
+    saveAttachment: (notePath, fileName, data) =>
+      ipcRenderer.invoke(IPC.notesSaveAttachment, notePath, fileName, data),
     rename: (from, to) => ipcRenderer.invoke(IPC.notesRename, from, to),
     remove: (path) => ipcRenderer.invoke(IPC.notesRemove, path),
     list: () => ipcRenderer.invoke(IPC.notesList)

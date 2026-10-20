@@ -101,6 +101,34 @@ describe('App 內操作', () => {
     expect(fs.existsSync(path.join(root, '..', '外面'))).toBe(false)
   })
 
+  it('saveAttachment 存到 attachments/，同名加編號、不覆蓋', async () => {
+    const v = await open()
+    const changes: VaultChange[] = []
+    v.onChange((c) => changes.push(c))
+    const bytes = new Uint8Array([137, 80, 78, 71])
+    expect(await v.saveAttachment('日記/2026-10-06.md', 'Pasted image 1.png', bytes)).toBe(
+      'attachments/Pasted image 1.png'
+    )
+    expect(await v.saveAttachment('歡迎.md', 'Pasted image 1.png', new Uint8Array([1]))).toBe(
+      'attachments/Pasted image 1 1.png'
+    )
+    expect([...fs.readFileSync(abs('attachments/Pasted image 1.png'))]).toEqual([...bytes])
+    expect([...fs.readFileSync(abs('attachments/Pasted image 1 1.png'))]).toEqual([1])
+    // 資料夾第一次建立時通知檔案樹；圖片不進索引
+    expect(changes).toEqual([{ type: 'add', path: 'attachments' }])
+    expect(await v.reconcile()).toEqual([])
+    expect(v.list().map((n) => n.path)).not.toContain('attachments/Pasted image 1.png')
+
+    // 檔名中的路徑會被去掉
+    expect(await v.saveAttachment('歡迎.md', '../../evil.png', bytes)).toBe('attachments/evil.png')
+    expect(fs.existsSync(path.join(root, '..', 'evil.png'))).toBe(false)
+    await expect(v.saveAttachment('歡迎.md', 'x.md', bytes)).rejects.toThrow(
+      'Not a supported image'
+    )
+    await expect(v.saveAttachment('.knowmon/x.md', 'a.png', bytes)).rejects.toThrow()
+    await expect(v.saveAttachment('attachments', 'a.png', bytes)).rejects.toThrow('Not a note')
+  })
+
   it('write 寫檔並記 edit，同類事件 60 秒內只記一次', async () => {
     const v = await open()
     await v.write('歡迎.md', '一')

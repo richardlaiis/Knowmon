@@ -1119,6 +1119,24 @@ body.resizing canvas {
   vertical-align: middle;
 }
 
+/* 筆記中的圖片（只支援 vault 內的相對路徑） */
+.cm-editor .cm-lp-image {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+}
+
+.cm-editor .cm-lp-image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.cm-editor .cm-lp-image-missing {
+  color: var(--danger);
+  font-size: 0.88em;
+}
+
 /* frontmatter：維持原文、不套用標題等樣式 */
 .cm-editor .cm-line.cm-lp-frontmatter {
   font-family: var(--font-mono);

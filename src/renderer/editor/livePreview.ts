@@ -20,6 +20,8 @@ import {
 } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 import type { SyntaxNode } from '@lezer/common'
+import { resolveImageSrc } from '../../shared/assets'
+import { ImageWidget, notePath } from './images'
 
 /**
  * 依程式碼區塊的語言標記找出可上色的語言（@codemirror/language-data，用到時才動態載入）。
@@ -128,6 +130,7 @@ export function buildDecorations(
     return out
   }
 
+  const note = state.facet(notePath)
   const fmEnd = frontmatterEnd(doc)
   if (fmEnd > 0 && from < fmEnd) eachLine(0, fmEnd, 'cm-lp-frontmatter')
 
@@ -214,6 +217,23 @@ export function buildDecorations(
             hide(marks[1].from, ref.to)
           }
           return
+        }
+        case 'Image': {
+          // ![alt](相對路徑)：游標不在上面時整段換成圖片，在上面時圖片接在原始語法後面
+          // ![[x]] 沒有 URL（由 wikilink 處理）；網址與絕對路徑不渲染
+          const url = children(node, 'URL')[0]
+          if (!url || inWikilink(ref.from, ref.to)) return
+          const rel = resolveImageSrc(note, doc.sliceString(url.from, url.to))
+          if (rel === null) return
+          const marks = children(node, 'LinkMark')
+          const alt = marks.length >= 2 ? doc.sliceString(marks[0].to, marks[1].from) : ''
+          const widget = new ImageWidget(rel, alt)
+          if (touches(ref.from, ref.to)) {
+            decos.push(Decoration.widget({ widget, side: 1 }).range(ref.to))
+          } else {
+            decos.push(Decoration.replace({ widget }).range(ref.from, ref.to))
+          }
+          return false
         }
         case 'QuoteMark':
           if (!lineTouched(ref.from)) hideWithSpace(ref.from, ref.to)
@@ -383,7 +403,8 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         u.docChanged ||
         u.viewportChanged ||
         u.selectionSet ||
-        syntaxTree(u.startState) !== syntaxTree(u.state)
+        syntaxTree(u.startState) !== syntaxTree(u.state) ||
+        u.startState.facet(notePath) !== u.state.facet(notePath)
       ) {
         this.decorations = visibleDecorations(u.view)
       }
