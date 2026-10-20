@@ -21,31 +21,34 @@ export function findNode(root: TreeNode, path: string): TreeNode | null {
   return null
 }
 
-/** 在資料夾中找一個不重複的名稱：Untitled.md, Untitled 1.md, ... */
-function uniqueChildPath(root: TreeNode, folder: string, base: string, ext: string): string {
-  const names = new Set((findNode(root, folder)?.children ?? []).map((c) => c.name.toLowerCase()))
-  for (let i = 0; ; i++) {
-    const name = (i === 0 ? base : `${base} ${i}`) + ext
-    if (!names.has(name.toLowerCase())) return joinPath(folder, name)
+/** 檔案樹中正在輸入名稱、尚未建立的筆記或資料夾 */
+export interface NewItem {
+  folder: string
+  kind: TreeNode['kind']
+}
+
+/** 檢查使用者輸入的名稱；檔案會自動補上 .md */
+function entryName(kind: TreeNode['kind'], input: string): string {
+  const name = input.trim()
+  if (!name || name.includes('/') || name.includes('\\') || name.startsWith('.')) {
+    throw new Error('Name must not be empty, contain slashes, or start with "."')
   }
-}
-
-export function uniqueNotePath(root: TreeNode, folder: string, base = 'Untitled'): string {
-  return uniqueChildPath(root, folder, base, '.md')
-}
-
-export function uniqueFolderPath(root: TreeNode, folder: string, base = 'Untitled folder'): string {
-  return uniqueChildPath(root, folder, base, '')
+  return kind === 'file' && !name.toLowerCase().endsWith('.md') ? `${name}.md` : name
 }
 
 /** 使用者輸入新名稱後的完整路徑；檔案會自動補上 .md */
 export function renamedPath(node: Pick<TreeNode, 'path' | 'kind'>, newName: string): string {
-  let name = newName.trim()
-  if (!name || name.includes('/') || name.includes('\\') || name.startsWith('.')) {
-    throw new Error('Name must not be empty, contain slashes, or start with "."')
+  return joinPath(parentOf(node.path), entryName(node.kind, newName))
+}
+
+/** 以使用者輸入的名稱新增項目的路徑；資料夾中已有同名項目（不分大小寫）時丟出錯誤 */
+export function newItemPath(root: TreeNode, item: NewItem, input: string): string {
+  const name = entryName(item.kind, input)
+  const siblings = findNode(root, item.folder)?.children ?? []
+  if (siblings.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    throw new Error(`"${name}" already exists`)
   }
-  if (node.kind === 'file' && !name.toLowerCase().endsWith('.md')) name += '.md'
-  return joinPath(parentOf(node.path), name)
+  return joinPath(item.folder, name)
 }
 
 /** 筆記或其所在資料夾被搬移後，原本開著的路徑變成什麼；不受影響則回傳原路徑 */

@@ -64,9 +64,9 @@ import {
   errorMessage,
   isWithin,
   movedInto,
+  newItemPath,
   renamedPath,
-  uniqueFolderPath,
-  uniqueNotePath
+  type NewItem
 } from './lib/tree'
 import { applyTheme, browserStore, otherTheme, saveTheme, type Theme } from './lib/theme'
 import {
@@ -144,6 +144,7 @@ function App(): React.JSX.Element {
   const [tree, setTree] = useState<TreeNode | null>(null)
   const [tabs, setTabs] = useState<T.TabsState>(T.emptyTabs)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [creating, setCreating] = useState<NewItem | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [preview, setPreview] = useState(() => loadFlag(PREVIEW_KEY))
   const [layout, setLayout] = useState<LayoutPrefs>(loadLayout)
@@ -403,6 +404,7 @@ function App(): React.JSX.Element {
       if (!root) return
       restoredFor.current = null
       setTabs(T.emptyTabs)
+      setCreating(null)
       resetConversation()
       resetAgent()
       setVault(root)
@@ -601,22 +603,22 @@ function App(): React.JSX.Element {
     }
   }
 
-  const createNote = (folder: string): Promise<void> =>
+  /** 在檔案樹顯示名稱輸入框，輸入名稱後才建立（見 createItem） */
+  const startCreate = (item: NewItem | null): void => {
+    setRenaming(null)
+    setSidebarTab('files')
+    setCreating(item)
+  }
+
+  const createItem = (item: NewItem, name: string): Promise<void> =>
     runLocal(async () => {
+      setCreating(null)
       if (!tree) return
-      const path = uniqueNotePath(tree, folder)
+      const path = newItemPath(tree, item, name)
+      if (item.kind === 'folder') return await window.api.notes.createFolder(path)
       await window.api.notes.create(path)
       // 新筆記開在新分頁，不取代正在看的筆記
       setTabs((s) => T.openNote(s, path, true))
-      setRenaming(path)
-    })
-
-  const createFolder = (parent: string): Promise<void> =>
-    runLocal(async () => {
-      if (!tree) return
-      const path = uniqueFolderPath(tree, parent)
-      await window.api.notes.createFolder(path)
-      setRenaming(path)
     })
 
   const renameNode = (node: TreeNode, newName: string): Promise<void> =>
@@ -745,10 +747,18 @@ function App(): React.JSX.Element {
               >
                 {tree?.name ?? vault}
               </button>
-              <button className="icon" onClick={() => createNote('')} title="New note">
+              <button
+                className="icon"
+                onClick={() => startCreate({ folder: '', kind: 'file' })}
+                title="New note"
+              >
                 <NewNoteIcon />
               </button>
-              <button className="icon" onClick={() => createFolder('')} title="New folder">
+              <button
+                className="icon"
+                onClick={() => startCreate({ folder: '', kind: 'folder' })}
+                title="New folder"
+              >
                 <NewFolderIcon />
               </button>
               <ThemeToggle theme={theme} onToggle={toggleTheme} />
@@ -790,10 +800,14 @@ function App(): React.JSX.Element {
                 root={tree}
                 selected={currentNote}
                 renaming={renaming}
+                creating={creating}
                 onOpen={(p, newTab) => void openNote(p, newTab)}
-                onCreate={createNote}
-                onCreateFolder={createFolder}
-                onStartRename={setRenaming}
+                onStartCreate={startCreate}
+                onCreate={createItem}
+                onStartRename={(p) => {
+                  setCreating(null)
+                  setRenaming(p)
+                }}
                 onRename={renameNode}
                 onMove={moveNode}
                 onRemove={removeNode}

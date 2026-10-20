@@ -6,10 +6,10 @@ import {
   isWithin,
   movedInto,
   parentOf,
+  newItemPath,
   remapPath,
-  uniqueFolderPath,
   renamedPath,
-  uniqueNotePath
+  type NewItem
 } from './tree'
 
 const tree: TreeNode = {
@@ -40,23 +40,20 @@ describe('tree 工具', () => {
     expect(findNode(tree, '不存在.md')).toBeNull()
   })
 
-  it('uniqueNotePath 避開同名', () => {
-    expect(uniqueNotePath(tree, '')).toBe('Untitled 2.md')
-    expect(uniqueNotePath(tree, '日記')).toBe('日記/Untitled 1.md')
-    expect(uniqueNotePath(tree, '新資料夾')).toBe('新資料夾/Untitled.md')
-  })
-
-  it('uniqueFolderPath 避開同名的檔案與資料夾', () => {
-    expect(uniqueFolderPath(tree, '')).toBe('Untitled folder')
-    const withFolder: TreeNode = {
-      ...tree,
-      children: [
-        ...tree.children!,
-        { name: 'Untitled folder', path: 'Untitled folder', kind: 'folder', children: [] }
-      ]
-    }
-    expect(uniqueFolderPath(withFolder, '')).toBe('Untitled folder 1')
-    expect(uniqueFolderPath(tree, '日記')).toBe('日記/Untitled folder')
+  it('newItemPath 補 .md、擋掉同名與無效名稱', () => {
+    const file = (folder: string): NewItem => ({ folder, kind: 'file' })
+    const folder = (f: string): NewItem => ({ folder: f, kind: 'folder' })
+    expect(newItemPath(tree, file(''), ' 週記 ')).toBe('週記.md')
+    expect(newItemPath(tree, file('日記'), '週記.md')).toBe('日記/週記.md')
+    expect(newItemPath(tree, file('新資料夾'), 'Untitled')).toBe('新資料夾/Untitled.md')
+    expect(newItemPath(tree, folder('日記'), '2026')).toBe('日記/2026')
+    // 同名（不分大小寫），檔案與資料夾互相衝突
+    expect(() => newItemPath(tree, file(''), 'untitled')).toThrow('already exists')
+    expect(() => newItemPath(tree, folder(''), '日記')).toThrow('already exists')
+    expect(() => newItemPath(tree, folder(''), 'Untitled.md')).toThrow('already exists')
+    expect(() => newItemPath(tree, file(''), '  ')).toThrow()
+    expect(() => newItemPath(tree, folder(''), 'a/b')).toThrow()
+    expect(() => newItemPath(tree, file(''), '.hidden')).toThrow()
   })
 
   it('renamedPath 保留資料夾並補 .md', () => {

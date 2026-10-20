@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TreeNode } from '../../../shared/types'
-import { displayName, movedInto, parentOf } from '../lib/tree'
+import { displayName, movedInto, parentOf, type NewItem } from '../lib/tree'
 import { wantsNewTab } from '../workspace/tabs'
 
 /** 檔案樹內部拖曳用的 MIME type，和外部拖進來的檔案區分 */
@@ -11,12 +11,15 @@ const EXPAND_DELAY_MS = 600
 export interface FileTreeProps {
   root: TreeNode
   selected: string | null
-  /** 正在改名的節點路徑（新增筆記或資料夾後會直接進入改名狀態） */
+  /** 正在改名的節點路徑 */
   renaming: string | null
+  /** 正在輸入名稱的新項目；送出名稱後才建立 */
+  creating: NewItem | null
   /** newTab：Ctrl/Cmd+點擊或中鍵 */
   onOpen: (path: string, newTab: boolean) => void
-  onCreate: (folder: string) => void
-  onCreateFolder: (parent: string) => void
+  /** 顯示新項目的名稱輸入框；null 為取消 */
+  onStartCreate: (item: NewItem | null) => void
+  onCreate: (item: NewItem, name: string) => void
   onStartRename: (path: string | null) => void
   onRename: (node: TreeNode, newName: string) => void
   onRemove: (node: TreeNode) => void
@@ -90,17 +93,45 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
     if (from && movedInto(from, target) !== null) props.onMove(from, target)
   }
 
-  // 新增的項目在收合的資料夾裡時，展開它的上層，讓改名輸入框看得到
-  const [shownRenaming, setShownRenaming] = useState<string | null>(null)
-  if (props.renaming !== shownRenaming) {
-    setShownRenaming(props.renaming)
-    if (props.renaming) {
-      const ancestors: string[] = []
-      for (let p = parentOf(props.renaming); p; p = parentOf(p)) ancestors.push(p)
+  // 名稱輸入框在收合的資料夾裡時，展開它的上層，讓輸入框看得到
+  const editing = props.creating?.folder ?? props.renaming
+  const [shownEditing, setShownEditing] = useState<string | null>(null)
+  if (editing !== shownEditing) {
+    setShownEditing(editing)
+    if (editing) {
+      const ancestors: string[] = props.creating ? [editing] : []
+      for (let p = parentOf(editing); p; p = parentOf(p)) ancestors.push(p)
       if (ancestors.some((a) => collapsed.has(a))) {
         setCollapsed((prev) => new Set([...prev].filter((p) => !ancestors.includes(p))))
       }
     }
+  }
+
+  /** 新項目的名稱輸入列，放在資料夾內容的最前面 */
+  const renderCreating = (folder: string, depth: number): React.JSX.Element | null => {
+    const item = props.creating
+    if (!item || item.folder !== folder) return null
+    return (
+      <li key="/new">
+        <div
+          className="tree-row"
+          style={{ paddingLeft: 8 + depth * 14 }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+        >
+          <span className="tree-icon">{item.kind === 'folder' ? '▸' : ''}</span>
+          <RenameInput
+            initial=""
+            placeholder={item.kind === 'folder' ? 'Folder name' : 'Note name'}
+            onDone={(name) =>
+              name === null || !name.trim() ? props.onStartCreate(null) : props.onCreate(item, name)
+            }
+          />
+        </div>
+      </li>
+    )
   }
 
   const toggle = (path: string): void =>
@@ -159,9 +190,14 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
             <span className="tree-name">{displayName(node)}</span>
           )}
         </div>
-        {isFolder && open && node.children && node.children.length > 0 && (
-          <ul>{node.children.map((c) => renderNode(c, depth + 1))}</ul>
-        )}
+        {isFolder &&
+          open &&
+          ((node.children?.length ?? 0) > 0 || props.creating?.folder === node.path) && (
+            <ul>
+              {renderCreating(node.path, depth + 1)}
+              {(node.children ?? []).map((c) => renderNode(c, depth + 1))}
+            </ul>
+          )}
       </li>
     )
   }
@@ -176,23 +212,28 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
         setMenu({ x: e.clientX, y: e.clientY, node: props.root })
       }}
     >
-      <ul>{(props.root.children ?? []).map((c) => renderNode(c, 0))}</ul>
+      <ul>
+        {renderCreating('', 0)}
+        {(props.root.children ?? []).map((c) => renderNode(c, 0))}
+      </ul>
       {menu && (
         <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
           <button
             onClick={() =>
-              props.onCreate(
-                menu.node.kind === 'folder' ? menu.node.path : parentOf(menu.node.path)
-              )
+              props.onStartCreate({
+                folder: menu.node.kind === 'folder' ? menu.node.path : parentOf(menu.node.path),
+                kind: 'file'
+              })
             }
           >
             New note
           </button>
           <button
             onClick={() =>
-              props.onCreateFolder(
-                menu.node.kind === 'folder' ? menu.node.path : parentOf(menu.node.path)
-              )
+              props.onStartCreate({
+                folder: menu.node.kind === 'folder' ? menu.node.path : parentOf(menu.node.path),
+                kind: 'folder'
+              })
             }
           >
             New folder
@@ -213,9 +254,11 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
 
 function RenameInput({
   initial,
+  placeholder,
   onDone
 }: {
   initial: string
+  placeholder?: string
   onDone: (name: string | null) => void
 }): React.JSX.Element {
   const [value, setValue] = useState(initial)
@@ -231,10 +274,13 @@ function RenameInput({
       className="rename-input"
       autoFocus
       value={value}
+      placeholder={placeholder}
       onFocus={(e) => e.currentTarget.select()}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
+        // 輸入法選字時的 Enter 不送出
+        if (e.nativeEvent.isComposing) return
         if (e.key === 'Enter') finish(value)
         if (e.key === 'Escape') finish(null)
       }}

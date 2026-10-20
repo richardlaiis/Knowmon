@@ -141,6 +141,7 @@
 
 - 自動儲存：停止輸入 500ms 後寫入，`Ctrl/Cmd+S` 立即寫入。取代或關閉分頁、改名、刪除、換 vault 前都會先 flush。
 - 外部修改開著的筆記（任何已載入的分頁）：沒有未儲存內容就直接重新載入；有的話在該分頁顯示提示列讓使用者選擇。
+- 新增筆記／資料夾：先在檔案樹顯示名稱輸入框，按 Enter（或失焦）才建立，不先建 `Untitled` 再改名（新筆記分頁的編輯器載入後會搶走焦點，改名輸入框因此失效）。同名（不分大小寫）在 renderer 先擋下（`lib/tree.ts` 的 `newItemPath`）。名稱輸入框在輸入法選字時不處理 Enter。
 - 檔案樹拖曳移動直接使用 `notes.rename(from, to)`，不另外加 IPC。拖曳資料用自訂 MIME type `application/x-knowmon-path`，和從系統拖進來的檔案區分。
 - Markdown 即時渲染（`src/renderer/editor/livePreview.ts`）：以 CodeMirror 裝飾實作，不改動文件內容。行內元素（粗體、連結、程式碼、wikilink）在游標碰到該元素時顯示原始語法；區塊標記（標題 #、引用 >、清單、分隔線）在游標所在行顯示。`Ctrl/Cmd+E` 或右上角按鈕切換原始碼模式，偏好存在 renderer 的 localStorage。
 - frontmatter 用正則判斷文件開頭的 `---` 區塊，不寫 lezer 語法擴充（未閉合的 `---` 會被誤吞整份文件）。wikilink 也用正則找，並排除程式碼內的；lezer 會把 `[[x]]` 裡的 `[x]` 當成 Link，所以與 wikilink 重疊或沒有網址的 Link 不做渲染。
