@@ -36,7 +36,7 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 - `src/main/llm/`：Ollama client、檢索、agent 工具。
 - `src/renderer/`：`editor/`、`graph/`、`timeline/`、`chat/` 四個 UI 模組。
 - `test-vault/`：測試用筆記，含中文、日期 frontmatter、互相連結、日記格式檔名。
-- `docs/`：`architecture.md`、`roadmap.md`、`plans/`（每個功能的實作計畫）。
+- `docs/`：`architecture.md`、`roadmap.md`、`testing.md`（測試清單）、`plans/`（每個功能的實作計畫）、`user-guide/`（使用說明）。
 
 ## 目前進度
 

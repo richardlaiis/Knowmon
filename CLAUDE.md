@@ -5,7 +5,7 @@
 - 開發：npm run dev
 - 測試：npx vitest run
 - 型別檢查：npm run typecheck
-- 安裝、執行、手動測試步驟與常見訊息見 README.md
+- 安裝與執行見 README.md，手動測試清單見 docs/testing.md
 
 ## 架構規則
 - Markdown 檔是唯一真相，SQLite 只是索引，必須可重建

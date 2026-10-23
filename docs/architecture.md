@@ -130,7 +130,7 @@
 - 分頁存在 renderer 的 localStorage（`knowmon.tabs:<vault 路徑>`），每個 vault 各一份；還原時略過已不存在的筆記。還原完成前不存檔，避免空狀態蓋掉上次的分頁。
 - Electron 預設選單把 `Ctrl/Cmd+W` 綁成關閉視窗，main process 改用自訂選單（`src/main/index.ts` 的 `buildMenu`）拿掉它，renderer 用來關分頁。
 - 面板：左側欄與右側面板寬度可拖曳（`Splitter`，雙擊恢復預設），寬度限制在上下限內且編輯器至少保留 `EDITOR_MIN`（`workspace/layout.ts`）。`Ctrl/Cmd+B`、`Ctrl/Cmd+Alt+B` 或分頁列兩端的按鈕開關左右面板。寬度與開關存 localStorage `knowmon.layout`，所有 vault 共用。
-- 全域快捷鍵在 `App.tsx` 以 capture 階段攔截並 `stopPropagation`，編輯器不會再處理同一個按鍵（CodeMirror 的 `Ctrl/Cmd+G`「找下一個」因此停用，改用 `F3`）。所有快捷鍵的列表在 README 的「快捷鍵」與使用說明的 `docs/user-guide/*/shortcuts.md`，新增或修改快捷鍵時要同步更新。
+- 全域快捷鍵在 `App.tsx` 以 capture 階段攔截並 `stopPropagation`，編輯器不會再處理同一個按鍵（CodeMirror 的 `Ctrl/Cmd+G`「找下一個」因此停用，改用 `F3`）。所有快捷鍵的列表在使用說明的 `docs/user-guide/*/shortcuts.md`（中英文），新增或修改快捷鍵時要同步更新。
 - 快捷鍵：`Ctrl/Cmd+W` 關分頁、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切換、`Ctrl/Cmd+T` 以新分頁開 Quick switcher（Quick switcher 裡 `Ctrl/Cmd+Enter` 也是新分頁）、`Ctrl/Cmd+G` 圖譜分頁、`Ctrl/Cmd+Shift+T` 時間軸分頁。
 
 ## 圖片
