@@ -69,4 +69,9 @@ describe('wikilinkTarget', () => {
     expect(wikilinkTarget(' b.md #標題 | x')).toBe('b')
     expect(wikilinkTarget('#只有標題')).toBe('')
   })
+
+  it('表格裡的 \\| 也是顯示文字的分隔', () => {
+    expect(wikilinkTarget('筆記\\|文字')).toBe('筆記')
+    expect(wikilinkTarget('b.md#標題 \\| x')).toBe('b')
+  })
 })

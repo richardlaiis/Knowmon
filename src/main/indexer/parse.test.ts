@@ -68,6 +68,10 @@ describe('extractWikilinks', () => {
     ])
   })
 
+  it('表格裡的 [[目標\\|顯示]] 連到目標', () => {
+    expect(targets('| a | [[筆記\\|顯示]] |\n|---|---|')).toEqual(['筆記'])
+  })
+
   it('略過只連到自己標題的連結與空連結', () => {
     expect(targets('[[#標題]] [[|x]] [[]]')).toEqual([])
   })

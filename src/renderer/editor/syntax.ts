@@ -15,7 +15,8 @@ export const WIKILINK = /\[\[([^[\]\n]+?)\]\]/g
 export function splitWikilink(inner: string): { target: string; textStart: number } {
   const pipe = inner.indexOf('|')
   return {
-    target: (pipe >= 0 ? inner.slice(0, pipe) : inner).trim(),
+    // 表格裡寫成 [[目標\|顯示]]，目標結尾的 \ 不算
+    target: (pipe >= 0 ? inner.slice(0, pipe).replace(/\\$/, '') : inner).trim(),
     textStart: pipe >= 0 ? pipe + 1 : 0
   }
 }

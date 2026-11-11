@@ -7,9 +7,12 @@ export function linkKey(target: string): string {
   return target.trim().replace(/\.md$/i, '').normalize('NFC').toLowerCase()
 }
 
-/** [[目標#標題|顯示]] 括號內的文字 → 目標；只有 #標題（連到自己）時回傳空字串 */
+/**
+ * [[目標#標題|顯示]] 括號內的文字 → 目標；只有 #標題（連到自己）時回傳空字串。
+ * 表格裡的 | 是欄位分隔，所以要寫 [[目標\|顯示]]，\| 也當成分隔。
+ */
 export function wikilinkTarget(inner: string): string {
-  return inner.split('|')[0].split('#')[0].trim().replace(/\.md$/i, '').trim()
+  return inner.split(/\\?\|/)[0].split('#')[0].trim().replace(/\.md$/i, '').trim()
 }
 
 function basename(p: string): string {
