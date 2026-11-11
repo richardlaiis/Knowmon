@@ -57,23 +57,38 @@ Press `Ctrl+E` or the **Live preview / Source** button at the top right to switc
 
 ### Supported Markdown
 
-| Element         | Syntax                            | Notes                                |
-| --------------- | --------------------------------- | ------------------------------------ |
-| Headings        | `# Title`, `## Subtitle` …        | Six levels                           |
-| Bold / italic   | `**bold**`, `*italic*`            |                                      |
-| Strikethrough   | `~~gone~~`                        |                                      |
-| Inline code     | `` `code` ``                      |                                      |
-| Link            | `[text](https://example.com)`     | `Ctrl`+click to open in your browser |
-| Wikilink        | `[[Note name]]`                   | See [Links](links.md)                |
-| Lists           | `- item`, `1. item`               |                                      |
-| Tasks           | `- [ ] to do`, `- [x] done`       | Click the checkbox to toggle         |
-| Quote           | `> quote`                         |                                      |
-| Horizontal rule | `---`                             |                                      |
-| Code block      | ` ```python ` … ` ``` `           | Syntax highlighted by language       |
-| Image           | `![caption](attachments/pic.png)` | See "Images" below                   |
-| Frontmatter     | A `---` block at the top          | See [Properties](properties.md)      |
+| Element         | Syntax                             | Notes                                |
+| --------------- | ---------------------------------- | ------------------------------------ |
+| Headings        | `# Title`, `## Subtitle` …         | Six levels                           |
+| Bold / italic   | `**bold**`, `*italic*`             |                                      |
+| Strikethrough   | `~~gone~~`                         |                                      |
+| Inline code     | `` `code` ``                       |                                      |
+| Link            | `[text](https://example.com)`      | `Ctrl`+click to open in your browser |
+| Wikilink        | `[[Note name]]`                    | See [Links](links.md)                |
+| Lists           | `- item`, `1. item`                |                                      |
+| Tasks           | `- [ ] to do`, `- [x] done`        | Click the checkbox to toggle         |
+| Quote           | `> quote`                          |                                      |
+| Horizontal rule | `---`                              |                                      |
+| Code block      | ` ```python ` … ` ``` `            | Syntax highlighted by language       |
+| Image           | `![caption](attachments/pic.png)`  | See "Images" below                   |
+| Frontmatter     | A `---` block at the top           | See [Properties](properties.md)      |
+| Table           | `\| col \| col \|` + separator row | See "Tables" below                   |
 
-Tables and HTML are shown as plain text, not rendered.
+HTML is shown as plain text, not rendered.
+
+### Tables
+
+GFM tables are supported. The second line is the separator row; use `:` to set alignment (`:--` left, `:-:` center, `--:` right).
+
+```markdown
+| Name  | Count |
+| :---- | ----: |
+| Apple |     3 |
+```
+
+When the cursor is outside the table, it's shown as a table, with bold, code, links and wikilinks rendered inside cells; wide tables scroll sideways. Click a cell (or move into the table with the arrow keys) and the whole table turns back into Markdown with the cursor in that cell, so you edit the raw text. `Ctrl`+click a link or wikilink in a table to open it.
+
+To use `|` inside a cell, write `\|`. This includes a wikilink's display text: `[[Note\|shown text]]`. Tables inside quotes (`>`) or lists are not rendered.
 
 ### Code blocks
 

@@ -82,6 +82,15 @@ export function wikilinks({ getNotes, onOpen }: WikilinkOptions): Extension {
     EditorView.domEventHandlers({
       mousedown(e, view) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false
+        // 渲染後的表格（tables.ts）沒有對應的原文位置，直接讀 data-target
+        const inTable = (e.target as HTMLElement).closest?.<HTMLElement>(
+          '.cm-lp-table [data-target]'
+        )
+        if (inTable?.dataset.target) {
+          e.preventDefault()
+          onOpen(inTable.dataset.target, e.shiftKey)
+          return true
+        }
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
         if (pos === null || inCode(view.state, pos)) return false
         const line = view.state.doc.lineAt(pos)

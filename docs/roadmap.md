@@ -14,18 +14,18 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 
 整個專案只使用 TypeScript，分成前端 UI（renderer）與核心服務（main process）兩層，兩者透過 IPC 溝通。
 
-| 用途 | 技術 | 備註 |
-| --- | --- | --- |
-| 桌面框架 | Electron + electron-vite | React + TypeScript 範本 |
-| 編輯器 | CodeMirror 6 | `@codemirror/lang-markdown` |
-| 資料庫 | SQLite（better-sqlite3） | 原生模組，版本不符時執行 `npx electron-builder install-app-deps` |
-| 向量檢索 | sqlite-vec | SQLite 擴充 |
-| 全文搜尋 | SQLite FTS5 | 必須使用 `trigram` tokenizer 才能搜尋中文 |
-| 檔案監聽 | chokidar | 偵測外部編輯器的修改 |
-| Frontmatter 解析 | gray-matter |  |
-| 圖譜視覺化 | Cytoscape.js | 效能不足時可評估改用 sigma.js |
-| 本地 LLM | Ollama HTTP API | 對話模型 `qwen3:8b`，embedding 模型 `bge-m3` |
-| 測試 | vitest |  |
+| 用途             | 技術                     | 備註                                                             |
+| ---------------- | ------------------------ | ---------------------------------------------------------------- |
+| 桌面框架         | Electron + electron-vite | React + TypeScript 範本                                          |
+| 編輯器           | CodeMirror 6             | `@codemirror/lang-markdown`                                      |
+| 資料庫           | SQLite（better-sqlite3） | 原生模組，版本不符時執行 `npx electron-builder install-app-deps` |
+| 向量檢索         | sqlite-vec               | SQLite 擴充                                                      |
+| 全文搜尋         | SQLite FTS5              | 必須使用 `trigram` tokenizer 才能搜尋中文                        |
+| 檔案監聽         | chokidar                 | 偵測外部編輯器的修改                                             |
+| Frontmatter 解析 | gray-matter              |                                                                  |
+| 圖譜視覺化       | Cytoscape.js             | 效能不足時可評估改用 sigma.js                                    |
+| 本地 LLM         | Ollama HTTP API          | 對話模型 `qwen3:8b`，embedding 模型 `bge-m3`                     |
+| 測試             | vitest                   |                                                                  |
 
 資料夾職責：
 
@@ -81,13 +81,13 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 筆記有兩種時間：`created_at` / `modified_at` 是「何時寫的」，`event_date` 是「內容講的事何時發生」，來源為 frontmatter 的 `date:` 或日記檔名。兩者都要保存，讓圖譜能切換兩種時間視角。
 
-| 連結類型 | 產生方式 | 實作階段 |
-| --- | --- | --- |
-| `wikilink` | 使用者在內文寫 `[[ ]]` | 2 |
-| `same_session` | 在同一段工作時間內被編輯（預設 30 分鐘，需可調整） | 4 |
-| `same_day` | `event_date` 相同或接近 | 4 |
-| `sequence` | 同一主題下時間上的前後篇 | 4 |
-| `semantic` | embedding 相似度高於門檻 | 5 |
+| 連結類型       | 產生方式                                           | 實作階段 |
+| -------------- | -------------------------------------------------- | -------- |
+| `wikilink`     | 使用者在內文寫 `[[ ]]`                             | 2        |
+| `same_session` | 在同一段工作時間內被編輯（預設 30 分鐘，需可調整） | 4        |
+| `same_day`     | `event_date` 相同或接近                            | 4        |
+| `sequence`     | 同一主題下時間上的前後篇                           | 4        |
+| `semantic`     | embedding 相似度高於門檻                           | 5        |
 
 ## 開發路線圖
 
@@ -164,6 +164,7 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 完成標準：三個平台都有可安裝、功能完整（含 AI）的安裝檔，設定集中在一個地方。打包的計畫與實作決定見 `docs/plans/phase8-packaging.md`。
 
 - [x] Linux 試打包：deb 與 AppImage 可安裝，打包版的向量功能（sqlite-vec）正常、設定沿用開發版（2026-10-20）
+- [x] 表格即時渲染：游標不在表格時顯示成表格，進入時顯示原始碼（2026-11-11，見 `docs/plans/table-rendering.md`）
 - [ ] 設定頁：整合時間與 Semantic 參數、AI 設定、主題與介面偏好
 - [ ] 效能優化：先以 `scripts/gen-vault.mjs` 量測 1000／3000 篇，再決定目標（已知弱點：圖譜 hover、首次建立索引）
 - [ ] 產出安裝檔：Windows 與 macOS 打包（需在各自的作業系統或 CI 上建置）、正式圖示、授權（LICENSE）、版本號，並更新使用說明的安裝頁

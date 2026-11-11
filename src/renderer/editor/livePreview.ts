@@ -22,6 +22,10 @@ import { tags as t } from '@lezer/highlight'
 import type { SyntaxNode } from '@lezer/common'
 import { resolveImageSrc } from '../../shared/assets'
 import { ImageWidget, notePath } from './images'
+import { WIKILINK, frontmatterEnd, splitWikilink } from './syntax'
+import { renderedTables, tables } from './tables'
+
+export { frontmatterEnd }
 
 /**
  * 依程式碼區塊的語言標記找出可上色的語言（@codemirror/language-data，用到時才動態載入）。
@@ -46,7 +50,7 @@ export function markdownSupport(): Extension {
 
 /** 即時渲染（可用 Compartment 開關） */
 export function livePreview(): Extension {
-  return livePreviewPlugin
+  return [livePreviewPlugin, tables()]
 }
 
 const markdownHighlight = HighlightStyle.define([
@@ -78,14 +82,6 @@ const markdownHighlight = HighlightStyle.define([
 
 // ---- 純函式：計算裝飾 ----
 
-/** 文件開頭 YAML frontmatter 的結束位置（含結尾的 ---），沒有則回傳 0 */
-export function frontmatterEnd(doc: Text): number {
-  const head = doc.sliceString(0, Math.min(doc.length, 20_000))
-  const m = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?=\r?\n|$)/.exec(head)
-  return m ? m[0].length : 0
-}
-
-const WIKILINK = /\[\[([^[\]\n]+?)\]\]/g
 const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText'])
 
 /** 計算 [from, to] 範圍內的即時渲染裝飾 */
@@ -135,24 +131,22 @@ export function buildDecorations(
   if (fmEnd > 0 && from < fmEnd) eachLine(0, fmEnd, 'cm-lp-frontmatter')
 
   const tree = syntaxTree(state)
+  // 整張換成表格 widget 的範圍（tables.ts），裡面不需要其他裝飾
+  const tableRanges = renderedTables(state)
+  const inTable = (a: number): boolean => tableRanges.some((t) => t.from <= a && a <= t.to)
 
   // [[wikilink]] 與 [[目標|顯示文字]]：Markdown 解析器不認得（還會把裡面的 [x] 當成連結），先用正則找出來
   const wikilinks: { from: number; to: number; target: string; textFrom: number }[] = []
   for (const m of doc.sliceString(from, to).matchAll(WIKILINK)) {
     const a = from + m.index!
-    if (a < fmEnd) continue
+    if (a < fmEnd || inTable(a)) continue
     let inCode = false
     for (let n: SyntaxNode | null = tree.resolveInner(a + 2, 1); n; n = n.parent) {
       if (CODE_NODES.has(n.name)) inCode = true
     }
     if (inCode) continue
-    const pipe = m[1].indexOf('|')
-    wikilinks.push({
-      from: a,
-      to: a + m[0].length,
-      target: (pipe >= 0 ? m[1].slice(0, pipe) : m[1]).trim(),
-      textFrom: pipe >= 0 ? a + 2 + pipe + 1 : a + 2
-    })
+    const { target, textStart } = splitWikilink(m[1])
+    wikilinks.push({ from: a, to: a + m[0].length, target, textFrom: a + 2 + textStart })
   }
   const inWikilink = (a: number, b: number): boolean =>
     wikilinks.some((w) => w.from < b && w.to > a)
@@ -183,6 +177,9 @@ export function buildDecorations(
       }
 
       switch (name) {
+        case 'Table':
+          if (inTable(ref.from)) return false
+          return
         case 'Emphasis':
         case 'StrongEmphasis':
         case 'Strikethrough': {

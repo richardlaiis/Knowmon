@@ -2177,3 +2177,33 @@ body.resizing canvas {
   font-size: 13px;
   padding: 2px 12px;
 }
+
+/* 表格（tables.ts）：游標不在表格裡時顯示，過寬時水平捲動 */
+.cm-editor .cm-lp-table-wrap {
+  /* 寬表格不把 .cm-content 撐開，只在自己裡面捲動 */
+  contain: inline-size;
+  overflow-x: auto;
+  padding: 6px 0;
+  cursor: text;
+}
+
+.cm-editor .cm-lp-table {
+  border-collapse: collapse;
+  line-height: 1.5;
+  /* 欄位多時保持自然寬度、改成水平捲動，不把每格擠成一字一行 */
+  width: max-content;
+}
+
+.cm-editor .cm-lp-table th,
+.cm-editor .cm-lp-table td {
+  max-width: 24em;
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.cm-editor .cm-lp-table th {
+  font-weight: 700;
+  background: var(--bg-side);
+}

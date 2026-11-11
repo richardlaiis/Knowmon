@@ -49,7 +49,10 @@ A red "Image not found" means the syntax is fine but the file wasn't found.
 
 ### Tables aren't rendered
 
-The editor doesn't render tables yet; they show as plain Markdown (in AI summaries too).
+- While the cursor is inside a table it shows raw Markdown; move the cursor out to render it.
+- The second line must be a separator row (e.g. `| --- | --- |`).
+- Tables inside quotes (`>`) or lists, and source mode (`Ctrl+E`), aren't rendered.
+- Tables in AI summaries and answers are still shown as plain Markdown.
 
 ## Search
 
