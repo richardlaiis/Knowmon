@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Knowmon logo：節點連成的 K（筆記圖譜），外圈虛線點代表時間脈絡。改完後執行 node scripts/gen-icons.mjs -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2c3242"/>
+      <stop offset="1" stop-color="#1a1d24"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#88c0d0" stroke-opacity="0.45" stroke-width="16" stroke-linecap="round" stroke-dasharray="0.01 33.6499"/>
+  <path d="M196 160v192M196 262l104-102M234 226l70 126" fill="none" stroke="#eceff4" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="196" cy="160" r="26" fill="#eceff4"/>
+  <circle cx="196" cy="352" r="26" fill="#eceff4"/>
+  <circle cx="300" cy="160" r="26" fill="#88c0d0"/>
+  <circle cx="304" cy="352" r="26" fill="#b48ead"/>
+</svg>

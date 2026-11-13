@@ -1,11 +1,25 @@
-# Knowmon
+<p align="center">
+  <img src="build/icon.svg" width="128" alt="Knowmon logo">
+</p>
+
+<h1 align="center">Knowmon</h1>
+
+<p align="center">
+  本地優先的 Markdown 筆記：除了連結，也依「什麼時候寫的」把筆記串起來。<br>
+  <a href="docs/user-guide/zh-TW/README.md">使用說明</a> ·
+  <a href="docs/user-guide/en/README.md">English guide</a> ·
+  <a href="#快速開始">快速開始</a>
+</p>
 
 類 Obsidian 的本地 Markdown 筆記軟體，多了兩個特色：
 
 - **時間脈絡連結**：除了 `[[wikilink]]`，也會依「同一段時間寫的」「同一天的事」「同資料夾的前後篇」自動連結筆記。
 - **本地 AI**：透過 [Ollama](https://ollama.com) 總結筆記、向筆記提問、交給 Agent 整理。內容不離開你的電腦；沒有 Ollama 時其他功能照常。
 
-**使用說明**：[繁體中文](docs/user-guide/zh-TW/README.md) · [English](docs/user-guide/en/README.md)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/screenshot-dark.png">
+  <img src="docs/images/screenshot-light.png" alt="Knowmon：檔案樹、編輯器與局部圖譜">
+</picture>
 
 ## 快速開始
 
@@ -27,14 +41,15 @@ sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
 ## 常用指令
 
-| 指令                  | 用途                                                              |
-| --------------------- | ----------------------------------------------------------------- |
-| `npm run dev`         | 開發模式（renderer 熱更新）                                       |
-| `npm start`           | 建置後執行正式版本（加 `-- --skipBuild` 直接執行上次建置的 out/） |
-| `npx vitest run`      | 單元與整合測試                                                    |
-| `npm run typecheck`   | 型別檢查（不要用 `npx tsc --noEmit`，它不會檢查任何檔案）         |
-| `npm run lint`        | ESLint + Prettier                                                 |
-| `npm run build:linux` | 產生 `dist/` 下的 AppImage 與 deb（Windows / macOS 需在各自平台） |
+| 指令                         | 用途                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `npm run dev`                | 開發模式（renderer 熱更新）                                           |
+| `npm start`                  | 建置後執行正式版本（加 `-- --skipBuild` 直接執行上次建置的 out/）     |
+| `npx vitest run`             | 單元與整合測試                                                        |
+| `npm run typecheck`          | 型別檢查（不要用 `npx tsc --noEmit`，它不會檢查任何檔案）             |
+| `npm run lint`               | ESLint + Prettier                                                     |
+| `npm run build:linux`        | 產生 `dist/` 下的 AppImage 與 deb（Windows / macOS 需在各自平台）     |
+| `node scripts/gen-icons.mjs` | 改了 `build/icon.svg`（Logo）後重新產生各平台圖示（需要 ImageMagick） |
 
 ## 文件
 

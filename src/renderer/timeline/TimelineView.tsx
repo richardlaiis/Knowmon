@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadPref, savePref } from '../graph/prefs'
 import type { ActivityEvent, NoteSummary } from '../../shared/types'
+import { SettingsIcon } from '../src/components/icons'
 import {
   groupActivity,
   groupByEventDate,
@@ -119,7 +120,12 @@ export function TimelineView(props: TimelineViewProps): React.JSX.Element {
           </button>
         </div>
         <span className="graph-count">{loading ? 'Loading…' : summaryText(view)}</span>
-        <button onClick={props.onOpenSettings} title="Time settings (session length…)">
+        <button
+          className="with-icon"
+          onClick={props.onOpenSettings}
+          title="Time settings (session length…)"
+        >
+          <SettingsIcon size={15} />
           Settings
         </button>
       </div>

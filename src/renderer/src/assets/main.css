@@ -124,6 +124,24 @@ button.primary {
   padding: 8px 18px;
 }
 
+button.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 介面圖示（components/icons.tsx）在 flex 容器裡不被壓縮 */
+button svg,
+.tree-icon svg,
+.tab svg {
+  flex-shrink: 0;
+}
+
 .layout {
   display: flex;
   height: 100%;
@@ -131,6 +149,8 @@ button.primary {
 
 .sidebar {
   flex-shrink: 0;
+  /* 讓分頁按鈕依側欄寬度決定是否顯示文字（@container） */
+  container-type: inline-size;
   background: var(--bg-side);
   border-right: 1px solid var(--border);
   display: flex;
@@ -146,9 +166,21 @@ button.primary {
 
 .sidebar-header .vault-name {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   font-weight: 600;
   border: none;
+  padding-left: 4px;
+}
+
+.sidebar-header .vault-name:hover {
+  background: var(--hover);
+}
+
+.vault-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -213,9 +245,27 @@ button.primary {
 }
 
 .tree-icon {
-  width: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--muted);
   flex-shrink: 0;
+}
+
+.tree-row.selected .tree-icon {
+  color: var(--fg);
+}
+
+.tree-icon .chevron {
+  transition: transform 0.12s ease;
+}
+
+.tree-icon .chevron.open {
+  transform: rotate(90deg);
+}
+
+.tree-icon .chevron-space {
+  width: 14px;
 }
 
 .tree-name {
@@ -395,6 +445,99 @@ button.primary {
   margin: 0;
 }
 
+/* 歡迎頁（尚未選 vault） */
+.welcome {
+  gap: 10px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+/* Logo 的圓角與 build/icon.svg 相同（rx 104 / 448），深色主題下靠細邊框和背景分開 */
+.welcome-logo,
+.no-tabs .empty-logo,
+.vault-name svg {
+  border-radius: 23%;
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 8px 24px var(--shadow);
+}
+
+.welcome-logo {
+  margin-bottom: 6px;
+}
+
+.welcome h1 {
+  font-size: 2.2rem;
+  letter-spacing: -0.02em;
+}
+
+.welcome .tagline {
+  margin: 0 0 4px;
+  color: var(--fg);
+  font-size: 1.05rem;
+}
+
+.welcome p {
+  margin: 0;
+}
+
+.welcome button.primary {
+  margin-top: 12px;
+}
+
+/* 沒有分頁時的空白頁 */
+.no-tabs {
+  gap: 12px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.no-tabs .empty-logo {
+  margin-bottom: 4px;
+}
+
+.no-tabs p {
+  margin: 0;
+}
+
+.shortcut-hints {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.shortcut-hints > div {
+  display: contents;
+}
+
+.shortcut-hints dt {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.shortcut-hints dd {
+  justify-self: start;
+  margin: 0;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
 /* ---- 側欄分頁、搜尋、反向連結、Quick switcher ---- */
 
 .sidebar-tabs {
@@ -406,11 +549,14 @@ button.primary {
 }
 
 .sidebar-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   white-space: nowrap;
   border: none;
   font-size: 14px;
   color: var(--muted);
-  padding: 3px 10px;
+  padding: 4px 9px;
 }
 
 .sidebar-tabs button:hover {
@@ -423,8 +569,21 @@ button.primary {
   color: var(--fg);
 }
 
-.sidebar-tabs button:last-child {
+.sidebar-actions {
+  display: flex;
+  gap: 2px;
   margin-left: auto;
+}
+
+.sidebar-actions button {
+  padding: 4px 6px;
+}
+
+/* 側欄很窄時分頁只留圖示（按鈕有 title 與 aria-label） */
+@container (max-width: 240px) {
+  .sidebar-tabs .label {
+    display: none;
+  }
 }
 
 .search-panel {
@@ -518,6 +677,7 @@ button.primary {
 
 .side-panel {
   flex-shrink: 0;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   background: var(--bg-side);
@@ -537,6 +697,20 @@ button.primary {
   font-size: 14px;
   color: var(--muted);
   padding: 3px 10px;
+}
+
+.side-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 4px 9px;
+}
+
+@container (max-width: 290px) {
+  .side-tabs .label {
+    display: none;
+  }
 }
 
 .side-tabs button:hover,
@@ -654,6 +828,14 @@ button.primary {
   right: -2px;
 }
 
+.tab-icon {
+  color: var(--muted);
+}
+
+.tab.active .tab-icon {
+  color: var(--accent);
+}
+
 .tab-title {
   flex: 1;
   min-width: 0;
@@ -664,6 +846,9 @@ button.primary {
 
 .tab-close {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   width: 22px;
   height: 22px;
@@ -688,9 +873,11 @@ button.primary {
 .tab-new {
   align-self: center;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
   border: none;
   margin-bottom: 4px;
-  padding: 2px 10px;
+  padding: 4px 8px;
   font-size: 18px;
   line-height: 1;
   color: var(--muted);
@@ -924,10 +1111,6 @@ body.resizing canvas {
 .mode-toggle.on {
   color: var(--fg);
   background: var(--selected);
-}
-
-.empty .hint {
-  font-size: 14px;
 }
 
 .modal-backdrop {
@@ -1417,15 +1600,58 @@ body.resizing canvas {
   }
 }
 
+/* 側欄底部：設定（齒輪）+ AI 狀態 */
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: auto;
+  padding: 4px 6px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-menu-root {
+  position: relative;
+  display: flex;
+}
+
+.settings-button {
+  display: flex;
+  align-items: center;
+  border: none;
+  padding: 5px 6px;
+  color: var(--muted);
+}
+
+.settings-button:hover,
+.settings-button.on {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+/* 選單往上展開，貼齊齒輪按鈕 */
+.context-menu.settings-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  min-width: 170px;
+  z-index: 15;
+}
+
+.context-menu button:disabled {
+  color: var(--muted);
+  cursor: default;
+  background: none;
+}
+
 .llm-badge {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: auto;
   border: none;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  padding: 7px 14px;
+  padding: 5px 8px;
   font-size: 13px;
   color: var(--muted);
   text-align: left;

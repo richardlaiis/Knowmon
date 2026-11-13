@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { LinkType } from '../../shared/types'
+import { SettingsIcon } from '../src/components/icons'
 import { EdgeTypeFilter } from './EdgeTypeFilter'
 import { loadEdgeTypes, saveEdgeTypes } from './edgeTypes'
 import { GraphView } from './GraphView'
@@ -94,9 +95,11 @@ export function GlobalGraph(props: GlobalGraphProps): React.JSX.Element {
           Re-layout
         </button>
         <button
+          className="with-icon"
           onClick={props.onOpenSettings}
           title="Time & link settings (session length, semantic links…)"
         >
+          <SettingsIcon size={15} />
           Settings
         </button>
       </div>

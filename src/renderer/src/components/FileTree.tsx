@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TreeNode } from '../../../shared/types'
 import { displayName, movedInto, parentOf, type NewItem } from '../lib/tree'
+import { ChevronIcon, FolderIcon, FolderOpenIcon, NoteIcon } from './icons'
 import { wantsNewTab } from '../workspace/tabs'
 
 /** 檔案樹內部拖曳用的 MIME type，和外部拖進來的檔案區分 */
@@ -121,7 +122,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
             e.stopPropagation()
           }}
         >
-          <span className="tree-icon">{item.kind === 'folder' ? '▸' : ''}</span>
+          <TreeIcon folder={item.kind === 'folder'} open={false} />
           <RenameInput
             initial=""
             placeholder={item.kind === 'folder' ? 'Folder name' : 'Note name'}
@@ -178,7 +179,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
           }}
           title={node.path}
         >
-          <span className="tree-icon">{isFolder ? (open ? '▾' : '▸') : ''}</span>
+          <TreeIcon folder={isFolder} open={open} />
           {props.renaming === node.path ? (
             <RenameInput
               initial={displayName(node)}
@@ -286,5 +287,27 @@ function RenameInput({
       }}
       onBlur={() => finish(value)}
     />
+  )
+}
+
+/** 資料夾：可旋轉的 chevron + 資料夾圖示；筆記：留出 chevron 寬度 + 筆記圖示 */
+function TreeIcon({ folder, open }: { folder: boolean; open: boolean }): React.JSX.Element {
+  return (
+    <span className="tree-icon">
+      {folder ? (
+        <ChevronIcon size={14} className={open ? 'chevron open' : 'chevron'} />
+      ) : (
+        <span className="chevron-space" />
+      )}
+      {folder ? (
+        open ? (
+          <FolderOpenIcon size={16} />
+        ) : (
+          <FolderIcon size={16} />
+        )
+      ) : (
+        <NoteIcon size={16} />
+      )}
+    </span>
   )
 }

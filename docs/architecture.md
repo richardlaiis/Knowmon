@@ -159,6 +159,10 @@
 - 字型清單要明確寫 `Noto Sans CJK TC`：單獨成一個文字節點的全形標點（被隱藏標記切開時常發生）若交給系統 fallback，會選到窄字形。
 - 主題：淺色（米白）與深色（比 Nord 更深的底色、Nord 程式碼配色）。所有顏色都是 `main.css` 的 CSS 變數，深色版定義在 `:root[data-theme='dark']`，程式碼語法顏色用 `--hl-*` 變數，所以 `livePreview.ts` 不需要知道目前主題。選擇存在 renderer 的 localStorage（`knowmon.theme`），在 React 第一次渲染前就套用以避免閃爍。
 - IPC channel 名稱集中在 `src/shared/channels.ts`。
+- 圖示與 Logo（計畫見 `docs/plans/ui-logo-icons.md`，2026-11-13）：介面圖示全部是 `src/renderer/src/components/icons.tsx` 裡手寫的 inline SVG（24×24、`currentColor`、線寬 1.8），不加圖示套件；新圖示加在這裡。Logo 是「節點連成的 K + 外圈時間虛線點」，深色底（使用者選定），顏色固定不跟主題變；深色主題下以 `box-shadow` 細邊框和背景分開。renderer 的 `Logo` 元件用 inline SVG（單色底，不用漸層以免多個實例 id 衝突），CSP 不用改。
+- 應用程式圖示的原始檔是 `build/icon.svg`；`node scripts/gen-icons.mjs` 用系統的 ImageMagick（`magick`）產生 `build/icon.png`（1024）、`build/icon.ico`、`resources/icon.png`（512，Linux 視窗圖示），`.icns` 由 `scripts/icns.mjs` 直接組裝（不需 macOS 的 `iconutil`）。產出的檔案提交進 repo，打包不需要 ImageMagick。
+- 左側欄：Files／Search 是切換側欄內容的分頁（圖示 + 文字）；Graph／Timeline／Quick switcher 是開分頁的動作，只顯示圖示（tooltip 有名稱與快捷鍵）。`.sidebar`、`.side-panel` 設 `container-type: inline-size`，太窄時（側欄 ≤ 240px、右側面板 ≤ 290px）分頁文字以 `@container` 隱藏，按鈕保留 `aria-label`。
+- 設定入口：左側欄左下角的齒輪（`components/SettingsMenu.tsx`）彈出選單，打開既有的兩個對話框（Time & links、AI），兩者沒有合併（整合成設定頁是 roadmap 另一項待決定的任務）。AI 狀態還沒載入時 AI 項目停用，因為 `LlmSettingsDialog` 需要目前的設定值。圖譜、時間軸、AI 分頁原本的 Settings 按鈕保留並加上齒輪圖示。
 
 ## 開發環境注意事項
 
@@ -169,3 +173,4 @@
 - Cytoscape 的 canvas 以整數像素取高度，容器高度有小數時會溢出 1px，所以 `.graph-canvas` 設 `overflow: hidden`（工具列換行時曾讓整頁出現捲軸）。
 - chokidar 5 只有 ESM，在 `electron.vite.config.ts` 中設定為打包進 main，而不是 external。
 - `npx tsc --noEmit` 搭配根目錄的 project references 不會檢查任何檔案，型別檢查請用 `npm run typecheck`。
+- README 的截圖在 `docs/images/screenshot-{light,dark}.png`（1280×800，README 以 `<picture>` 依讀者主題切換）。UI 改版後重拍：build 版、`XDG_CONFIG_HOME` 指到暫存資料夾（不碰自己的設定）、開 test-vault 的副本（只拍測試筆記），開「歡迎」、右側 Local graph 深度 2，深淺各一張；`docs/` 不會被打包。

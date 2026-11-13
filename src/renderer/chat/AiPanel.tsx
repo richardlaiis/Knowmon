@@ -1,6 +1,7 @@
 // 右側面板的 AI 分頁：Ollama 連線與 embedding 進度，下面切換對話（問答）、agent 與目前筆記的總結
 import { useState } from 'react'
 import type { LlmStatus, SummaryLanguage } from '../../shared/types'
+import { SettingsIcon } from '../src/components/icons'
 import { AgentPanel, type AgentPanelProps } from './AgentPanel'
 import { ChatPanel, type ChatPanelProps } from './ChatPanel'
 import type { AiMode } from './conversation'
@@ -65,7 +66,12 @@ export function AiPanel(props: AiPanelProps): React.JSX.Element {
           <button onClick={props.onRetry} title="Check the Ollama connection again">
             Retry
           </button>
-          <button onClick={props.onOpenSettings} title="Ollama address and models">
+          <button
+            className="with-icon"
+            onClick={props.onOpenSettings}
+            title="Ollama address and models"
+          >
+            <SettingsIcon size={15} />
             Settings
           </button>
         </div>

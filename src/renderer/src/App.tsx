@@ -58,8 +58,26 @@ import { BacklinksPanel } from './components/BacklinksPanel'
 import { FileTree } from './components/FileTree'
 import { QuickSwitcher } from './components/QuickSwitcher'
 import { SearchPanel } from './components/SearchPanel'
+import { SettingsMenu } from './components/SettingsMenu'
 import { Splitter } from './components/Splitter'
 import { TimeSettingsDialog } from './components/TimeSettingsDialog'
+import {
+  BacklinksIcon,
+  FilesIcon,
+  FolderOpenIcon,
+  GoToIcon,
+  GraphIcon,
+  LocalGraphIcon,
+  Logo,
+  MoonIcon,
+  NewFolderIcon,
+  NewNoteIcon,
+  SearchIcon,
+  SparkleIcon,
+  SunIcon,
+  TimelineIcon
+} from './components/icons'
+import { EMPTY_STATE_HINTS, isMacPlatform, splitKeys } from './lib/shortcutHints'
 import {
   errorMessage,
   isWithin,
@@ -85,6 +103,8 @@ const PREVIEW_KEY = 'knowmon.livePreview'
 const SIDE_TAB_KEY = 'knowmon.sidePanel'
 const TABS_KEY = 'knowmon.tabs:'
 const RECENT_MAX = 20
+/** 快捷鍵提示在 macOS 顯示 ⌘ */
+const MAC = isMacPlatform(navigator.userAgent)
 
 function loadFlag(key: string): boolean {
   try {
@@ -717,13 +737,16 @@ function App(): React.JSX.Element {
 
   if (!vault) {
     return (
-      <div className="empty">
+      <div className="empty welcome">
         <div className="corner">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
+        <Logo size={96} className="welcome-logo" />
         <h1>Knowmon</h1>
+        <p className="tagline">Markdown notes linked by links — and by when you wrote them.</p>
         <p>Choose a folder as your vault. Notes are stored in it as Markdown files.</p>
-        <button className="primary" onClick={pickVault}>
+        <button className="primary with-icon" onClick={pickVault}>
+          <FolderOpenIcon />
           Open folder
         </button>
         {message && <p className="error">{message}</p>}
@@ -745,7 +768,8 @@ function App(): React.JSX.Element {
                 onClick={pickVault}
                 title={`${vault}\nClick to switch vault`}
               >
-                {tree?.name ?? vault}
+                <Logo size={20} />
+                <span className="vault-label">{tree?.name ?? vault}</span>
               </button>
               <button
                 className="icon"
@@ -767,25 +791,41 @@ function App(): React.JSX.Element {
               <button
                 className={sidebarTab === 'files' ? 'active' : ''}
                 onClick={() => setSidebarTab('files')}
+                title="Files"
+                aria-label="Files"
               >
-                Files
+                <FilesIcon size={16} />
+                <span className="label">Files</span>
               </button>
               <button
                 className={sidebarTab === 'search' ? 'active' : ''}
                 onClick={openSearch}
                 title="Search (Ctrl+Shift+F)"
+                aria-label="Search"
               >
-                Search
+                <SearchIcon size={16} />
+                <span className="label">Search</span>
               </button>
-              <button onClick={openGraph} title="Graph view (Ctrl+G)">
-                Graph
-              </button>
-              <button onClick={openTimeline} title="Timeline (Ctrl+Shift+T)">
-                Timeline
-              </button>
-              <button onClick={() => openSwitcher(false)} title="Quick switcher (Ctrl+O)">
-                Go to…
-              </button>
+              {/* 開新分頁的動作只顯示圖示（tooltip 有名稱與快捷鍵） */}
+              <div className="sidebar-actions">
+                <button onClick={openGraph} title="Graph view (Ctrl+G)" aria-label="Graph view">
+                  <GraphIcon size={17} />
+                </button>
+                <button
+                  onClick={openTimeline}
+                  title="Timeline (Ctrl+Shift+T)"
+                  aria-label="Timeline"
+                >
+                  <TimelineIcon size={17} />
+                </button>
+                <button
+                  onClick={() => openSwitcher(false)}
+                  title="Quick switcher (Ctrl+O)"
+                  aria-label="Quick switcher"
+                >
+                  <GoToIcon size={17} />
+                </button>
+              </div>
             </nav>
             {sidebarTab === 'search' && (
               <SearchPanel
@@ -813,23 +853,30 @@ function App(): React.JSX.Element {
                 onRemove={removeNode}
               />
             )}
-            <LlmBadge
-              status={
-                agentWaiting
-                  ? { tone: 'warn', label: 'Agent: confirm a change' }
-                  : describeStatus(llmStatus)
-              }
-              detail={
-                agentWaiting
-                  ? 'The agent is waiting for you to apply or reject a change'
-                  : (llmStatus?.error ?? null)
-              }
-              onClick={() => {
-                if (agentWaiting) return openAgent()
-                setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
-                chooseSideTab('ai')
-              }}
-            />
+            <footer className="sidebar-footer">
+              <SettingsMenu
+                onTimeSettings={openSettings}
+                onAiSettings={() => setLlmSettingsOpen(true)}
+                aiDisabled={!llmStatus}
+              />
+              <LlmBadge
+                status={
+                  agentWaiting
+                    ? { tone: 'warn', label: 'Agent: confirm a change' }
+                    : describeStatus(llmStatus)
+                }
+                detail={
+                  agentWaiting
+                    ? 'The agent is waiting for you to apply or reject a change'
+                    : (llmStatus?.error ?? null)
+                }
+                onClick={() => {
+                  if (agentWaiting) return openAgent()
+                  setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
+                  chooseSideTab('ai')
+                }}
+              />
+            </footer>
           </aside>
           <Splitter
             side="left"
@@ -903,12 +950,24 @@ function App(): React.JSX.Element {
           ) : null
         )}
         {tabs.tabs.length === 0 && (
-          <div className="empty">
+          <div className="empty no-tabs">
+            <Logo size={64} className="empty-logo" />
             <p>Select a note on the left, or right-click to create one.</p>
-            <p className="hint">
-              Ctrl+O to jump to a note · Ctrl+Shift+F to search · Ctrl+G for the graph ·
-              Ctrl+Shift+T for the timeline · Ctrl+Shift+S to summarize
-            </p>
+            <dl className="shortcut-hints">
+              {EMPTY_STATE_HINTS.map((h) => (
+                <div key={h.keys}>
+                  <dt>
+                    {splitKeys(h.keys, MAC).map((k, i) => (
+                      <span key={i}>
+                        {i > 0 && '+'}
+                        <kbd>{k}</kbd>
+                      </span>
+                    ))}
+                  </dt>
+                  <dd>{h.label}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
       </main>
@@ -925,21 +984,29 @@ function App(): React.JSX.Element {
               <button
                 className={sideTab === 'backlinks' ? 'active' : ''}
                 onClick={() => chooseSideTab('backlinks')}
+                title="Backlinks"
+                aria-label="Backlinks"
               >
-                Backlinks
+                <BacklinksIcon size={16} />
+                <span className="label">Backlinks</span>
               </button>
               <button
                 className={sideTab === 'local' ? 'active' : ''}
                 onClick={() => chooseSideTab('local')}
+                title="Local graph"
+                aria-label="Local graph"
               >
-                Local graph
+                <LocalGraphIcon size={16} />
+                <span className="label">Local graph</span>
               </button>
               <button
                 className={sideTab === 'ai' ? 'active' : ''}
                 onClick={() => chooseSideTab('ai')}
                 title="Ask your notes, agent, summaries and AI status (Ctrl+Shift+A / Ctrl+Shift+G / Ctrl+Shift+S)"
+                aria-label="AI"
               >
-                AI
+                <SparkleIcon size={16} />
+                <span className="label">AI</span>
                 {agentWaiting && (
                   <span className="attention-dot" aria-label="waiting for confirmation" />
                 )}
@@ -1035,35 +1102,6 @@ function App(): React.JSX.Element {
   )
 }
 
-const iconProps = {
-  width: 18,
-  height: 18,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.8,
-  strokeLinecap: 'round' as const,
-  strokeLinejoin: 'round' as const
-}
-
-function NewNoteIcon(): React.JSX.Element {
-  return (
-    <svg {...iconProps} aria-hidden="true">
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-      <path d="M14 3v5h5M12 11v6M9 14h6" />
-    </svg>
-  )
-}
-
-function NewFolderIcon(): React.JSX.Element {
-  return (
-    <svg {...iconProps} aria-hidden="true">
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <path d="M12 10v6M9 13h6" />
-    </svg>
-  )
-}
-
 /** 側欄底部的 AI 狀態（點擊打開右側的 AI 分頁） */
 function LlmBadge({
   status,
@@ -1098,23 +1136,6 @@ function ThemeToggle({
     >
       {dark ? <SunIcon /> : <MoonIcon />}
     </button>
-  )
-}
-
-function MoonIcon(): React.JSX.Element {
-  return (
-    <svg {...iconProps} aria-hidden="true">
-      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
-    </svg>
-  )
-}
-
-function SunIcon(): React.JSX.Element {
-  return (
-    <svg {...iconProps} aria-hidden="true">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </svg>
   )
 }
 

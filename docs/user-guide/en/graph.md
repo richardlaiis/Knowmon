@@ -9,7 +9,7 @@ Knowmon has two graphs:
 
 ## Global graph
 
-Press `Ctrl+G` or click **Graph** in the left sidebar. The graph is a tab, and there's only ever one. Switch away and back and it's exactly as you left it — no recomputing.
+Press `Ctrl+G` or click the graph icon (three linked dots) at the top of the left sidebar. The graph is a tab, and there's only ever one. Switch away and back and it's exactly as you left it — no recomputing.
 
 ### Controls
 

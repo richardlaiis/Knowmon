@@ -7,7 +7,7 @@ There are two ways to find a note:
 
 ## Quick switcher
 
-Press `Ctrl+O` (or **Go to…** in the left sidebar) and type part of a note's name:
+Press `Ctrl+O` (or the arrow icon at the top of the left sidebar) and type part of a note's name:
 
 - Matching is fuzzy: you don't need the whole name, or even consecutive letters. `dpwk` finds "Deep Work".
 - With nothing typed, **recently opened notes** come first, so flipping between notes is quick.

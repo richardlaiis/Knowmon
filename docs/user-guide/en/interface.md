@@ -6,15 +6,15 @@ Once a vault is open, the Knowmon window has three columns:
 ┌──────────────┬──────────────────────────────────┬──────────────────┐
 │ Left sidebar │ Tab bar                          │ Right panel      │
 │              ├──────────────────────────────────┤                  │
-│ Vault name   │                                  │ Backlinks        │
-│ Files│Search │   Editor / Graph / Timeline      │ Local graph      │
-│ Graph│Timeline│                                 │ AI               │
-│ Go to…       │                                  │                  │
+│ Logo + vault │                                  │ Backlinks        │
+│ Files Search │   Editor / Graph / Timeline      │ Local graph      │
+│   + 3 icons  │                                  │ AI               │
+│              │                                  │                  │
 │              │                                  │                  │
 │ File tree    │                                  │                  │
 │ or results   │                                  │                  │
 │              │                                  │                  │
-│ AI status    │                                  │                  │
+│ ⚙ AI status  │                                  │                  │
 └──────────────┴──────────────────────────────────┴──────────────────┘
 ```
 
@@ -24,22 +24,26 @@ Drag the dividers between columns to resize them; **double-click a divider** to 
 
 ### Header
 
-| Element         | What it does                                                 |
-| --------------- | ------------------------------------------------------------ |
-| Vault name      | Hover to see the full path; click to switch to another vault |
-| New note icon   | Create a note at the vault root                              |
-| New folder icon | Create a folder at the vault root                            |
-| Moon / sun icon | Switch between dark and light themes                         |
+| Element             | What it does                                                 |
+| ------------------- | ------------------------------------------------------------ |
+| Logo and vault name | Hover to see the full path; click to switch to another vault |
+| New note icon       | Create a note at the vault root                              |
+| New folder icon     | Create a folder at the vault root                            |
+| Moon / sun icon     | Switch between dark and light themes                         |
 
 ### Navigation buttons
 
-| Button       | What it does                                                         |
-| ------------ | -------------------------------------------------------------------- |
-| **Files**    | Show the file tree                                                   |
-| **Search**   | Show the search panel (`Ctrl+Shift+F`) — see [Search](search.md)     |
-| **Graph**    | Open the graph tab (`Ctrl+G`) — see [Graph](graph.md)                |
-| **Timeline** | Open the timeline tab (`Ctrl+Shift+T`) — see [Time context](time.md) |
-| **Go to…**   | Open the Quick switcher (`Ctrl+O`)                                   |
+**Files** and **Search** switch what the sidebar shows. The three icons on the right open things in the main area; hover any of them to see its name and shortcut.
+
+| Button                       | What it does                                                         |
+| ---------------------------- | -------------------------------------------------------------------- |
+| **Files**                    | Show the file tree                                                   |
+| **Search**                   | Show the search panel (`Ctrl+Shift+F`) — see [Search](search.md)     |
+| Graph icon (linked dots)     | Open the graph tab (`Ctrl+G`) — see [Graph](graph.md)                |
+| Timeline icon (dots on line) | Open the timeline tab (`Ctrl+Shift+T`) — see [Time context](time.md) |
+| Arrow icon                   | Open the Quick switcher (`Ctrl+O`)                                   |
+
+When the sidebar is very narrow, **Files** and **Search** show only their icons. The same goes for the right panel's tabs.
 
 ### File tree
 
@@ -47,6 +51,17 @@ Drag the dividers between columns to resize them; **double-click a divider** to 
 - Files and folders whose names start with `.` (like `.git`, `.obsidian`, `.knowmon`) are hidden.
 - **Right-click** for New note, New folder (created inside the folder you clicked), Rename, and Delete.
 - **Drag** a note or folder onto another folder to move it; drop on empty space to move it to the root. Hover over a collapsed folder for about 0.6 seconds while dragging and it opens.
+
+### Settings
+
+The gear icon in the bottom-left corner opens a small menu:
+
+| Item              | Opens                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| **Time & links…** | Session length, semantic links and other time settings — see [Time context](time.md)           |
+| **AI (Ollama)…**  | Ollama address and models — see [Setting up local AI](ai-setup.md) (greyed out while checking) |
+
+The same dialogs also open from the **Settings** buttons in the graph and timeline toolbars and in the AI tab.
 
 ### AI status
 

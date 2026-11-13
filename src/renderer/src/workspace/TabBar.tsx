@@ -1,5 +1,13 @@
 // 分頁列：切換、關閉（含中鍵）、拖曳排序、右鍵選單、新分頁，以及左右面板的開關
 import { useEffect, useState } from 'react'
+import {
+  CloseIcon,
+  GraphIcon,
+  NoteIcon,
+  PlusIcon,
+  SidebarIcon,
+  TimelineIcon
+} from '../components/icons'
 import { tabTitle, type Tab } from './tabs'
 
 /** 分頁拖曳用的 MIME type，和檔案樹的拖曳區分 */
@@ -98,6 +106,7 @@ export function TabBar(props: TabBarProps): React.JSX.Element {
               }}
               onDragEnd={() => setDropIndex(null)}
             >
+              <TabIcon kind={tab.kind} />
               <span className="tab-title">{tabTitle(tab)}</span>
               <button
                 className="tab-close"
@@ -107,7 +116,7 @@ export function TabBar(props: TabBarProps): React.JSX.Element {
                   props.onClose(tab.id)
                 }}
               >
-                ×
+                <CloseIcon size={14} />
               </button>
             </div>
           )
@@ -117,7 +126,7 @@ export function TabBar(props: TabBarProps): React.JSX.Element {
           onClick={props.onNewTab}
           title="Open a note in a new tab (Ctrl+T)"
         >
-          +
+          <PlusIcon size={16} />
         </button>
       </div>
       <button
@@ -137,21 +146,7 @@ export function TabBar(props: TabBarProps): React.JSX.Element {
   )
 }
 
-function SidebarIcon({ side }: { side: 'left' | 'right' }): React.JSX.Element {
-  return (
-    <svg
-      width={18}
-      height={18}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d={side === 'left' ? 'M9 4v16' : 'M15 4v16'} />
-    </svg>
-  )
+function TabIcon({ kind }: { kind: Tab['kind'] }): React.JSX.Element {
+  const C = kind === 'graph' ? GraphIcon : kind === 'timeline' ? TimelineIcon : NoteIcon
+  return <C size={14} className="tab-icon" />
 }

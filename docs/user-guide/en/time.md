@@ -72,7 +72,7 @@ Oct 4 and Oct 6 aren't linked directly. If you organize topics by folder (`Proje
 
 ## Timeline
 
-Press `Ctrl+Shift+T` or click **Timeline** in the left sidebar to open the timeline tab. It has two modes, switched in its toolbar.
+Press `Ctrl+Shift+T` or click the timeline icon at the top of the left sidebar to open the timeline tab. It has two modes, switched in its toolbar.
 
 ### Event date mode
 

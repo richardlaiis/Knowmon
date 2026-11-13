@@ -165,9 +165,10 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 - [x] Linux 試打包：deb 與 AppImage 可安裝，打包版的向量功能（sqlite-vec）正常、設定沿用開發版（2026-10-20）
 - [x] 表格即時渲染：游標不在表格時顯示成表格，進入時顯示原始碼（2026-11-11，見 `docs/plans/table-rendering.md`）
+- [x] Logo 與介面圖示：正式應用程式圖示（取代 Electron 預設）、歡迎頁與空白頁、側欄／分頁／檔案樹圖示（2026-11-13，見 `docs/plans/ui-logo-icons.md`）
 - [ ] 設定頁：整合時間與 Semantic 參數、AI 設定、主題與介面偏好
 - [ ] 效能優化：先以 `scripts/gen-vault.mjs` 量測 1000／3000 篇，再決定目標（已知弱點：圖譜 hover、首次建立索引）
-- [ ] 產出安裝檔：Windows 與 macOS 打包（需在各自的作業系統或 CI 上建置）、正式圖示、授權（LICENSE）、版本號，並更新使用說明的安裝頁
+- [ ] 產出安裝檔：Windows 與 macOS 打包（需在各自的作業系統或 CI 上建置）、授權（LICENSE）、版本號，並更新使用說明的安裝頁
 
 ## 下一步
 
@@ -175,7 +176,7 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 1. **設定頁**：設定頁做成分頁或對話框、快捷鍵、這次是否新增設定項目，需要先由使用者決定。新增設定若要修改 `src/shared/types.ts`，照規則先詢問。
 2. **效能優化**：先量測，與使用者確認目標規模後再調整；換用 sigma.js 屬於大改動，需使用者同意。
-3. **正式打包**：Windows／macOS 安裝檔、圖示、授權、程式碼簽章與否；`toolsets.appimage`（static runtime）目前是 electron-builder 的 beta 選項，屆時再確認一次。
+3. **正式打包**：Windows／macOS 安裝檔、授權、程式碼簽章與否；`toolsets.appimage`（static runtime）目前是 electron-builder 的 beta 選項，屆時再確認一次。
 
 ## 協作方式
 
