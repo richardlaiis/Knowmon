@@ -60,11 +60,11 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 
 ## AI settings
 
-| Setting         | Default                  | Description                                                                |
-| --------------- | ------------------------ | -------------------------------------------------------------------------- |
-| Ollama address  | `http://127.0.0.1:11434` | Where Ollama runs. Can point to another machine on your network with a GPU |
-| Chat model      | `qwen3:8b`               | Used for summaries, Chat, and the Agent                                    |
-| Embedding model | `bge-m3`                 | Used for Hybrid search and Semantic links                                  |
+| Setting         | Default                  | Description                                                                                               |
+| --------------- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Ollama address  | `http://127.0.0.1:11434` | Where Ollama runs. Can point to another machine; see [Using Ollama on a remote machine](remote-ollama.md) |
+| Chat model      | `qwen3:8b`               | Used for summaries, Chat, and the Agent                                                                   |
+| Embedding model | `bge-m3`                 | Used for Hybrid search and Semantic links                                                                 |
 
 - The model menus list models **already downloaded** in Ollama. They can't be listed while Ollama is offline.
 - These settings are **shared by all vaults** and stored in the app's settings file.

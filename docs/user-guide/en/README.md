@@ -30,6 +30,7 @@ Knowmon is a local-first Markdown note-taking app. Your notes are plain `.md` fi
 ## AI features (optional)
 
 - [Setting up local AI](ai-setup.md): installing Ollama, downloading models, status indicators
+- [Using Ollama on a remote machine](remote-ollama.md): borrow another computer's processing power when yours can't run the models
 - [Summary and Chat](summary-and-chat.md): summarize a note, ask your notes questions
 - [Agent](agent.md): multi-step tasks such as organizing notes, creating notes, and adding tags
 

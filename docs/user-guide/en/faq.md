@@ -106,7 +106,7 @@ The default summary language is Chinese. Click **EN** in the Summary view, then 
 
 On CPU only, a summary takes about 15–30 seconds and an Agent task about 1–4 minutes. That's normal. You can:
 
-- Use a computer with a GPU, or point the Ollama address in AI settings at a machine on your network that has one.
+- Use a computer with a GPU, or run Ollama on another machine; see [Using Ollama on a remote machine](remote-ollama.md).
 - Switch to a smaller chat model (at some cost in quality).
 - Narrow Agent tasks, e.g. by naming a date range or specific notes.
 
@@ -123,7 +123,7 @@ The current chat model can't use tools. Choose one that can, such as `qwen3:8b`,
 
 ### Are my notes sent over the internet?
 
-No. All AI processing happens on the Ollama server you configure — your own computer by default.
+No. All AI processing happens on the Ollama server you configure — your own computer by default. If you point the address at another machine, note content is sent to that machine; see [Using Ollama on a remote machine](remote-ollama.md#security).
 
 ## Data
 

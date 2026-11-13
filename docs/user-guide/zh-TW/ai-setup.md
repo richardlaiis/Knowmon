@@ -60,11 +60,11 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 
 ## AI 設定
 
-| 設定            | 預設                     | 說明                                                 |
-| --------------- | ------------------------ | ---------------------------------------------------- |
-| Ollama address  | `http://127.0.0.1:11434` | Ollama 伺服器位址。可以指向區網中另一台有 GPU 的電腦 |
-| Chat model      | `qwen3:8b`               | 用於總結、問答與 Agent                               |
-| Embedding model | `bge-m3`                 | 用於 Hybrid 搜尋與 Semantic 邊                       |
+| 設定            | 預設                     | 說明                                                                                |
+| --------------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| Ollama address  | `http://127.0.0.1:11434` | Ollama 伺服器位址。可以指向另一台電腦，見 [使用遠端電腦的 Ollama](remote-ollama.md) |
+| Chat model      | `qwen3:8b`               | 用於總結、問答與 Agent                                                              |
+| Embedding model | `bge-m3`                 | 用於 Hybrid 搜尋與 Semantic 邊                                                      |
 
 - 模型選單會列出 Ollama 中**已下載**的模型。Ollama 離線時無法列出。
 - 這些設定**所有 vault 共用**，存在 App 的設定檔中。

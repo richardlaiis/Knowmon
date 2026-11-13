@@ -30,6 +30,7 @@ Knowmon 是一個本地優先的 Markdown 筆記軟體。你的筆記就是電�
 ## AI 功能（可選）
 
 - [設定本地 AI](ai-setup.md)：安裝 Ollama、下載模型、狀態說明
+- [使用遠端電腦的 Ollama](remote-ollama.md)：電腦跑不動模型時，借用另一台電腦的運算資源
 - [總結與問答](summary-and-chat.md)：總結一篇筆記、向筆記提問
 - [Agent](agent.md)：交給 AI 多步驟的任務，例如整理、建立筆記、加標籤
 
