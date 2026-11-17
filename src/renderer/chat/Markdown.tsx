@@ -1,7 +1,7 @@
 // 以 React 元素渲染 parseMarkdown 的結果；wikilink 可點擊開啟筆記，問答的 [n] 可點擊開啟來源
 import { useMemo } from 'react'
 import type { AskSource } from '../../shared/types'
-import { parseMarkdown, type MdBlock, type MdInline } from './markdown'
+import { parseMarkdown, type MdBlock, type MdInline } from './parseMarkdown'
 
 export interface MarkdownProps {
   text: string

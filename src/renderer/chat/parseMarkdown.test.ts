@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseMarkdown } from './markdown'
+import { parseMarkdown } from './parseMarkdown'
 
 describe('parseMarkdown', () => {
   it('條列與行內格式', () => {

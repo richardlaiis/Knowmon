@@ -195,3 +195,11 @@ job `release`，只在推 tag 時執行，需要等四個 build 都完成：
 - 使用者手動測試（2026-11-17）：`sudo dnf install` 安裝 rpm 後照第 1 步第 4 點測試，回報通過。
   - Fedora 44 沒有 AppArmor，`unshare -Ur true` 成功，所以 AppImage 的 AppRun 不會加 `--no-sandbox`，以 sandbox 執行（符合預期）。
   - `sudo dnf remove knowmon`：`/usr/bin/knowmon`、`/etc/alternatives/knowmon`、`.desktop` 都移除，`~/.config/knowmon` 保留 ✓。但 `/opt/Knowmon` 留下一串**空資料夾**（0 個檔案）：fpm 打包 rpm 時只把檔案列進 `%files`、不擁有資料夾，所以 rpm 移除時不會刪資料夾。不影響使用與重新安裝；可以用 `rpm.fpm: ['--directories', '/opt/Knowmon']` 讓套件擁有整個資料夾，尚未決定要不要改。
+
+### GitHub
+
+- 第一次 push（`4db342c`，2026-11-17）：`ci.yml` 四個 job 全部通過，約 3 分鐘（check 1:23、Ubuntu 1:07、macOS 2:02、Windows 2:55）。Windows 與 macOS 第一次跑 vitest 就沒有失敗，不需要修測試。
+- 第一次手動觸發 `release.yml`：`macos-latest` 在 `electron-vite build` 失敗，`"Markdown" is not exported by "src/renderer/chat/markdown.ts"`。`src/renderer/chat/` 同時有元件 `Markdown.tsx` 與解析器 `markdown.ts`，macOS 預設不分大小寫，`import './Markdown'` 解析到了 `markdown.ts`（Windows 也會）。CI 沒抓到，因為 vitest 只 import 解析器、不經過 vite 建置。使用者中止了這次執行。修正：
+  - 解析器改名為 `parseMarkdown.ts`（測試一併改名）。
+  - 新增 `scripts/case-collisions.test.mjs`：遞迴檢查 repo（略過 dot 開頭、`node_modules`、`out`、`dist`），同一資料夾裡去掉副檔名後只差大小寫的名稱就失敗，在 Linux 上也能抓到。
+  - `ci.yml` 的三平台 test job 加上 `npx electron-vite build`（與計畫不同：原本只跑 vitest）。
