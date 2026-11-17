@@ -240,6 +240,6 @@ npm run build:mac     # macOS dmg for this Mac's chip
 
 Output goes to `dist/`. **You must build on the target OS** (e.g. build the macOS version on a Mac), because only the build machine's platform version of the vector search component is installed.
 
-Building the rpm needs `rpmbuild`: `sudo dnf install rpm-build` on Fedora, `sudo apt install rpm` on Debian / Ubuntu. To build only some formats, list them, e.g. `npx electron-vite build && npx electron-builder --linux AppImage deb`.
+Building the rpm needs `rpmbuild`: `sudo dnf install rpm-build libxcrypt-compat` on Fedora, `sudo apt install rpm` on Debian / Ubuntu. (On Fedora, the packaging tool's bundled Ruby needs `libcrypt.so.1` from `libxcrypt-compat`; without it the build fails with `error while loading shared libraries: libcrypt.so.1`.) To build only some formats, list them, e.g. `npx electron-vite build && npx electron-builder --linux AppImage deb`.
 
 The packaged app and the from-source version share the same app settings (`~/.config/knowmon/` on Linux), so your last vault, Ollama settings, tabs, and theme carry over.

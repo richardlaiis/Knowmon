@@ -186,4 +186,12 @@ job `release`，只在推 tag 時執行，需要等四個 build 都完成：
 | 圖譜邊                                      | wikilink 15、semantic 9、sequence 4 ✓                   |
 | `knowmon-asset://vault/attachments/pic.png` | 載入 1024×1024 ✓                                        |
 
-- 待使用者：安裝 `rpm-build` 後打包 rpm，並照第 1 步第 4 點手動測試 rpm 與 AppImage。
+- rpm 打包（2026-11-17）：
+  - 只裝 `rpm-build` 時失敗：electron-builder 下載的 fpm 內附 Ruby，需要 `libcrypt.so.1`，Fedora 預設只有 `libcrypt.so.2`（exit 127）。裝 `libxcrypt-compat` 後成功，已寫進安裝說明的「自行打包安裝檔」。CI 在 Ubuntu 打包，不受影響。
+  - `dist/knowmon-0.1.0.x86_64.rpm` 90 MB（安裝後 344 MB），License MIT，相依套件即上面的預設清單。
+  - 內含 `app.asar.unpacked/node_modules/sqlite-vec-linux-x64/vec0.so`；`.desktop` 的 `Exec=/opt/Knowmon/knowmon %U`（絕對路徑）。
+  - after-install 腳本：user namespace 可用時 chrome-sandbox 設為 `0755`（用 namespace sandbox），不可用時才設 SUID `4755`。計畫寫的「會設定 SUID」不精確，Fedora 上預期是前者。
+  - 可能的問題（尚未驗證）：after-remove 腳本沒有判斷 rpm 的 `$1`，升級時舊版的 postun 在新版安裝後執行，可能把 `update-alternatives` 的 `/usr/bin/knowmon` 移除。選單用絕對路徑不受影響，只影響終端機的 `knowmon` 指令。之後第一次升級（0.1.0 → 下一版）時確認。
+- 使用者手動測試（2026-11-17）：`sudo dnf install` 安裝 rpm 後照第 1 步第 4 點測試，回報通過。
+  - Fedora 44 沒有 AppArmor，`unshare -Ur true` 成功，所以 AppImage 的 AppRun 不會加 `--no-sandbox`，以 sandbox 執行（符合預期）。
+  - `sudo dnf remove knowmon`：`/usr/bin/knowmon`、`/etc/alternatives/knowmon`、`.desktop` 都移除，`~/.config/knowmon` 保留 ✓。但 `/opt/Knowmon` 留下一串**空資料夾**（0 個檔案）：fpm 打包 rpm 時只把檔案列進 `%files`、不擁有資料夾，所以 rpm 移除時不會刪資料夾。不影響使用與重新安裝；可以用 `rpm.fpm: ['--directories', '/opt/Knowmon']` 讓套件擁有整個資料夾，尚未決定要不要改。

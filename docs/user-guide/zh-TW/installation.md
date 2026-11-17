@@ -240,6 +240,6 @@ npm run build:mac     # macOS dmg（依這台 Mac 的晶片）
 
 產生的檔案在 `dist/` 資料夾。**必須在目標作業系統上打包**（例如在 Mac 上打包 macOS 版），因為向量搜尋元件只會安裝建置機器所在平台的版本。
 
-打包 rpm 需要 `rpmbuild`：Fedora 用 `sudo dnf install rpm-build`，Debian／Ubuntu 用 `sudo apt install rpm`。只想打包部分格式時可以指定，例如 `npx electron-vite build && npx electron-builder --linux AppImage deb`。
+打包 rpm 需要 `rpmbuild`：Fedora 用 `sudo dnf install rpm-build libxcrypt-compat`，Debian／Ubuntu 用 `sudo apt install rpm`。（Fedora 上打包工具內附的 Ruby 需要 `libxcrypt-compat` 提供的 `libcrypt.so.1`，沒裝的話會出現 `error while loading shared libraries: libcrypt.so.1` 而失敗。）只想打包部分格式時可以指定，例如 `npx electron-vite build && npx electron-builder --linux AppImage deb`。
 
 打包版與從原始碼執行的版本共用同一份 App 設定（Linux 為 `~/.config/knowmon/`），所以上次的 vault、Ollama 設定、分頁與主題都會沿用。
