@@ -1,8 +1,9 @@
 {
   "name": "knowmon",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Local-first Markdown notes with time-based links and a local LLM agent",
   "main": "./out/main/index.js",
+  "license": "MIT",
   "author": "Richard Lai <richardlaiis@proton.me>",
   "homepage": "https://github.com/richardlaiis/Knowmon",
   "desktopName": "knowmon.desktop",

@@ -1,0 +1,93 @@
+name: Release
+
+# 推 v* tag：打包四個平台並建立草稿 Release（使用者檢查後手動 Publish）。
+# workflow_dispatch：只打包、上傳成 workflow artifacts，不建立 Release，用來在發版前試打。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 用較舊的 Ubuntu 打包，產出的程式在舊發行版上比較不會因 glibc 太新而跑不起來
+          - os: ubuntu-22.04
+            name: linux
+            args: --linux
+          - os: windows-latest
+            name: windows
+            args: --win
+          - os: macos-latest
+            name: mac-arm64
+            args: --mac
+          # 預計 2027 年 8 月停用，見 docs/releasing.md
+          - os: macos-15-intel
+            name: mac-x64
+            args: --mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - name: Install rpm tooling
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - run: npm ci
+      - run: npx vitest run
+      - run: npx electron-vite build
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          # 不嘗試用 keychain 裡的憑證簽章；mac.identity '-' 會改做 ad-hoc 簽章
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Show macOS code signature
+        if: runner.os == 'macOS'
+        run: codesign -dv --verbose=2 dist/mac*/Knowmon.app
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: knowmon-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*-setup.exe
+            dist/*.dmg
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -l artifacts
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --generate-notes artifacts/*

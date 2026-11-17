@@ -176,3 +176,26 @@ sqlite3 ~/knowmon-test-vault/.knowmon/index.db \
 關掉 App 後執行 `rm ~/knowmon-test-vault/.knowmon/index.db*`，再重新開啟同一個 vault，用上面的 sqlite3 指令檢查。歷程應該跟刪除前完全一樣，`events.jsonl` 也不會多出重複的紀錄。搜尋結果與反向連結也應與刪除前相同（連結與全文索引都從 Markdown 檔重建）。向量會在背景重新 embedding（需要 Ollama）。
 
 從階段 1 升級的 vault 第一次開啟時，因為 schema 版本改變，`index.db` 會自動重建一次。
+
+## 發版前檢查
+
+推 `v*` tag 之前（流程見 [`releasing.md`](releasing.md)）：
+
+1. GitHub Actions 的 `CI` 在 main 最新的 commit 上全部是綠燈（三個平台的 vitest，加上 typecheck 與 lint）。
+2. 手動觸發一次 `Release`（`workflow_dispatch`），四個 build 都成功，artifacts 共六個檔案：AppImage、deb、rpm、`-setup.exe`、`-arm64.dmg`、`-x64.dmg`。兩個 macOS job 的「Show macOS code signature」步驟顯示 `Signature=adhoc`。
+3. 下載 Linux 的 artifact，在 Fedora 與 Ubuntu 上各測一次。
+
+### Linux 安裝檔手動測試
+
+Fedora 用 rpm（`sudo dnf install ./knowmon-<版本>.x86_64.rpm`），Ubuntu 用 deb（`sudo apt install ./knowmon_<版本>_amd64.deb`）：
+
+1. 從應用程式選單開啟 Knowmon，不需要 `--no-sandbox` 就能啟動。
+2. 開啟 `~/knowmon-test-vault`，以下都正常：
+   - 側欄顯示 AI ready，embedding 跑完。
+   - Hybrid 搜尋「培養好習慣的方法」有 meaning 結果。
+   - 圖譜有 Semantic 邊；問答與 Agent 能回答。
+   - 貼上圖片後能顯示。
+   - 刪除筆記會進系統垃圾桶。
+3. 關掉再開，上次的 vault、主題與分頁都沿用。
+4. AppImage：`chmod +x` 後直接執行。Fedora 預期 sandbox 正常開啟；Ubuntu 24+ 會因 AppArmor 自動加 `--no-sandbox`。
+5. `sudo dnf remove knowmon`／`sudo apt remove knowmon` 能乾淨移除（`/usr/bin/knowmon` 與選單項目消失，`~/.config/knowmon` 保留）。

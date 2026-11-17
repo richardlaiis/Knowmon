@@ -23,17 +23,26 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # 只產 dmg，不另外產 zip
+  target: dmg
+  # 沒有 Apple Developer 憑證：用 ad-hoc 簽章（Apple Silicon 沒有有效簽章的 App 不能執行）。
+  # hardened runtime 只有公證時需要；ad-hoc 簽章加上 library validation 會擋掉 sqlite-vec 的 dylib，所以關掉
+  identity: '-'
+  hardenedRuntime: false
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSDocumentsFolderUsageDescription: Knowmon reads and writes notes in vaults stored in your Documents folder.
     - NSDownloadsFolderUsageDescription: Knowmon reads and writes notes in vaults stored in your Downloads folder.
   notarize: false
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  # 檔名帶 arch，arm64 與 x64 兩個 dmg 才不會在 Release 裡同名覆蓋
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
     - deb
+    # deb 與 rpm 共用 electron-builder 預設的 after-install 腳本，會設定 chrome-sandbox 的 SUID
+    - rpm
   maintainer: Richard Lai <richardlaiis@proton.me>
   category: Office
   syncDesktopName: true

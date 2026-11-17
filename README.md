@@ -23,7 +23,9 @@
 
 ## 快速開始
 
-需要 Node.js 22 以上。AI 功能另需 Ollama 與 `ollama pull bge-m3`、`ollama pull qwen3:8b`。
+**一般使用者**：到 [Releases](https://github.com/richardlaiis/Knowmon/releases) 下載安裝檔（Linux：deb／rpm／AppImage；Windows 與 macOS 為實驗性），各平台的安裝方式見[安裝說明](docs/user-guide/zh-TW/installation.md#下載安裝檔)（[English](docs/user-guide/en/installation.md#download-an-installer)）。AI 功能另需 [Ollama](https://ollama.com) 與 `ollama pull bge-m3`、`ollama pull qwen3:8b`。
+
+**開發者**：從原始碼執行，需要 Node.js 22 以上。
 
 ```bash
 npm install
@@ -41,15 +43,15 @@ sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
 ## 常用指令
 
-| 指令                         | 用途                                                                  |
-| ---------------------------- | --------------------------------------------------------------------- |
-| `npm run dev`                | 開發模式（renderer 熱更新）                                           |
-| `npm start`                  | 建置後執行正式版本（加 `-- --skipBuild` 直接執行上次建置的 out/）     |
-| `npx vitest run`             | 單元與整合測試                                                        |
-| `npm run typecheck`          | 型別檢查（不要用 `npx tsc --noEmit`，它不會檢查任何檔案）             |
-| `npm run lint`               | ESLint + Prettier                                                     |
-| `npm run build:linux`        | 產生 `dist/` 下的 AppImage 與 deb（Windows / macOS 需在各自平台）     |
-| `node scripts/gen-icons.mjs` | 改了 `build/icon.svg`（Logo）後重新產生各平台圖示（需要 ImageMagick） |
+| 指令                         | 用途                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`                | 開發模式（renderer 熱更新）                                            |
+| `npm start`                  | 建置後執行正式版本（加 `-- --skipBuild` 直接執行上次建置的 out/）      |
+| `npx vitest run`             | 單元與整合測試                                                         |
+| `npm run typecheck`          | 型別檢查（不要用 `npx tsc --noEmit`，它不會檢查任何檔案）              |
+| `npm run lint`               | ESLint + Prettier                                                      |
+| `npm run build:linux`        | 產生 `dist/` 下的 AppImage、deb 與 rpm（Windows / macOS 需在各自平台） |
+| `node scripts/gen-icons.mjs` | 改了 `build/icon.svg`（Logo）後重新產生各平台圖示（需要 ImageMagick）  |
 
 ## 文件
 
@@ -61,3 +63,8 @@ sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 | 已做出的設計決定與實作細節           | [`docs/architecture.md`](docs/architecture.md)  |
 | 時間層的概念與規則                   | [`docs/time-layer.md`](docs/time-layer.md)      |
 | 各階段的實作計畫與實測紀錄           | [`docs/plans/`](docs/plans/)                    |
+| 怎麼發布新版本（CI、打包、Release）  | [`docs/releasing.md`](docs/releasing.md)        |
+
+## 授權
+
+[MIT](LICENSE)

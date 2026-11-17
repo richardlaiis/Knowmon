@@ -1,8 +1,79 @@
 # Installation
 
-There are no released installers for Knowmon yet, so you run it from source. It takes about ten minutes, mostly downloading.
+There are two ways to get Knowmon:
 
-## Prerequisites
+- **[Download an installer](#download-an-installer)** (recommended): no other software needed.
+- **[Run from source](#run-from-source-for-developers)**: for developers who want to change the code or try unreleased changes.
+
+## Download an installer
+
+Download the file for your system from the [Releases page](https://github.com/richardlaiis/Knowmon/releases) (under **Assets** of the latest version):
+
+| System                              | File                       |
+| ----------------------------------- | -------------------------- |
+| Debian, Ubuntu, and derivatives     | `knowmon_0.1.0_amd64.deb`  |
+| Fedora, RHEL, openSUSE              | `knowmon-0.1.0.x86_64.rpm` |
+| Other Linux distributions           | `knowmon-0.1.0.AppImage`   |
+| Windows (experimental)              | `knowmon-0.1.0-setup.exe`  |
+| macOS, Apple Silicon (experimental) | `knowmon-0.1.0-arm64.dmg`  |
+| macOS, Intel (experimental)         | `knowmon-0.1.0-x64.dmg`    |
+
+Only 64-bit x86 (`x86_64`) Linux is available. Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" means Apple Silicon, "Processor: Intel…" means Intel.
+
+AI features need [Ollama](https://ollama.com), installed separately; Knowmon works without it. See [Setting up local AI](ai-setup.md).
+
+### Linux
+
+- **deb**:
+
+  ```bash
+  sudo apt install ./knowmon_0.1.0_amd64.deb
+  ```
+
+- **rpm**:
+
+  ```bash
+  sudo dnf install ./knowmon-0.1.0.x86_64.rpm
+  ```
+
+  On openSUSE, use `sudo zypper install ./knowmon-0.1.0.x86_64.rpm`.
+
+Then open Knowmon from your applications menu. To remove it: `sudo apt remove knowmon` or `sudo dnf remove knowmon`.
+
+**AppImage** needs no installation; make it executable and run it:
+
+```bash
+chmod +x knowmon-0.1.0.AppImage
+./knowmon-0.1.0.AppImage
+```
+
+No FUSE 2 (`libfuse2`) is required. On Ubuntu 24.04 and later, AppArmor restricts Chromium's sandbox; the AppImage detects this and starts with `--no-sandbox` automatically. The app works normally but with one less layer of protection, so on Debian / Ubuntu the deb is recommended.
+
+### Windows (experimental)
+
+> The Windows version is built and tested automatically but hasn't been tried on a real machine yet. Please [report problems](https://github.com/richardlaiis/Knowmon/issues).
+
+Run `knowmon-0.1.0-setup.exe`. The installer isn't code-signed, so Windows SmartScreen shows "Windows protected your PC": click **More info → Run anyway**. Knowmon then appears in the Start menu and on the desktop. To remove it: **Settings → Apps → Installed apps → Knowmon → Uninstall**.
+
+### macOS (experimental)
+
+> The macOS versions are built automatically but haven't been tried on a real Mac yet. Please [report problems](https://github.com/richardlaiis/Knowmon/issues).
+
+Open the dmg and drag **Knowmon** into **Applications**.
+
+Knowmon isn't notarized by Apple, so the first launch is blocked by Gatekeeper with a message like "Knowmon is damaged and can't be opened" or "Apple could not verify Knowmon". The app isn't actually damaged; macOS blocks unnotarized apps downloaded from the internet. Remove the download mark in Terminal, then open Knowmon normally:
+
+```bash
+xattr -cr /Applications/Knowmon.app
+```
+
+You only need to do this once per downloaded version.
+
+## Run from source (for developers)
+
+Running from source takes about ten minutes, mostly downloading.
+
+### Prerequisites
 
 | Software                      | Version                      | Used for                                   | Check with      |
 | ----------------------------- | ---------------------------- | ------------------------------------------ | --------------- |
@@ -19,14 +90,14 @@ Linux, macOS, and Windows are supported. Only the steps marked "Linux" below are
 > nvm use 24
 > ```
 
-## 1. Get the source code
+### 1. Get the source code
 
 ```bash
 git clone https://github.com/richardlaiis/Knowmon.git
 cd Knowmon
 ```
 
-## 2. Install dependencies
+### 2. Install dependencies
 
 ```bash
 npm install
@@ -34,7 +105,7 @@ npm install
 
 This downloads Electron (about 100 MB) and the other packages. The database package, better-sqlite3, ships prebuilt binaries, so you **don't** need a C++ compiler and don't need to rebuild anything.
 
-## 3. Linux: set Electron sandbox permissions
+### 3. Linux: set Electron sandbox permissions
 
 > Linux only. Skip this on macOS and Windows.
 
@@ -53,7 +124,7 @@ If you'd rather not use `sudo`, start the app with the sandbox disabled instead 
 npx electron-vite dev -- --no-sandbox
 ```
 
-## 4. Start Knowmon
+### 4. Start Knowmon
 
 Pick one:
 
@@ -71,7 +142,7 @@ When you see the welcome screen with an **Open folder** button, you're done. Con
 
 > `npm start` builds the app before each launch, which takes a few seconds. To skip that after the first time, run `npm start -- --skipBuild` to launch the last build directly (run plain `npm start` again after updating the source).
 
-## 5. (Optional) Set up local AI
+### 5. (Optional) Set up local AI
 
 Install Ollama and download the models:
 
@@ -82,7 +153,7 @@ ollama pull qwen3:8b
 
 See [Setting up local AI](ai-setup.md) for details. Knowmon works without Ollama; only the AI features are unavailable.
 
-## Try the sample vault
+### Try the sample vault
 
 The source includes a sample vault, `test-vault/`, with journal entries, book notes, and project notes — handy for exploring the features. **Make a copy** first so you don't modify files in the source tree:
 
@@ -96,6 +167,21 @@ Then click **Open folder** in Knowmon and choose `~/knowmon-test-vault`. (The sa
 
 ## Updating
 
+### Installer
+
+Download the new version from the [Releases page](https://github.com/richardlaiis/Knowmon/releases) and install it over the old one, the same way you installed it:
+
+- **deb / rpm**: `sudo apt install ./knowmon_<version>_amd64.deb` or `sudo dnf install ./knowmon-<version>.x86_64.rpm`.
+- **AppImage**: replace the old file with the new one.
+- **Windows**: run the new `-setup.exe`.
+- **macOS**: drag the new Knowmon into Applications, replace the old one, and run `xattr -cr /Applications/Knowmon.app` again.
+
+Knowmon doesn't check for updates itself; watch the Releases page (on GitHub: **Watch → Custom → Releases**) to be notified.
+
+> **Built a 1.0.0 deb yourself earlier?** Self-built installers before the first release were numbered 1.0.0, so apt treats 0.1.0 as a downgrade. Remove the old one first with `sudo apt remove knowmon`. Your notes and settings are kept.
+
+### From source
+
 ```bash
 cd Knowmon
 git pull
@@ -105,7 +191,7 @@ npm start
 
 On Linux, if `npm install` downloaded Electron again, repeat step 3.
 
-Your notes live in the vault folder you chose, separate from the source folder, so updating never touches them.
+Your notes live in the vault folder you chose, separate from the app, so updating never touches them. App settings (last vault, Ollama settings, tabs, theme) are kept too.
 
 ## Installation troubleshooting
 
@@ -123,7 +209,7 @@ If it keeps failing, try a mirror:
 ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" node node_modules/electron/install.js
 ```
 
-### Linux: the app crashes right after starting
+### Linux: the source version crashes right after starting
 
 Most likely step 3 (sandbox permissions) was skipped. Look for a `SUID sandbox helper` message in the terminal.
 
@@ -142,35 +228,18 @@ These are normal on Linux and safe to ignore:
 
 If `node -v` shows a version below 22, upgrade Node.js (see nvm above), delete `node_modules`, and run `npm install` again.
 
-## Building installers yourself (experimental)
+## Building installers yourself
 
-> Packaging is still in progress (phase 8 of the roadmap). The Linux build has been verified to work, AI features included; Windows and macOS haven't been verified yet.
+Official installers are built by GitHub Actions on each platform (see `docs/releasing.md`). To build one locally from source:
 
 ```bash
-npm run build:linux   # Linux: AppImage and deb
-npm run build:win     # Windows installer (unverified)
-npm run build:mac     # macOS dmg (unverified)
+npm run build:linux   # Linux: AppImage, deb, and rpm
+npm run build:win     # Windows installer
+npm run build:mac     # macOS dmg for this Mac's chip
 ```
 
 Output goes to `dist/`. **You must build on the target OS** (e.g. build the macOS version on a Mac), because only the build machine's platform version of the vector search component is installed.
 
-### Installing the Linux build
-
-- **deb** (Debian, Ubuntu, and derivatives):
-
-  ```bash
-  sudo apt install ./dist/knowmon_1.0.0_amd64.deb
-  ```
-
-  Then open Knowmon from your applications menu. The installer sets up sandbox permissions, so step 3 above isn't needed. To remove it: `sudo apt remove knowmon`.
-
-- **AppImage** (other distributions):
-
-  ```bash
-  chmod +x dist/knowmon-1.0.0.AppImage
-  ./dist/knowmon-1.0.0.AppImage
-  ```
-
-  No FUSE 2 (`libfuse2`) is required. On Ubuntu 24.04 and later, AppArmor restricts Chromium's sandbox; the AppImage detects this and starts with `--no-sandbox` automatically. The app works normally but with one less layer of protection, so on Debian / Ubuntu the deb is recommended.
+Building the rpm needs `rpmbuild`: `sudo dnf install rpm-build` on Fedora, `sudo apt install rpm` on Debian / Ubuntu. To build only some formats, list them, e.g. `npx electron-vite build && npx electron-builder --linux AppImage deb`.
 
 The packaged app and the from-source version share the same app settings (`~/.config/knowmon/` on Linux), so your last vault, Ollama settings, tabs, and theme carry over.
