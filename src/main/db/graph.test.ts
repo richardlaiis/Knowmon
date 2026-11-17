@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { openDb, relinkWikilinks, setWikilinks, upsertNote, type DB } from '.'
 import { getGraph } from './graph'
+import { perfBudget } from './test-utils'
 
 function note(db: DB, path: string, eventDate: string | null = null): number {
   const title = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
@@ -75,6 +76,6 @@ describe('getGraph', () => {
     const ms = performance.now() - t
     expect(g.nodes).toHaveLength(n)
     expect(g.edges.length).toBeGreaterThan(9000)
-    expect(ms).toBeLessThan(200)
+    expect(ms).toBeLessThan(perfBudget(200))
   })
 })

@@ -167,7 +167,7 @@ job `release`，只在推 tag 時執行，需要等四個 build 都完成：
 
 - macOS 簽章不等 CI log 再決定，直接設 `mac.identity: '-'`：查 electron-builder 26.15.3 原始碼（`MacTargetHelper.findSigningIdentity`），找不到憑證時只會略過簽章，不會自動 ad-hoc；只有 identity 明確是 `'-'` 才做 ad-hoc。同時設 `hardenedRuntime: false`：ad-hoc 簽章加 hardened runtime 時，library validation 會擋下沒有 Team ID 的 dylib（sqlite-vec 以 `dlopen` 載入），electron-builder 也會為此警告。hardened runtime 只有公證時才需要。CI 的「Show macOS code signature」步驟仍保留，用來確認 `Signature=adhoc`。
 - `.gitattributes` 另把 `*.docx`、`*.pdf`、`*.jpg`、`*.gif`、`*.webp` 標成 `binary`（`Reports/` 有 docx）。`.editorconfig` 原本在 repo 裡是 CRLF，一併改成 LF。
-- actions 版本：`checkout@v6`、`setup-node@v6`、`upload-artifact@v5`、`download-artifact@v6`（`merge-multiple: true` 把四個 artifact 合併到同一個資料夾）。
+- actions 版本：最後是 `checkout@v7`、`setup-node@v7`、`upload-artifact@v7`、`download-artifact@v8`（一開始寫的是舊一版的 major，第一次 Release 出現 `upload-artifact@v5` 使用 Node 20 的淘汰警告後升級；新版的變更是改用 ESM、新增選項，對這裡的用法沒有影響）。`merge-multiple: true` 把四個 artifact 合併到同一個資料夾。
 - 安裝說明的 rpm 只列 Fedora／RHEL 系，openSUSE 改用 AppImage（使用者同意，2026-11-17）：electron-builder 的 rpm 相依套件用 Fedora 的名稱（例如 `libXScrnSaver`，openSUSE 叫 `libXss1`），在 openSUSE 上可能無法解析，而且沒有驗證過。
 - `gh release create` 加上 `--repo "$GITHUB_REPOSITORY"`：release job 沒有 checkout，`gh` 無法從 git remote 推得 repo。
 
@@ -203,3 +203,4 @@ job `release`，只在推 tag 時執行，需要等四個 build 都完成：
   - 解析器改名為 `parseMarkdown.ts`（測試一併改名）。
   - 新增 `scripts/case-collisions.test.mjs`：遞迴檢查 repo（略過 dot 開頭、`node_modules`、`out`、`dist`），同一資料夾裡去掉副檔名後只差大小寫的名稱就失敗，在 Linux 上也能抓到。
   - `ci.yml` 的三平台 test job 加上 `npx electron-vite build`（與計畫不同：原本只跑 vitest）。
+- 同一次執行裡 `windows-latest` 與 `macos-15-intel` 在 vitest 失敗，都是效能測試的時間上限：Intel Mac 上 `vectors.test.ts` 4835ms（上限 1500）、`time.test.ts` 3063ms（500）、`graph.test.ts` 387ms（200）；Windows 上 `time.test.ts` 579ms（500）。CI 的 `windows-latest` 同一個測試剛好通過，共用機器的速度不穩定。修正：新增 `perfBudget`（`src/main/db/test-utils.ts`），本機照原本的設計目標，`CI` 環境變數有值時放寬 10 倍（Intel Mac 最多慢約 6 倍）；仍能抓到數量級的退化。`forceLayout.test.ts` 的 8 秒上限本來就寬，沒有改。

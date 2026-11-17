@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_TIME_SETTINGS, localDay } from '../../shared/time'
 import { insertEvent, listLinks, openDb, setWikilinks, upsertNote, type DB } from '.'
 import { getGraph } from './graph'
+import { perfBudget } from './test-utils'
 import { listActivity, rebuildTimeLinks } from './time'
 
 const MIN = 60_000
@@ -57,7 +58,7 @@ describe('rebuildTimeLinks', () => {
     rebuildTimeLinks(db, DEFAULT_TIME_SETTINGS)
     const ms = performance.now() - t
     expect(listLinks(db, 'same_session').length).toBeGreaterThan(1000)
-    expect(ms).toBeLessThan(500)
+    expect(ms).toBeLessThan(perfBudget(500))
   })
 })
 

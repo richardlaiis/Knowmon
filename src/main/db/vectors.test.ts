@@ -7,6 +7,7 @@ import { DEFAULT_SEMANTIC_SETTINGS } from '../../shared/llm'
 import { deleteNote, listLinks, openDb, SCHEMA_VERSION, unpackedPath, upsertNote, type DB } from '.'
 import { getGraph } from './graph'
 import { rebuildSemanticLinks } from './semantic'
+import { perfBudget } from './test-utils'
 import {
   embedProgress,
   ensureVectorTables,
@@ -249,8 +250,8 @@ describe('rebuildSemanticLinks', () => {
     console.log(
       `rebuildSemanticLinks 1000 notes: ${ms.toFixed(0)}ms, longest step ${longest.toFixed(0)}ms`
     )
-    expect(ms).toBeLessThan(1500)
-    expect(longest).toBeLessThan(100)
+    expect(ms).toBeLessThan(perfBudget(1500))
+    expect(longest).toBeLessThan(perfBudget(100))
     expect(listLinks(db, 'semantic').length).toBeGreaterThan(1000)
   })
 })
