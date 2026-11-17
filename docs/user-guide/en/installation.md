@@ -12,8 +12,8 @@ Download the file for your system from the [Releases page](https://github.com/ri
 | System                              | File                       |
 | ----------------------------------- | -------------------------- |
 | Debian, Ubuntu, and derivatives     | `knowmon_0.1.0_amd64.deb`  |
-| Fedora, RHEL, openSUSE              | `knowmon-0.1.0.x86_64.rpm` |
-| Other Linux distributions           | `knowmon-0.1.0.AppImage`   |
+| Fedora, RHEL, Rocky, AlmaLinux      | `knowmon-0.1.0.x86_64.rpm` |
+| Other distributions, incl. openSUSE | `knowmon-0.1.0.AppImage`   |
 | Windows (experimental)              | `knowmon-0.1.0-setup.exe`  |
 | macOS, Apple Silicon (experimental) | `knowmon-0.1.0-arm64.dmg`  |
 | macOS, Intel (experimental)         | `knowmon-0.1.0-x64.dmg`    |
@@ -36,7 +36,7 @@ AI features need [Ollama](https://ollama.com), installed separately; Knowmon wor
   sudo dnf install ./knowmon-0.1.0.x86_64.rpm
   ```
 
-  On openSUSE, use `sudo zypper install ./knowmon-0.1.0.x86_64.rpm`.
+  The rpm's dependency names follow Fedora's packaging and may not resolve on openSUSE, so use the AppImage there.
 
 Then open Knowmon from your applications menu. To remove it: `sudo apt remove knowmon` or `sudo dnf remove knowmon`.
 

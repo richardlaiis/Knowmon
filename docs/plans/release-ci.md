@@ -168,6 +168,7 @@ job `release`，只在推 tag 時執行，需要等四個 build 都完成：
 - macOS 簽章不等 CI log 再決定，直接設 `mac.identity: '-'`：查 electron-builder 26.15.3 原始碼（`MacTargetHelper.findSigningIdentity`），找不到憑證時只會略過簽章，不會自動 ad-hoc；只有 identity 明確是 `'-'` 才做 ad-hoc。同時設 `hardenedRuntime: false`：ad-hoc 簽章加 hardened runtime 時，library validation 會擋下沒有 Team ID 的 dylib（sqlite-vec 以 `dlopen` 載入），electron-builder 也會為此警告。hardened runtime 只有公證時才需要。CI 的「Show macOS code signature」步驟仍保留，用來確認 `Signature=adhoc`。
 - `.gitattributes` 另把 `*.docx`、`*.pdf`、`*.jpg`、`*.gif`、`*.webp` 標成 `binary`（`Reports/` 有 docx）。`.editorconfig` 原本在 repo 裡是 CRLF，一併改成 LF。
 - actions 版本：`checkout@v6`、`setup-node@v6`、`upload-artifact@v5`、`download-artifact@v6`（`merge-multiple: true` 把四個 artifact 合併到同一個資料夾）。
+- 安裝說明的 rpm 只列 Fedora／RHEL 系，openSUSE 改用 AppImage（使用者同意，2026-11-17）：electron-builder 的 rpm 相依套件用 Fedora 的名稱（例如 `libXScrnSaver`，openSUSE 叫 `libXss1`），在 openSUSE 上可能無法解析，而且沒有驗證過。
 - `gh release create` 加上 `--repo "$GITHUB_REPOSITORY"`：release job 沒有 checkout，`gh` 無法從 git remote 推得 repo。
 
 ### Fedora 44 本機

@@ -5,6 +5,11 @@
 <h1 align="center">Knowmon</h1>
 
 <p align="center">
+  <em>A privacy-first note-taking app with a built-in local AI agent —<br>
+  like a gnomon, always pointing toward the light of knowledge.</em>
+</p>
+
+<p align="center">
   本地優先的 Markdown 筆記：除了連結，也依「什麼時候寫的」把筆記串起來。<br>
   <a href="docs/user-guide/zh-TW/README.md">使用說明</a> ·
   <a href="docs/user-guide/en/README.md">English guide</a> ·

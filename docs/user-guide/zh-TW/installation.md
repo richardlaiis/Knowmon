@@ -9,14 +9,14 @@
 
 到 [Releases 頁面](https://github.com/richardlaiis/Knowmon/releases)，在最新版本的 **Assets** 底下下載適合你系統的檔案：
 
-| 系統                          | 檔案                       |
-| ----------------------------- | -------------------------- |
-| Debian、Ubuntu 及其衍生版     | `knowmon_0.1.0_amd64.deb`  |
-| Fedora、RHEL、openSUSE        | `knowmon-0.1.0.x86_64.rpm` |
-| 其他 Linux 發行版             | `knowmon-0.1.0.AppImage`   |
-| Windows（實驗性）             | `knowmon-0.1.0-setup.exe`  |
-| macOS，Apple 晶片（實驗性）   | `knowmon-0.1.0-arm64.dmg`  |
-| macOS，Intel 處理器（實驗性） | `knowmon-0.1.0-x64.dmg`    |
+| 系統                           | 檔案                       |
+| ------------------------------ | -------------------------- |
+| Debian、Ubuntu 及其衍生版      | `knowmon_0.1.0_amd64.deb`  |
+| Fedora、RHEL、Rocky、AlmaLinux | `knowmon-0.1.0.x86_64.rpm` |
+| 其他發行版（包括 openSUSE）    | `knowmon-0.1.0.AppImage`   |
+| Windows（實驗性）              | `knowmon-0.1.0-setup.exe`  |
+| macOS，Apple 晶片（實驗性）    | `knowmon-0.1.0-arm64.dmg`  |
+| macOS，Intel 處理器（實驗性）  | `knowmon-0.1.0-x64.dmg`    |
 
 Linux 只提供 64 位元 x86（`x86_64`）版本。不確定自己的 Mac 是哪一種？點選蘋果選單 →「關於這台 Mac」：顯示「晶片 Apple M…」是 Apple 晶片，「處理器 Intel…」是 Intel。
 
@@ -36,7 +36,7 @@ AI 功能需要另外安裝 [Ollama](https://ollama.com)；沒有 Ollama 也可�
   sudo dnf install ./knowmon-0.1.0.x86_64.rpm
   ```
 
-  openSUSE 請用 `sudo zypper install ./knowmon-0.1.0.x86_64.rpm`。
+  rpm 的相依套件名稱依照 Fedora 的命名，在 openSUSE 上可能找不到，所以 openSUSE 請改用 AppImage。
 
 裝好後從應用程式選單開啟 Knowmon。移除：`sudo apt remove knowmon` 或 `sudo dnf remove knowmon`。
 
