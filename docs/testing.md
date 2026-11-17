@@ -33,7 +33,7 @@ npm run lint         # ESLint + Prettier 檢查
 OLLAMA_IT=1 npx vitest run src/main/llm/ollama.integration.test.ts
 ```
 
-效能測試（1000 篇筆記的時間邊、圖譜、semantic 邊）的時間上限以 `perfBudget`（`src/main/db/test-utils.ts`）包起來：本機照設計目標檢查，CI（環境變數 `CI` 有值）放寬 10 倍，因為 GitHub Actions 的共用機器慢而且不穩定。本機想模擬 CI 可以 `CI=1 npx vitest run`。
+效能測試（1000 篇筆記的時間邊、圖譜、semantic 邊）的時間上限以 `perfBudget`（`src/main/db/test-utils.ts`）包起來：本機照設計目標檢查，CI（環境變數 `CI` 有值）放寬 10 倍，因為 GitHub Actions 的共用機器慢而且不穩定。單一測試的逾時（`vitest.config.ts` 的 `testTimeout`）在 CI 也從 5 秒放寬到 60 秒。本機想模擬 CI 可以 `CI=1 npx vitest run`。
 
 新功能必須附測試，完成前要確認上面三個指令都通過。
 

@@ -204,3 +204,4 @@ job `release`，只在推 tag 時執行，需要等四個 build 都完成：
   - 新增 `scripts/case-collisions.test.mjs`：遞迴檢查 repo（略過 dot 開頭、`node_modules`、`out`、`dist`），同一資料夾裡去掉副檔名後只差大小寫的名稱就失敗，在 Linux 上也能抓到。
   - `ci.yml` 的三平台 test job 加上 `npx electron-vite build`（與計畫不同：原本只跑 vitest）。
 - 同一次執行裡 `windows-latest` 與 `macos-15-intel` 在 vitest 失敗，都是效能測試的時間上限：Intel Mac 上 `vectors.test.ts` 4835ms（上限 1500）、`time.test.ts` 3063ms（500）、`graph.test.ts` 387ms（200）；Windows 上 `time.test.ts` 579ms（500）。CI 的 `windows-latest` 同一個測試剛好通過，共用機器的速度不穩定。修正：新增 `perfBudget`（`src/main/db/test-utils.ts`），本機照原本的設計目標，`CI` 環境變數有值時放寬 10 倍（Intel Mac 最多慢約 6 倍）；仍能抓到數量級的退化。`forceLayout.test.ts` 的 8 秒上限本來就寬，沒有改。
+- 第三次 Release（`8c54dea`）：Windows、Ubuntu、macOS arm64 成功；`macos-15-intel` 的 `vectors.test.ts`、`time.test.ts` 撞上 vitest 預設的單一測試逾時 5 秒（包含準備 1000 篇資料的時間，不只是量測的部分）。`vitest.config.ts` 的 `testTimeout` 在 `CI` 有值時改成 60 秒。
