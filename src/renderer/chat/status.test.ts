@@ -5,8 +5,13 @@ import { describeStatus } from './status'
 
 const base: LlmStatus = {
   online: true,
+  ollamaOnline: true,
   error: null,
+  embedError: null,
   models: [],
+  cloudModels: [],
+  apiKeys: { openai: false, gemini: false, custom: false },
+  keyEncrypted: true,
   settings: DEFAULT_LLM_SETTINGS,
   embedded: 3,
   total: 3,
@@ -26,5 +31,18 @@ describe('describeStatus', () => {
       label: 'Indexing 1/3'
     })
     expect(describeStatus(base)).toEqual({ tone: 'ok', label: 'AI ready' })
+  })
+
+  it('雲端模式：顯示服務名稱；Ollama 離線時不顯示 Indexing', () => {
+    const cloud: LlmStatus = {
+      ...base,
+      ollamaOnline: false,
+      embedded: 0,
+      embedError: 'Ollama is offline',
+      settings: { ...DEFAULT_LLM_SETTINGS, provider: 'openai', cloudModels: { openai: 'm' } }
+    }
+    expect(describeStatus(cloud)).toEqual({ tone: 'ok', label: 'AI ready · OpenAI' })
+    expect(describeStatus({ ...cloud, ollamaOnline: true }).tone).toBe('busy')
+    expect(describeStatus({ ...cloud, online: false, error: 'key' }).label).toBe('AI offline')
   })
 })

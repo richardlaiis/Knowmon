@@ -25,13 +25,25 @@ npm run lint         # ESLint + Prettier 檢查
 - `src/shared/time.test.ts`、`src/renderer/graph/timeFilter.test.ts`、`src/renderer/timeline/model.test.ts`：session 切分、圖譜時間篩選、時間軸分組
 - `src/shared/timeRange.test.ts`、`src/renderer/chat/conversation.test.ts`：從問題解析時間範圍（「上個月」「最近 7 天」「last week」）、對話狀態
 - `src/main/indexer/chunk.test.ts`、`src/main/db/vectors.test.ts`：切塊、向量表（sqlite-vec）、semantic 邊與 1000 篇的效能
-- `src/main/llm/*.test.ts`：Ollama client（假的 fetch）、背景 embedding、混合檢索、總結、問答（關鍵字、context 組裝、引用過濾）；`service.test.ts` 用真的 Vault 加假的 Ollama 測離線、模型未下載、換模型
+- `src/main/llm/*.test.ts`：Ollama client（假的 fetch）、背景 embedding、混合檢索、總結、問答（關鍵字、context 組裝、引用過濾）；`service.test.ts` 用真的 Vault 加假的 Ollama 測離線、模型未下載、換模型，以及雲端模式（沒有 key、key 錯誤不重試、Ollama 離線時對話照常）；`openai.test.ts`：OpenAI 相容 client（SSE、工具呼叫參數分段、id 與 thought signature、錯誤分類）；`secrets.test.ts`：API key 加密儲存
 
 與真的 Ollama 連線的整合測試預設跳過，需要時執行：
 
 ```bash
 OLLAMA_IT=1 npx vitest run src/main/llm/ollama.integration.test.ts
 ```
+
+雲端服務的整合測試（每個服務各自開啟，需要自己的 API key）：
+
+```bash
+OPENAI_IT=1 OPENAI_API_KEY=sk-… OPENAI_MODEL=<模型> npx vitest run src/main/llm/openai.integration.test.ts
+GEMINI_IT=1 GEMINI_API_KEY=… GEMINI_MODEL=<模型> npx vitest run src/main/llm/openai.integration.test.ts
+# 不需要帳號：用 Ollama 本身的 OpenAI 相容端點當作 custom
+CUSTOM_IT=1 CUSTOM_BASE_URL=http://127.0.0.1:11434/v1 CUSTOM_API_KEY=x CUSTOM_MODEL=qwen3:8b \
+  npx vitest run src/main/llm/openai.integration.test.ts
+```
+
+Agent 那一項會跑兩步以上的工具呼叫：Gemini 3 若沒有帶回 thought signature 會在第二步回 400。
 
 效能測試（1000 篇筆記的時間邊、圖譜、semantic 邊）的時間上限以 `perfBudget`（`src/main/db/test-utils.ts`）包起來：本機照設計目標檢查，CI（環境變數 `CI` 有值）放寬 10 倍，因為 GitHub Actions 的共用機器慢而且不穩定。單一測試的逾時（`vitest.config.ts` 的 `testTimeout`）在 CI 也從 5 秒放寬到 60 秒。本機想模擬 CI 可以 `CI=1 npx vitest run`。
 
@@ -136,7 +148,7 @@ npm run dev
 | 58  | 問筆記裡沒有的問題（例如 `薛丁格方程式怎麼推導？`）    | 回答「筆記裡沒有相關內容」，不自己編造；來源收在「sources searched」裡                                        |
 | 59  | 回答中按「Copy」貼到筆記                               | 引用編號變成 `[[來源標題]]` 連結                                                                              |
 | 60  | 回答途中按「Stop」；按「New chat」                     | 停止並顯示「Stopped.」；清空對話。換 vault 時對話也會清空                                                     |
-| 61  | Ollama 停止時                                          | 輸入框顯示「Ollama is offline」，Ask 按鈕停用                                                                 |
+| 61  | Ollama 停止時                                          | 輸入框顯示「AI is offline (see the status above)」，Ask 按鈕停用                                              |
 
 ### Agent（階段 7）
 
@@ -153,6 +165,22 @@ npm run dev
 | 68  | 對已經有該標籤的筆記再要求一次                                                           | 不出現確認卡片，回答說已經有了                                                                                                           |
 | 69  | 等待確認時按「Stop」                                                                     | 停止並顯示「Stopped.」，提案不會寫入；「New task」清空                                                                                   |
 | 70  | 在 Settings 換成不支援工具的模型後送出任務                                               | 顯示「does not support tool calling」，請換模型                                                                                          |
+
+### 雲端對話服務
+
+需要 OpenAI 或 Gemini 的 API key；沒有時用 Custom 加上 Ollama 的 OpenAI 相容端點（`http://127.0.0.1:11434/v1`，key 隨便填）測一遍。
+
+| #   | 操作                                                   | 預期結果                                                                                                                      |
+| --- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| 71  | AI 設定把 Chat provider 換成 OpenAI                    | 出現 API key、Model 欄與黃色確認框；沒勾確認時 Save 停用；說明文字改成「note content is sent to OpenAI」                      |
+| 72  | 貼上 key、不選模型，勾確認後 Save                      | 對話框不關閉，Model 欄的下拉建議列出可用的模型；選一個再 Save 後關閉，AI 分頁顯示「OpenAI <模型>」、側欄「AI ready · OpenAI」 |
+| 73  | 重新打開設定                                           | key 欄顯示「Saved」、不顯示內容；`~/.config/knowmon/settings.json` 的 `llmKeys` 只有加密後的 base64，搜尋不到 key 的明文      |
+| 74  | 重開 App                                               | 仍是雲端模式且可用（key 解密成功）                                                                                            |
+| 75  | 停掉 Ollama 後做總結、問答與 Agent（含建立筆記的確認） | 都能完成；AI 分頁顯示「Ollama is offline, so semantic search…」灰色提示，不是紅色錯誤；Hybrid 搜尋退回關鍵字                  |
+| 76  | 把 key 換成錯的                                        | 顯示「OpenAI rejected the API key」，輸入框顯示 AI is offline；等一分鐘不會重試（不重複出錯）                                 |
+| 77  | 斷網（雲端模式）                                       | 顯示連不上 api.openai.com；恢復網路後 30 秒內自動恢復                                                                         |
+| 78  | Custom 填 `http://192.168.1.5:1234/v1`                 | 不接受（只允許 https 或 localhost 的 http），儲存後仍是原本的位址                                                             |
+| 79  | 切回 Ollama (local)                                    | 與原本行為相同；說明文字恢復「notes never leave this computer」                                                               |
 
 ### 大型 vault 效能測試
 

@@ -62,6 +62,7 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 
 | 設定            | 預設                     | 說明                                                                                |
 | --------------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| Chat provider   | Ollama (local)           | 由誰執行總結、問答與 Agent，見 [雲端服務](#雲端服務可選)                            |
 | Ollama address  | `http://127.0.0.1:11434` | Ollama 伺服器位址。可以指向另一台電腦，見 [使用遠端電腦的 Ollama](remote-ollama.md) |
 | Chat model      | `qwen3:8b`               | 用於總結、問答與 Agent                                                              |
 | Embedding model | `bge-m3`                 | 用於 Hybrid 搜尋與 Semantic 邊                                                      |
@@ -87,4 +88,23 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 | AI ready            | 一切正常         | —                                                    |
 
 - Ollama 離線時，Knowmon **每 30 秒自動重試**，Ollama 恢復後會自動連上，也可以按 **Retry**。
-- Ollama 離線時：Hybrid 搜尋退回關鍵字結果；Chat 與 Agent 的輸入框顯示「Ollama is offline」；其他功能完全不受影響。
+- Ollama 離線時：Hybrid 搜尋退回關鍵字結果；Chat 與 Agent 的輸入框顯示「AI is offline」；其他功能完全不受影響。
+
+## 雲端服務（可選）
+
+電腦跑不動本地模型時，總結、問答與 Agent 可以改用雲端 API：**OpenAI**、**Google Gemini**，或任何 **OpenAI 相容**的服務（OpenRouter、Groq、DeepSeek、Mistral、LM Studio…）。
+
+> **隱私：** 使用雲端服務時，筆記內容會送到該公司——要總結的筆記、回答問題時檢索到的段落、Agent 的工具結果。切換時 Knowmon 會請你確認。預設仍是 Ollama，在你選擇雲端服務之前不會送出任何內容。
+
+1. 向服務商取得 API key（OpenAI：platform.openai.com；Gemini：aistudio.google.com）。費用由服務商計算。
+2. 在 AI 分頁按 **Settings**，選擇 **Chat provider**。
+3. 貼上 **API key**。選 **Custom** 時另外填 **API address**：`/chat/completions` 之前的網址，例如 `https://openrouter.ai/api/v1`。必須是 `https`，或連到本機（`localhost`）的 `http`。
+4. 勾選確認後按 **Save**。還沒選模型時對話框不會關閉，**Model** 欄會列出這個 key 可用的模型，也可以直接輸入模型名稱。
+
+注意：
+
+- **Embedding 仍然由 Ollama 負責。** Hybrid 搜尋與 Semantic 邊需要 Ollama 和 embedding 模型。沒有 Ollama 時，問答與 Agent 照樣透過雲端服務運作，搜尋退回關鍵字，AI 分頁顯示提示而不是錯誤。
+- Agent 需要支援**工具呼叫（tool calling）**的模型。
+- API key 以**系統的金鑰圈加密**（macOS 鑰匙圈、Windows 認證管理員、GNOME Keyring／KWallet）後存在 App 的設定檔，之後不會再顯示，可以更換或移除。Linux 桌面沒有金鑰圈時，對話框會提醒 key 沒有受到妥善保護。
+- 服務選擇與 key 跟其他 AI 設定一樣，所有 vault 共用。
+- key 被拒絕時顯示錯誤，在你修改之前**不會**重試；網路問題則每 30 秒重試。

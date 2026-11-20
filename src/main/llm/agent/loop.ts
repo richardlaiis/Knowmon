@@ -239,7 +239,12 @@ export async function runAgent(
     messages.push({
       role: 'assistant',
       content: res.content,
-      tool_calls: calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } }))
+      // 雲端 API 的 id 與 thought signature 要原樣帶回（Ollama client 送出前會去掉）
+      tool_calls: calls.map((c) => ({
+        ...(c.id ? { id: c.id } : {}),
+        ...(c.extra !== undefined ? { extra: c.extra } : {}),
+        function: { name: c.name, arguments: c.arguments }
+      }))
     })
     for (const call of calls) {
       let text: string
@@ -255,7 +260,12 @@ export async function runAgent(
       const room = Math.max(TOOL_RESULT_MIN, Math.min(TOOL_RESULT_MAX, AGENT_CONTEXT_MAX - used))
       const content = clipResult(text, room)
       used += content.length
-      messages.push({ role: 'tool', tool_name: call.name, content })
+      messages.push({
+        role: 'tool',
+        tool_name: call.name,
+        ...(call.id ? { tool_call_id: call.id } : {}),
+        content
+      })
     }
     if (steps >= max || used >= AGENT_CONTEXT_MAX) {
       messages.push({ role: 'user', content: LIMIT[language] })

@@ -2433,3 +2433,21 @@ body.resizing canvas {
   font-weight: 700;
   background: var(--bg-side);
 }
+
+/* ---- AI 設定：雲端服務的確認 ---- */
+
+.dialog .consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: var(--banner);
+  border-radius: 6px;
+  color: var(--fg);
+}
+
+.dialog .consent input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}

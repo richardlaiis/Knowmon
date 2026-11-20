@@ -149,6 +149,30 @@ describe('runAgent', () => {
     expect(h.calls.every((c) => c.tools === TOOL_DEFINITIONS)).toBe(true)
   })
 
+  it('雲端 API 的工具呼叫 id 與 extra 寫入 assistant 訊息，tool 訊息帶對應的 id', async () => {
+    const h = harness([
+      reply('', {
+        ...call('get_note', { path: 'a' }),
+        id: 'call_1',
+        extra: { google: { thought_signature: 'sig' } }
+      }),
+      reply('完成')
+    ])
+    await h.run()
+    const m = h.calls[1].messages
+    expect(m.at(-2)).toMatchObject({
+      role: 'assistant',
+      tool_calls: [
+        {
+          id: 'call_1',
+          extra: { google: { thought_signature: 'sig' } },
+          function: { name: 'get_note', arguments: { path: 'a' } }
+        }
+      ]
+    })
+    expect(m.at(-1)).toMatchObject({ role: 'tool', tool_name: 'get_note', tool_call_id: 'call_1' })
+  })
+
   it('一次回覆多個工具呼叫時依序執行', async () => {
     const h = harness([
       reply('', call('get_note', { path: 'a' }), call('get_note', { path: 'b' })),

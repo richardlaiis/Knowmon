@@ -15,7 +15,7 @@ import { Markdown } from './Markdown'
 
 export interface ChatPanelProps {
   conversation: Conversation
-  /** Ollama 可用 */
+  /** 對話服務可用（Ollama 或雲端） */
   online: boolean
   /** 每次改變時聚焦輸入框（Ctrl/Cmd+Shift+A） */
   focusKey: number
@@ -114,7 +114,9 @@ export function ChatPanel(props: ChatPanelProps): React.JSX.Element {
           className="chat-input"
           value={input}
           rows={2}
-          placeholder={online ? 'Ask your notes… (Enter to send)' : 'Ollama is offline'}
+          placeholder={
+            online ? 'Ask your notes… (Enter to send)' : 'AI is offline (see the status above)'
+          }
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             // 輸入法選字時的 Enter 不送出

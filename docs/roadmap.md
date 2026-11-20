@@ -8,7 +8,7 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 
 1. **雙向連結**：筆記之間用 `[[筆記名稱]]` 互相連結，並有反向連結面板。
 2. **時間脈絡連結**：除了手動連結，系統也會依照編輯時間與事件時間自動建立連結，讓每個 vault 有更完整的知識圖譜。
-3. **本地 LLM agent**：透過 Ollama 接上本地模型，提供檢索、總結、篩選等功能，所有資料都不離開使用者的電腦。
+3. **本地 LLM agent**：透過 Ollama 接上本地模型，提供檢索、總結、篩選等功能，預設所有資料都不離開使用者的電腦；也可以主動選用雲端 API（OpenAI、Gemini、OpenAI 相容）負責對話。
 
 ## 技術架構與選型
 
@@ -25,6 +25,7 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 | Frontmatter 解析 | gray-matter              |                                                                  |
 | 圖譜視覺化       | Cytoscape.js             | 效能不足時可評估改用 sigma.js                                    |
 | 本地 LLM         | Ollama HTTP API          | 對話模型 `qwen3:8b`，embedding 模型 `bge-m3`                     |
+| 雲端對話（可選） | OpenAI 相容 API          | OpenAI、Gemini、自訂；只用內建 fetch，key 以 safeStorage 加密    |
 | 測試             | vitest                   |                                                                  |
 
 資料夾職責：
@@ -33,7 +34,7 @@ Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完
 - `src/main/vault/`：讀寫檔案、監聽變更。
 - `src/main/indexer/`：解析連結、frontmatter、日期。
 - `src/main/db/`：schema 與查詢。
-- `src/main/llm/`：Ollama client、檢索、agent 工具。
+- `src/main/llm/`：Ollama client、雲端（OpenAI 相容）client、檢索、agent 工具。
 - `src/renderer/`：`editor/`、`graph/`、`timeline/`、`chat/` 四個 UI 模組。
 - `test-vault/`：測試用筆記，含中文、日期 frontmatter、互相連結、日記格式檔名。
 - `docs/`：`architecture.md`、`roadmap.md`、`testing.md`（測試清單）、`plans/`（每個功能的實作計畫）、`user-guide/`（使用說明）。
@@ -166,6 +167,7 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 - [x] Linux 試打包：deb 與 AppImage 可安裝，打包版的向量功能（sqlite-vec）正常、設定沿用開發版（2026-10-20）
 - [x] 表格即時渲染：游標不在表格時顯示成表格，進入時顯示原始碼（2026-11-11，見 `docs/plans/table-rendering.md`）
 - [x] Logo 與介面圖示：正式應用程式圖示（取代 Electron 預設）、歡迎頁與空白頁、側欄／分頁／檔案樹圖示（2026-11-13，見 `docs/plans/ui-logo-icons.md`）
+- [x] 雲端對話模型：OpenAI、Gemini、OpenAI 相容 API（只負責對話，embedding 仍走 Ollama；見 `docs/plans/cloud-providers.md`）
 - [ ] 設定頁：整合時間與 Semantic 參數、AI 設定、主題與介面偏好
 - [ ] 效能優化：先以 `scripts/gen-vault.mjs` 量測 1000／3000 篇，再決定目標（已知弱點：圖譜 hover、首次建立索引）
 - [ ] 產出安裝檔：Windows 與 macOS 打包（需在各自的作業系統或 CI 上建置）、授權（LICENSE）、版本號，並更新使用說明的安裝頁

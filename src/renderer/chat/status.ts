@@ -1,5 +1,6 @@
 // LLM 狀態的顯示文字（純函式）與訂閱 hook
 import { useEffect, useState } from 'react'
+import { PROVIDER_LABELS } from '../../shared/llm'
 import type { LlmStatus } from '../../shared/types'
 
 export type StatusTone = 'ok' | 'busy' | 'warn' | 'off'
@@ -9,10 +10,15 @@ export function describeStatus(s: LlmStatus | null): { tone: StatusTone; label: 
   if (!s) return { tone: 'off', label: 'AI: checking…' }
   if (!s.online) return { tone: 'off', label: 'AI offline' }
   if (s.error) return { tone: 'warn', label: 'AI: needs attention' }
-  if (s.busy || s.embedded < s.total) {
+  // 雲端模式下 Ollama 離線時不會有 embedding 進度，不顯示「Indexing」
+  if (s.ollamaOnline && (s.busy || s.embedded < s.total)) {
     return { tone: 'busy', label: `Indexing ${s.embedded}/${s.total}` }
   }
-  return { tone: 'ok', label: 'AI ready' }
+  const provider = s.settings.provider
+  return {
+    tone: 'ok',
+    label: provider === 'ollama' ? 'AI ready' : `AI ready · ${PROVIDER_LABELS[provider]}`
+  }
 }
 
 /** 目前 vault 的 LLM 狀態；main 推送變更 */

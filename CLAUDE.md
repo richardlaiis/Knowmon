@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 開發：npm run dev
 - 測試：npx vitest run
 - 真的 Ollama 整合測試（預設跳過）：`OLLAMA_IT=1 npx vitest run src/main/llm/ollama.integration.test.ts`
+- 雲端服務整合測試（預設跳過，需要 key）：`OPENAI_IT=1`／`GEMINI_IT=1`／`CUSTOM_IT=1` 加對應的 key 與模型環境變數，見 `src/main/llm/openai.integration.test.ts` 開頭
 - 型別檢查：npm run typecheck（不要用 `npx tsc --noEmit`，它不會檢查任何檔案）
 - 完成前 vitest、typecheck、`npm run lint` 都要通過
 - 安裝與執行見 README.md，手動測試清單見 docs/testing.md

@@ -12,8 +12,9 @@ import type {
   SummaryChunk
 } from '../../shared/types'
 import { Vault } from '../vault'
-import { OllamaError } from './ollama'
-import { CHAT_NUM_CTX, LlmService } from './service'
+import { LlmError, OllamaError } from './ollama'
+import { memoryKeyStore } from './secrets'
+import { CHAT_NUM_CTX, LlmService, type LlmServiceOptions } from './service'
 import { fakeOllama, type FakeOllama } from './test-utils'
 
 let root: string
@@ -31,7 +32,7 @@ function write(rel: string, content: string): void {
   fs.writeFileSync(path.join(root, rel), content)
 }
 
-async function start(): Promise<{ v: Vault; s: LlmService }> {
+async function start(extra: Partial<LlmServiceOptions> = {}): Promise<{ v: Vault; s: LlmService }> {
   vault = await Vault.open(root)
   service = new LlmService({
     loadSettings: () => saved,
@@ -42,7 +43,8 @@ async function start(): Promise<{ v: Vault; s: LlmService }> {
     onAgent: (c) => agentChunks.push(c),
     createClient: () => ollama,
     retryMs: 20,
-    now: () => new Date(2026, 9, 14, 12).getTime()
+    now: () => new Date(2026, 9, 14, 12).getTime(),
+    ...extra
   })
   await service.attach(vault)
   return { v: vault, s: service }
@@ -425,5 +427,204 @@ describe('LlmService', () => {
     expect(s.status()).toMatchObject({ busy: false, embedded: 0, total: 0 })
     await v.close()
     vault = null
+  })
+})
+
+describe('雲端對話服務', () => {
+  let cloud: FakeOllama
+  /** models() 丟出的錯誤（模擬 key 錯誤、連不上） */
+  let cloudFail: LlmError | null
+  let made: { provider: string; baseUrl: string; apiKey: string }[]
+  let modelCalls: number
+
+  beforeEach(() => {
+    cloud = fakeOllama()
+    cloud.installed = ['gpt-x', 'gpt-y']
+    cloud.replies = ['- 雲端重點']
+    cloudFail = null
+    made = []
+    modelCalls = 0
+  })
+
+  const startCloud = (
+    settings: Partial<LlmSettings> = { provider: 'openai', cloudModels: { openai: 'gpt-x' } },
+    keys: Record<string, string> = { openai: 'sk-secret' }
+  ): Promise<{ v: Vault; s: LlmService }> => {
+    saved = { ...DEFAULT_LLM_SETTINGS, ...settings }
+    return start({
+      keys: memoryKeyStore(keys),
+      createCloudClient: (o) => {
+        made.push(o)
+        return {
+          ...cloud,
+          models: async () => {
+            modelCalls++
+            if (cloudFail) throw cloudFail
+            return cloud.models()
+          }
+        }
+      }
+    })
+  }
+
+  it('Ollama 離線時雲端對話照常；embedding 只顯示提示，檢索退回全文', async () => {
+    ollama.online = false
+    const { s } = await startCloud()
+    expect(s.status()).toMatchObject({
+      online: true,
+      ollamaOnline: false,
+      error: null,
+      cloudModels: ['gpt-x', 'gpt-y'],
+      apiKeys: { openai: true, gemini: false, custom: false },
+      embedded: 0
+    })
+    expect(s.status().embedError).toContain('Ollama is offline')
+    expect(made).toEqual([
+      { provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-secret' }
+    ])
+    expect(JSON.stringify(s.status())).not.toContain('sk-secret')
+
+    const id = s.summarize({ path: '跑步.md' })
+    await until(() => chunks.some((c) => c.id === id && c.done))
+    expect(
+      chunks
+        .filter((c) => c.id === id)
+        .map((c) => c.delta)
+        .join('')
+    ).toBe('- 雲端重點')
+    // 雲端不帶 Ollama 的 num_ctx
+    expect(cloud.numCtx).toEqual([undefined])
+    expect(ollama.chatCalls).toHaveLength(0)
+    expect((await s.retrieve('跑步')).vector).toBe(false)
+  })
+
+  it('雲端模式下 embedding 仍走 Ollama；只需要 embedding 模型', async () => {
+    ollama.installed = ['bge-m3:latest']
+    const { s } = await startCloud()
+    await until(idle(s))
+    expect(s.status()).toMatchObject({ online: true, error: null, embedError: null, embedded: 3 })
+    expect(ollama.embedCalls.length).toBeGreaterThan(0)
+    expect(cloud.embedCalls).toHaveLength(0)
+  })
+
+  it('沒有 key 時提示輸入；setApiKey 後可用，key 不出現在狀態中', async () => {
+    const { s } = await startCloud(undefined, {})
+    expect(s.status()).toMatchObject({ online: false, apiKeys: { openai: false } })
+    expect(s.status().error).toBe('Add an API key for OpenAI in AI settings.')
+    expect(() => s.summarize({ path: '跑步.md' })).toThrow('Add an API key')
+    expect(modelCalls).toBe(0)
+
+    const st = await s.setApiKey('openai', ' sk-new ')
+    expect(st).toMatchObject({ online: true, error: null, apiKeys: { openai: true } })
+    expect(made.at(-1)?.apiKey).toBe('sk-new')
+    expect(JSON.stringify(st)).not.toContain('sk-new')
+
+    await s.setApiKey('openai', null)
+    expect(s.status()).toMatchObject({ online: false, apiKeys: { openai: false } })
+  })
+
+  it('setApiKey 拒絕不認得的服務、過長或含空白的 key；其他服務的 key 不影響目前的連線', async () => {
+    const { s } = await startCloud()
+    await expect(s.setApiKey('claude' as never, 'x')).rejects.toThrow('Unknown provider')
+    await expect(s.setApiKey('openai', 'x'.repeat(501))).rejects.toThrow('too long')
+    await expect(s.setApiKey('openai', 'sk a')).rejects.toThrow('invalid characters')
+    const before = made.length
+    expect((await s.setApiKey('gemini', 'AIza')).apiKeys).toEqual({
+      openai: true,
+      gemini: true,
+      custom: false
+    })
+    expect(made.length).toBe(before)
+  })
+
+  it('還沒選模型：列出模型讓使用者選，對話不可用', async () => {
+    const { s } = await startCloud({ provider: 'gemini' }, { gemini: 'AIza' })
+    expect(s.status()).toMatchObject({ online: false, cloudModels: ['gpt-x', 'gpt-y'] })
+    expect(s.status().error).toBe('Choose a Google Gemini model in AI settings.')
+    expect(made[0].baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai')
+
+    await s.setSettings({ cloudModels: { gemini: 'gpt-y' } })
+    expect(s.status()).toMatchObject({ online: true, error: null })
+  })
+
+  it('key 錯誤不重試；連不上時重試直到恢復', async () => {
+    cloudFail = new LlmError('OpenAI rejected the API key (401)', 'auth')
+    const { s } = await startCloud()
+    expect(s.status()).toMatchObject({ online: false, error: 'OpenAI rejected the API key (401)' })
+    const calls = modelCalls
+    await new Promise((r) => setTimeout(r, 80))
+    expect(modelCalls).toBe(calls)
+
+    cloudFail = new LlmError('Cannot connect to api.openai.com.', 'offline')
+    await s.retry()
+    expect(s.status().online).toBe(false)
+    cloudFail = null
+    await until(() => s.status().online)
+    expect(s.status().error).toBeNull()
+  })
+
+  it('服務沒有 /models（其他 HTTP 錯誤）時仍可對話，只是沒有模型清單', async () => {
+    cloudFail = new LlmError('Custom API error 404', 'http')
+    const { s } = await startCloud(
+      {
+        provider: 'custom',
+        customBaseUrl: 'http://localhost:1234/v1',
+        cloudModels: { custom: 'm' }
+      },
+      { custom: 'k' }
+    )
+    expect(s.status()).toMatchObject({ online: true, error: null, cloudModels: [] })
+    expect(made[0].baseUrl).toBe('http://localhost:1234/v1')
+  })
+
+  it('custom 沒填位址時提示', async () => {
+    const { s } = await startCloud(
+      { provider: 'custom', cloudModels: { custom: 'm' } },
+      { custom: 'k' }
+    )
+    expect(s.status().error).toBe('Enter the API address of the custom provider in AI settings.')
+  })
+
+  it('切換服務時重建 client；切回 Ollama 時用 Ollama 並帶 num_ctx', async () => {
+    const { s } = await startCloud()
+    await s.setApiKey('gemini', 'AIza')
+    await s.setSettings({ provider: 'gemini', cloudModels: { openai: 'gpt-x', gemini: 'gpt-y' } })
+    expect(made.at(-1)).toMatchObject({ provider: 'gemini', apiKey: 'AIza' })
+    expect(saved?.provider).toBe('gemini')
+
+    await s.setSettings({ provider: 'ollama' })
+    expect(s.status()).toMatchObject({ online: true, cloudModels: [], embedError: null })
+    const id = s.summarize({ path: '跑步.md' })
+    await until(() => chunks.some((c) => c.id === id && c.done))
+    expect(ollama.numCtx).toEqual([CHAT_NUM_CTX])
+  })
+
+  it('agent 用雲端模型的工具呼叫；工具呼叫 id 帶回下一步', async () => {
+    cloud.toolReplies = [
+      {
+        content: '',
+        toolCalls: [{ name: 'search_notes', arguments: { query: '跑步' }, id: 'call_9' }]
+      },
+      { content: '跑了五公里。', toolCalls: [] }
+    ]
+    const { s } = await startCloud()
+    const id = s.agent({ task: '我跑了多遠？' })
+    await until(() => agentChunks.some((c) => c.id === id && c.done))
+    expect(agentChunks.filter((c) => c.id === id).at(-1)).toEqual({ id, delta: '', done: true })
+    const second = cloud.chatCalls[1]
+    expect(second.at(-1)).toMatchObject({ role: 'tool', tool_call_id: 'call_9' })
+    expect(ollama.toolsOffered).toHaveLength(0)
+  })
+
+  it('雲端模型不支援工具時給清楚的提示', async () => {
+    cloud.chatTools = async () => {
+      throw new LlmError('OpenAI error 400: tools are not supported for this model', 'http')
+    }
+    const { s } = await startCloud()
+    const id = s.agent({ task: '找筆記' })
+    await until(() => agentChunks.some((c) => c.id === id && c.done))
+    expect(agentChunks.filter((c) => c.id === id).at(-1)?.error).toBe(
+      'The chat model gpt-x does not support tool calling. Choose a model with tool support in Settings.'
+    )
   })
 })

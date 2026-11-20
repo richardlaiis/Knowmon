@@ -1,6 +1,7 @@
 // IPC handler：renderer 只能透過這裡（以及 preload 暴露的 KnowmonAPI）存取檔案與 DB
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import { IPC } from '../shared/channels'
+import { isCloudProvider } from '../shared/llm'
 import type {
   AgentChunk,
   AgentDecision,
@@ -13,6 +14,7 @@ import type {
   SummaryChunk,
   TreeNode
 } from '../shared/types'
+import { createKeyStore } from './llm/secrets'
 import { LlmService } from './llm/service'
 import { loadSettings, saveSettings } from './settings'
 import { Vault } from './vault'
@@ -79,7 +81,13 @@ export function registerIpc(ctx: IpcContext): void {
     onStatus: (s) => broadcast(IPC.llmStatusChanged, s),
     onSummary: (c) => broadcast(IPC.llmSummary, c),
     onAnswer: (c) => broadcast(IPC.llmAnswer, c),
-    onAgent: (c) => broadcast(IPC.llmAgentChunk, c)
+    onAgent: (c) => broadcast(IPC.llmAgentChunk, c),
+    keys: createKeyStore({
+      safeStorage,
+      load: () => loadSettings(ctx.settingsDir).llmKeys,
+      save: (llmKeys) =>
+        saveSettings(ctx.settingsDir, { ...loadSettings(ctx.settingsDir), llmKeys })
+    })
   })
 
   ipcMain.handle(IPC.vaultPick, async (event) => {
@@ -135,6 +143,10 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.llmSetSettings, (_e, change: unknown) =>
     requireLlm().setSettings(change && typeof change === 'object' ? change : {})
   )
+  ipcMain.handle(IPC.llmSetApiKey, (_e, provider: unknown, key: unknown) => {
+    if (!isCloudProvider(provider)) throw new Error('Unknown provider.')
+    return requireLlm().setApiKey(provider, typeof key === 'string' ? key : null)
+  })
   ipcMain.handle(IPC.llmRetrieve, (_e, q: unknown, opts: unknown) => {
     requireVault()
     return requireLlm().retrieve(String(q ?? ''), retrieveOptions(opts))

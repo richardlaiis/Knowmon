@@ -1,5 +1,6 @@
-// 右側面板的 AI 分頁：Ollama 連線與 embedding 進度，下面切換對話（問答）、agent 與目前筆記的總結
+// 右側面板的 AI 分頁：對話服務（Ollama 或雲端）的連線與 embedding 進度，下面切換對話（問答）、agent 與目前筆記的總結
 import { useState } from 'react'
+import { PROVIDER_LABELS, activeChatModel } from '../../shared/llm'
 import type { LlmStatus, SummaryLanguage } from '../../shared/types'
 import { SettingsIcon } from '../src/components/icons'
 import { AgentPanel, type AgentPanelProps } from './AgentPanel'
@@ -63,13 +64,13 @@ export function AiPanel(props: AiPanelProps): React.JSX.Element {
         <div className="ai-status-line">
           <span className={`status-dot ${tone}`} aria-hidden="true" />
           <span className="ai-status-label">{label}</span>
-          <button onClick={props.onRetry} title="Check the Ollama connection again">
+          <button onClick={props.onRetry} title="Check the AI connection again">
             Retry
           </button>
           <button
             className="with-icon"
             onClick={props.onOpenSettings}
-            title="Ollama address and models"
+            title="Chat provider, Ollama address and models"
           >
             <SettingsIcon size={15} />
             Settings
@@ -77,11 +78,14 @@ export function AiPanel(props: AiPanelProps): React.JSX.Element {
         </div>
         {status && (
           <p className="ai-status-detail">
-            {status.settings.chatModel} · {status.settings.embedModel} · {status.embedded}/
-            {status.total} notes indexed
+            {status.settings.provider !== 'ollama' &&
+              `${PROVIDER_LABELS[status.settings.provider]} `}
+            {activeChatModel(status.settings) || '(no model)'} · {status.settings.embedModel} ·{' '}
+            {status.embedded}/{status.total} notes indexed
           </p>
         )}
         {status?.error && <p className="ai-status-detail error">{status.error}</p>}
+        {status?.embedError && <p className="ai-status-detail">{status.embedError}</p>}
         <div className="segmented ai-mode" role="group" aria-label="AI mode">
           {MODES.map(([value, label, hint]) => (
             <button

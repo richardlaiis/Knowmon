@@ -119,7 +119,7 @@ Session 邊需要你在 Knowmon 裡（或 Knowmon 開著時）實際**編輯**�
 
 ### 我的筆記會被傳到網路上嗎？
 
-不會。所有 AI 運算都在你指定的 Ollama 伺服器上（預設是你自己的電腦）。如果你把位址指向另一台電腦，筆記內容會送到那台電腦處理，見 [使用遠端電腦的 Ollama](remote-ollama.md#安全)。
+預設不會。所有 AI 運算都在你指定的 Ollama 伺服器上（預設是你自己的電腦）。如果你把位址指向另一台電腦，筆記內容會送到那台電腦處理，見 [使用遠端電腦的 Ollama](remote-ollama.md#安全)。如果你選擇雲端的 **Chat provider**（OpenAI、Gemini 或其他 API），總結、問答與 Agent 用到的筆記內容會送到該服務商，見 [雲端服務](ai-setup.md#雲端服務可選)。
 
 ## 資料
 

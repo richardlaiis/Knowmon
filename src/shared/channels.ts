@@ -24,6 +24,7 @@ export const IPC = {
   llmStatusChanged: 'llm:statusChanged',
   llmRetry: 'llm:retry',
   llmSetSettings: 'llm:setSettings',
+  llmSetApiKey: 'llm:setApiKey',
   llmRetrieve: 'llm:retrieve',
   llmSummarize: 'llm:summarize',
   llmCancel: 'llm:cancel',

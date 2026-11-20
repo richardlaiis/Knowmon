@@ -59,9 +59,11 @@ export function SettingsMenu(props: SettingsMenuProps): React.JSX.Element {
             role="menuitem"
             onClick={choose(props.onAiSettings)}
             disabled={props.aiDisabled}
-            title={props.aiDisabled ? 'Checking AI status…' : 'Ollama address and models'}
+            title={
+              props.aiDisabled ? 'Checking AI status…' : 'Chat provider, Ollama address and models'
+            }
           >
-            AI (Ollama)…
+            AI…
           </button>
         </div>
       )}

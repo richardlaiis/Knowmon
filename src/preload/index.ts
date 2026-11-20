@@ -58,6 +58,7 @@ const api: KnowmonAPI = {
     retry: () => ipcRenderer.invoke(IPC.llmRetry),
     onStatus: (cb) => subscribe<LlmStatus>(IPC.llmStatusChanged, cb),
     setSettings: (s) => ipcRenderer.invoke(IPC.llmSetSettings, s),
+    setApiKey: (provider, key) => ipcRenderer.invoke(IPC.llmSetApiKey, provider, key),
     retrieve: (q, opts) => ipcRenderer.invoke(IPC.llmRetrieve, q, opts),
     summarize: (req) => ipcRenderer.invoke(IPC.llmSummarize, req),
     cancel: (id) => ipcRenderer.invoke(IPC.llmCancel, id),

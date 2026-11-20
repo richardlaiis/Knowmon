@@ -6,6 +6,7 @@ import type {
   AgentDecision,
   AgentStep,
   AskSource,
+  CloudProvider,
   DateRange,
   LlmSettings,
   NoteSummary,
@@ -17,6 +18,7 @@ import type {
 import {
   AiPanel,
   LlmSettingsDialog,
+  type ApiKeyChanges,
   applyAnswerChunk,
   applyChunk,
   askQuestion,
@@ -568,10 +570,18 @@ function App(): React.JSX.Element {
     setSummary((s) => s && stopSummary(s))
   }
 
-  const saveLlmSettings = async (next: LlmSettings): Promise<void> => {
+  const saveLlmSettings = async (
+    next: LlmSettings,
+    keys: ApiKeyChanges,
+    keepOpen: boolean
+  ): Promise<void> => {
     try {
+      // 先存 key，設定改變時的連線檢查才用得到
+      for (const [provider, key] of Object.entries(keys) as [CloudProvider, string | null][]) {
+        await window.api.llm.setApiKey(provider, key)
+      }
       await window.api.llm.setSettings(next)
-      setLlmSettingsOpen(false)
+      if (!keepOpen) setLlmSettingsOpen(false)
     } catch (e) {
       showError(e)
     }
@@ -1113,7 +1123,7 @@ function LlmBadge({
   onClick: () => void
 }): React.JSX.Element {
   return (
-    <button className="llm-badge" onClick={onClick} title={detail ?? 'Local AI (Ollama)'}>
+    <button className="llm-badge" onClick={onClick} title={detail ?? 'AI status'}>
       <span className={`status-dot ${status.tone}`} aria-hidden="true" />
       {status.label}
     </button>

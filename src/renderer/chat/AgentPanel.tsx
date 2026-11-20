@@ -7,7 +7,7 @@ import { Markdown } from './Markdown'
 
 export interface AgentPanelProps {
   session: AgentSession
-  /** Ollama 可用 */
+  /** 對話服務可用（Ollama 或雲端） */
   online: boolean
   /** 每次改變時聚焦輸入框（Ctrl/Cmd+Shift+G） */
   focusKey: number
@@ -91,7 +91,11 @@ export function AgentPanel(props: AgentPanelProps): React.JSX.Element {
           className="chat-input"
           value={input}
           rows={2}
-          placeholder={online ? 'Give the agent a task… (Enter to run)' : 'Ollama is offline'}
+          placeholder={
+            online
+              ? 'Give the agent a task… (Enter to run)'
+              : 'AI is offline (see the status above)'
+          }
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             // 輸入法選字時的 Enter 不送出

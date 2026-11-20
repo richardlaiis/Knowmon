@@ -96,19 +96,42 @@ export interface SemanticSettings {
   semanticMaxPerNote: number
 }
 
-/** Ollama 連線與模型，存在 App 的 userData/settings.json（跟著機器走） */
+/** 雲端對話服務（只負責對話；embedding 一律走 Ollama） */
+export type CloudProvider = 'openai' | 'gemini' | 'custom'
+export type ChatProvider = 'ollama' | CloudProvider
+
+/** Ollama 連線與模型、雲端對話服務，存在 App 的 userData/settings.json（跟著機器走） */
 export interface LlmSettings {
+  /** Ollama 位址（embedding；provider = ollama 時也用於對話） */
   baseUrl: string
+  /** Ollama 的對話模型 */
   chatModel: string
   embedModel: string
+  /** 對話使用的服務，預設 'ollama' */
+  provider: ChatProvider
+  /** 各雲端服務選用的模型 id */
+  cloudModels: Partial<Record<CloudProvider, string>>
+  /** provider = custom 時的 API 位址（https，或 loopback 的 http） */
+  customBaseUrl: string
 }
 
 export interface LlmStatus {
+  /** 目前的對話服務可用（總結、問答、Agent） */
   online: boolean
-  /** 離線、模型未下載等原因，給使用者看 */
+  /** Ollama 在線（embedding、語意搜尋、semantic 邊） */
+  ollamaOnline: boolean
+  /** 會擋住對話的問題（離線、API key 錯誤、模型未下載等），給使用者看 */
   error: string | null
+  /** 只影響 embedding 的問題（雲端模式下 Ollama 離線等），以提示顯示 */
+  embedError: string | null
   /** Ollama 已下載的模型 */
   models: string[]
+  /** 目前雲端服務可用的模型 id（列不出來時為空，仍可手動輸入） */
+  cloudModels: string[]
+  /** 哪些雲端服務已存 API key（key 本身永遠不傳到 renderer） */
+  apiKeys: Record<CloudProvider, boolean>
+  /** false：OS 沒有 keyring，API key 只是混淆後存檔 */
+  keyEncrypted: boolean
   settings: LlmSettings
   /** embedding 進度：已完成的筆記數 / 有內容的筆記數 */
   embedded: number
@@ -320,6 +343,8 @@ export interface KnowmonAPI {
     retry(): Promise<LlmStatus>
     onStatus(cb: (s: LlmStatus) => void): () => void
     setSettings(s: Partial<LlmSettings>): Promise<LlmStatus>
+    /** 儲存雲端服務的 API key（null 或空字串 = 刪除）；key 只能寫入、不能讀回 */
+    setApiKey(provider: CloudProvider, key: string | null): Promise<LlmStatus>
     retrieve(query: string, opts?: RetrieveOptions): Promise<RetrieveResult>
     /** 開始串流總結，回傳 request id；片段經 onSummary 推送 */
     summarize(req: SummaryRequest): Promise<string>

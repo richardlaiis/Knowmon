@@ -62,6 +62,7 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 
 | Setting         | Default                  | Description                                                                                               |
 | --------------- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Chat provider   | Ollama (local)           | Who runs summaries, Chat and the Agent. See [Cloud providers](#cloud-providers-optional)                  |
 | Ollama address  | `http://127.0.0.1:11434` | Where Ollama runs. Can point to another machine; see [Using Ollama on a remote machine](remote-ollama.md) |
 | Chat model      | `qwen3:8b`               | Used for summaries, Chat, and the Agent                                                                   |
 | Embedding model | `bge-m3`                 | Used for Hybrid search and Semantic links                                                                 |
@@ -87,4 +88,23 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 | AI ready            | All good                      | —                                                                     |
 
 - While Ollama is offline, Knowmon **retries every 30 seconds** and reconnects on its own when Ollama is back. You can also click **Retry**.
-- While Ollama is offline: Hybrid search falls back to keyword results; the Chat and Agent inputs say "Ollama is offline"; everything else is unaffected.
+- While Ollama is offline: Hybrid search falls back to keyword results; the Chat and Agent inputs say "AI is offline"; everything else is unaffected.
+
+## Cloud providers (optional)
+
+If your computer can't run a local model, summaries, Chat and the Agent can use a cloud API instead: **OpenAI**, **Google Gemini**, or any **OpenAI-compatible** service (OpenRouter, Groq, DeepSeek, Mistral, LM Studio, …).
+
+> **Privacy:** with a cloud provider, note content is sent to that company — the note being summarized, the passages retrieved to answer a question, and the Agent's tool results. Knowmon asks you to confirm this when you switch. Ollama remains the default; nothing is sent anywhere until you choose a cloud provider.
+
+1. Get an API key from the provider (OpenAI: platform.openai.com; Gemini: aistudio.google.com). Usage is billed by the provider.
+2. In the AI tab, click **Settings** and pick a **Chat provider**.
+3. Paste the **API key**. For **Custom**, also enter the **API address** — the base URL that ends before `/chat/completions`, for example `https://openrouter.ai/api/v1`. It must be `https`, or `http` to this computer (`localhost`).
+4. Tick the confirmation and **Save**. If you haven't chosen a model yet, the dialog stays open and the **Model** field suggests the models your key can use; you can also type a model id.
+
+Notes:
+
+- **Embeddings still come from Ollama.** Hybrid search and Semantic links need Ollama with the embedding model. Without Ollama, Chat and the Agent still work through the cloud provider, search falls back to keywords, and the AI tab shows a notice instead of an error.
+- The Agent needs a model that supports **tool calling**.
+- The API key is **encrypted with your system keyring** (Keychain, Windows credential store, GNOME Keyring / KWallet) and stored in the app's settings file. It is never shown again; you can replace or remove it. If your Linux desktop has no keyring, the dialog warns that the key is not strongly protected.
+- Keys and the chosen provider are shared by all vaults, like the other AI settings.
+- A rejected key shows an error and Knowmon does **not** retry until you change it; a network failure is retried every 30 seconds.

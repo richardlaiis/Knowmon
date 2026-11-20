@@ -123,7 +123,7 @@ The current chat model can't use tools. Choose one that can, such as `qwen3:8b`,
 
 ### Are my notes sent over the internet?
 
-No. All AI processing happens on the Ollama server you configure — your own computer by default. If you point the address at another machine, note content is sent to that machine; see [Using Ollama on a remote machine](remote-ollama.md#security).
+Not by default. All AI processing happens on the Ollama server you configure — your own computer by default. If you point the address at another machine, note content is sent to that machine; see [Using Ollama on a remote machine](remote-ollama.md#security). If you choose a cloud **Chat provider** (OpenAI, Gemini, or another API), note content used for summaries, Chat and the Agent is sent to that provider; see [Cloud providers](ai-setup.md#cloud-providers-optional).
 
 ## Data
 

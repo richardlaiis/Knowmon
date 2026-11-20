@@ -228,6 +228,28 @@ describe('createOllama', () => {
     })
   })
 
+  it('送出前去掉雲端 API 才有的工具呼叫 id、extra 與 tool_call_id', async () => {
+    const { fetch, calls } = fakeFetch(
+      () => new Response(stream([JSON.stringify({ message: { content: 'ok' }, done: true })]))
+    )
+    await createOllama('http://host', fetch).chatTools(
+      'qwen3:8b',
+      [
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ id: 'c1', extra: { x: 1 }, function: { name: 'a', arguments: {} } }]
+        },
+        { role: 'tool', tool_name: 'a', tool_call_id: 'c1', content: 'r' }
+      ],
+      []
+    )
+    expect((calls[0].body as { messages: unknown }).messages).toEqual([
+      { role: 'assistant', content: '', tool_calls: [{ function: { name: 'a', arguments: {} } }] },
+      { role: 'tool', tool_name: 'a', content: 'r' }
+    ])
+  })
+
   it('沒有工具時不送 tools 參數；模型不支援工具時可辨識', async () => {
     const { fetch, calls } = fakeFetch(
       () => new Response(stream([JSON.stringify({ message: { content: 'ok' } }) + '\n']))

@@ -56,10 +56,10 @@ When the sidebar is very narrow, **Files** and **Search** show only their icons.
 
 The gear icon in the bottom-left corner opens a small menu:
 
-| Item              | Opens                                                                                          |
-| ----------------- | ---------------------------------------------------------------------------------------------- |
-| **Time & links…** | Session length, semantic links and other time settings — see [Time context](time.md)           |
-| **AI (Ollama)…**  | Ollama address and models — see [Setting up local AI](ai-setup.md) (greyed out while checking) |
+| Item              | Opens                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Time & links…** | Session length, semantic links and other time settings — see [Time context](time.md)                          |
+| **AI…**           | Chat provider, Ollama address and models — see [Setting up local AI](ai-setup.md) (greyed out while checking) |
 
 The same dialogs also open from the **Settings** buttons in the graph and timeline toolbars and in the AI tab.
 

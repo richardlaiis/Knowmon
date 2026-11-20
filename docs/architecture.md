@@ -91,6 +91,17 @@
 - Renderer：右側面板新增「AI」分頁（狀態、總結），側欄底部顯示狀態；搜尋面板有 Keyword / Hybrid 切換（`knowmon.search.mode`），Hybrid 按 Enter 才查詢，結果點擊後捲到最相關的段落。背景 embedding 結束時（busy → false）遞增 `indexVersion`，讓圖譜取得新的 semantic 邊。
 - 圖譜邊類型偏好的儲存格式改為「`a,-b`」（記錄開與關）；舊格式沒有提到的新類型（semantic）預設開啟。
 
+### 雲端對話服務（2026-11-20）
+
+計畫與決定見 `docs/plans/cloud-providers.md`。使用者決定：Ollama 仍是預設，雲端需主動選擇並勾選確認（筆記內容會送到服務商）；雲端**只負責對話**（總結、問答、Agent），embedding 一律走 Ollama；第一版支援 OpenAI、Gemini（OpenAI 相容端點）、自訂 OpenAI 相容 API，不含 Claude；不新增相依套件。
+
+- `openai.ts`：`createOpenAiCompatible` 只用內建 `fetch`，實作 `ChatClient`（`ollama.ts`，`OllamaClient` 繼承它再加 `version`、`embed`）。SSE 解析、工具呼叫的 `arguments` 依 `index` 累積字串片段、結束時才解析。內部訊息格式維持 Ollama 風格，送出時轉換（`toOpenAiMessages`）。錯誤沿用同一個類別（改名 `LlmError`，`OllamaError` 保留為別名），新增 `auth`（401/403）與 `rate`（429）。推理模型不接受 `temperature` 時不帶參數重送（比照 `think`）。`models()` 去掉 Gemini 的 `models/` 前綴並過濾非對話模型，只當作建議清單。
+- 工具呼叫的 `id` 與 `extra`（服務商要求原樣帶回的資料，例如 Gemini 3 的 thought signature，在 OpenAI 相容端點是 `extra_content`）存在 `ToolCall`，`loop.ts` 寫入 assistant 訊息、tool 訊息帶 `tool_call_id`；Ollama client 送出前去掉（`toOllamaMessage`，結果固定，不影響 prompt 快取）。沒有 id 的服務依位置產生固定 id。
+- API key 不放在 `LlmSettings`（設定會送到 renderer）：`secrets.ts` 以 Electron `safeStorage` 加密後存在 `settings.json` 的 `llmKeys`，第一次用到時才載入（要在 app ready 之後）。Linux 的 `basic_text`（沒有 keyring）時仍存檔但 `keyEncrypted = false`，對話框提醒；完全無法加密時只留在記憶體。解密失敗視為沒有 key。IPC `llm.setApiKey` 只能寫入，key 只允許可見 ASCII、最長 500 字（會放進 header）。自訂位址只允許 https 或 loopback 的 http，避免 key 以明文送到別台機器。
+- `LlmService` 的狀態分成 Ollama（`ollamaOnline`，embedding 與查詢向量用）與雲端（`checkCloud`，以 `models()` 檢查 key 與連線，逾時 5 秒）。`LlmStatus.online` 意義改為「目前的對話服務可用」；雲端模式下 Ollama 的問題放在 `embedError`（提示，不擋對話），也不再要求下載 Ollama 的對話模型。key 錯誤不重試；連不上、逾時每 30 秒重試；其他錯誤（例如服務沒有 `/models`）視為可用、沒有模型清單。檢查途中設定改變時以遞增的序號丟掉舊結果。`num_ctx` 只帶給 Ollama。Agent 的字數預算仍是為 CPU 上的 Ollama 調的，第一版不依服務放寬。
+- Renderer：AI 設定最上面選 Chat provider；雲端時顯示 API key（password 欄，已存時只顯示「Saved」，可 Remove）、Model（`datalist`，清單只屬於已儲存的服務）、Custom 的 API address；換到雲端服務時必須勾確認才能存。輸入 key 但還沒選模型時存檔後對話框不關閉，讓使用者從剛載入的清單挑。狀態列顯示「AI ready · OpenAI」；Ollama 離線時不顯示 Indexing。
+- 實測（Ollama 的 `/v1` 端點當 custom、qwen3.5:2b）：串流、列模型、Agent 兩步工具呼叫（id 往返）都正常。思考模型在 OpenAI 相容端點把思考放在 `delta.reasoning`，client 不顯示；2B 模型偶爾整個最後一輪都在思考、回答是空的（與 Ollama 模式相同的模型行為）。
+
 ## 問答（階段 6）
 
 計畫與決定見 `docs/plans/phase6-rag.md`。
