@@ -1320,6 +1320,67 @@ body.resizing canvas {
   font-size: 0.88em;
 }
 
+/* 數學式（KaTeX，editor/math.ts、mathRender.ts） */
+.cm-editor .cm-lp-math-block,
+.cm-editor .cm-lp-math-preview {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.cm-editor .cm-lp-math-block .katex-display,
+.cm-editor .cm-lp-math-preview .katex-display {
+  margin: 0.4em 0;
+}
+
+/* 游標在 $$ 區塊裡時，原始碼下方的預覽 */
+.cm-editor .cm-lp-math-preview {
+  margin: 2px 0 4px;
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+
+/* 引用或清單裡的 $$ 區塊：保留前面的 > 與縮排 */
+.cm-editor .cm-lp-math-nested {
+  display: inline-block;
+  max-width: 100%;
+  /* KaTeX 的字形會超出量好的寬度 1–2px，留空間才不會出現捲軸 */
+  padding: 0 4px;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+
+.cm-editor .cm-lp-math-nested .katex-display {
+  margin: 0.2em 0;
+}
+
+/* 段落與表格裡的 $$x$$（編輯器與 AI 回答）：顯示樣式但不換行 */
+.cm-editor .cm-lp-math-inline .katex-display,
+.cm-editor .cm-lp-table .katex-display,
+.md-math .katex-display {
+  display: inline-block;
+  margin: 0;
+}
+
+.md-math-block {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 0 8px;
+}
+
+.md-math-block .katex-display {
+  margin: 0.3em 0;
+}
+
+/* TeX 有錯：顯示原文，滑鼠移上去看錯誤訊息 */
+.math-error {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  white-space: pre-wrap;
+}
+
 /* frontmatter：維持原文、不套用標題等樣式 */
 .cm-editor .cm-line.cm-lp-frontmatter {
   font-family: var(--font-mono);

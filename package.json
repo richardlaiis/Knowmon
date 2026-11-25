@@ -39,6 +39,7 @@
     "cytoscape": "^3.34.3",
     "d3-force": "^3.0.0",
     "gray-matter": "^4.0.3",
+    "katex": "^0.19.1",
     "sqlite-vec": "^0.1.9"
   },
   "devDependencies": {

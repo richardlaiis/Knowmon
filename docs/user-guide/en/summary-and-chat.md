@@ -18,7 +18,7 @@ Condense a long note into its key points.
 
 ### What you get
 
-- Bullet points, with formatting like bold, lists, and code rendered.
+- Bullet points, with formatting like bold, lists, code and math rendered.
 - **`[[links]]` from the original note are kept** and clickable (`Ctrl`+click opens a new tab). The AI can't invent links that weren't in the note.
 - Very long notes (over about 12,000 characters) are summarized in parts and then combined, so they take longer.
 
@@ -119,6 +119,7 @@ Click **Copy** under an answer and paste it into a note. Citation numbers become
 ### Also
 
 - **Stop** halts an answer partway.
+- Math in answers is rendered, whether the AI writes `$…$` / `$$…$$` or `\(…\)` / `\[…\]`.
 - Conversations live only in memory and are cleared when you quit or switch vaults.
 - `Enter` pressed while composing with an input method (IME) doesn't send.
 

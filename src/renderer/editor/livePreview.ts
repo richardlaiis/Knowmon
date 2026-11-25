@@ -22,6 +22,8 @@ import { tags as t } from '@lezer/highlight'
 import type { SyntaxNode } from '@lezer/common'
 import { resolveImageSrc } from '../../shared/assets'
 import { ImageWidget, notePath } from './images'
+import { MathWidget, blockMath } from './math'
+import { mathMarkdown, mathSource } from './mathSyntax'
 import { WIKILINK, frontmatterEnd, splitWikilink } from './syntax'
 import { renderedTables, tables } from './tables'
 
@@ -43,14 +45,18 @@ export function findCodeLanguage(info: string): LanguageDescription | null {
 /** Markdown 語言支援（GFM：表格、刪除線、待辦清單）與語法顏色，原始碼模式也會用到 */
 export function markdownSupport(): Extension {
   return [
-    markdown({ base: markdownLanguage, codeLanguages: findCodeLanguage }),
+    markdown({
+      base: markdownLanguage,
+      codeLanguages: findCodeLanguage,
+      extensions: [mathMarkdown()]
+    }),
     syntaxHighlighting(markdownHighlight)
   ]
 }
 
 /** 即時渲染（可用 Compartment 開關） */
 export function livePreview(): Extension {
-  return [livePreviewPlugin, tables()]
+  return [livePreviewPlugin, tables(), blockMath()]
 }
 
 const markdownHighlight = HighlightStyle.define([
@@ -82,7 +88,15 @@ const markdownHighlight = HighlightStyle.define([
 
 // ---- 純函式：計算裝飾 ----
 
-const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText'])
+/** 這些節點裡不顯示 wikilink（程式碼；數學式整段渲染） */
+const NO_WIKILINK = new Set([
+  'InlineCode',
+  'FencedCode',
+  'CodeBlock',
+  'CodeText',
+  'InlineMath',
+  'BlockMath'
+])
 
 /** 計算 [from, to] 範圍內的即時渲染裝飾 */
 export function buildDecorations(
@@ -142,7 +156,7 @@ export function buildDecorations(
     if (a < fmEnd || inTable(a)) continue
     let inCode = false
     for (let n: SyntaxNode | null = tree.resolveInner(a + 2, 1); n; n = n.parent) {
-      if (CODE_NODES.has(n.name)) inCode = true
+      if (NO_WIKILINK.has(n.name)) inCode = true
     }
     if (inCode) continue
     const { target, textStart } = splitWikilink(m[1])
@@ -232,6 +246,20 @@ export function buildDecorations(
           }
           return false
         }
+        case 'InlineMath': {
+          // $x$：游標不在上面時整段換成公式，在上面時顯示原始語法
+          if (!touches(ref.from, ref.to)) {
+            const src = mathSource(node, (a, b) => doc.sliceString(a, b))
+            if (src.tex) {
+              const widget = new MathWidget(src.tex, src.display)
+              decos.push(Decoration.replace({ widget }).range(ref.from, ref.to))
+            }
+          }
+          return false
+        }
+        case 'BlockMath':
+          // $$ 區塊由 math.ts 的 StateField 處理
+          return false
         case 'QuoteMark':
           if (!lineTouched(ref.from)) hideWithSpace(ref.from, ref.to)
           return

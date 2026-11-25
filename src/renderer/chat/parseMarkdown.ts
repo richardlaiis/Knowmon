@@ -5,6 +5,7 @@ import type { MarkdownConfig, MarkdownParser } from '@lezer/markdown'
 import type { SyntaxNode } from '@lezer/common'
 import { wikilinkTarget } from '../../shared/links'
 import { isOpenableUrl } from '../editor/livePreview'
+import { mathMarkdown, mathSource } from '../editor/mathSyntax'
 
 export type MdInline =
   | { t: 'text'; text: string }
@@ -14,6 +15,8 @@ export type MdInline =
   | { t: 'link'; href: string; children: MdInline[] }
   /** 問答的引用編號 [n]（parseMarkdown 的 citations 選項開啟時） */
   | { t: 'cite'; n: number }
+  /** $…$、\(…\)；display 為 $$…$$ 或 \[…\] */
+  | { t: 'math'; tex: string; display: boolean }
 
 export type MdBlock =
   | { t: 'p'; children: MdInline[] }
@@ -22,6 +25,8 @@ export type MdBlock =
   | { t: 'code'; text: string }
   | { t: 'quote'; children: MdBlock[] }
   | { t: 'hr' }
+  /** $$ … $$ 或 \[ … \] 區塊 */
+  | { t: 'math'; tex: string }
 
 const WikiLink: MarkdownConfig = {
   defineNodes: ['WikiLink'],
@@ -55,8 +60,10 @@ const Citation: MarkdownConfig = {
 }
 
 const base = markdownLanguage.parser as MarkdownParser
-const parser = base.configure([WikiLink])
-const citationParser = base.configure([WikiLink, Citation])
+// 模型常寫 \( \) 與 \[ \]，所以回答裡也接受（筆記裡只有 $ 與 $$）
+const math = mathMarkdown({ brackets: true })
+const parser = base.configure([WikiLink, math])
+const citationParser = base.configure([WikiLink, Citation, math])
 
 /** 不輸出內容的語法標記 */
 const MARKS = new Set([
@@ -147,6 +154,12 @@ export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] 
         case 'Citation':
           out.push({ t: 'cite', n: Number(slice(c.from + 1, c.to - 1)) })
           break
+        case 'InlineMath': {
+          const m = mathSource(c, slice)
+          if (m.tex) out.push({ t: 'math', tex: m.tex, display: m.display })
+          else push(slice(c.from, c.to))
+          break
+        }
         case 'Escape':
           push(slice(c.from + 1, c.to))
           break
@@ -204,6 +217,16 @@ export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] 
         case 'HorizontalRule':
           out.push({ t: 'hr' })
           break
+        case 'BlockMath': {
+          // 還沒收尾（串流中）或空的區塊顯示原文
+          const m = mathSource(c, slice)
+          if (m.closed && m.tex) out.push({ t: 'math', tex: m.tex })
+          else {
+            const raw = slice(c.from, c.to).trim()
+            if (raw) out.push({ t: 'p', children: [{ t: 'text', text: raw }] })
+          }
+          break
+        }
         default: {
           // 表格、HTML 等：顯示原文
           const raw = slice(c.from, c.to).trim()

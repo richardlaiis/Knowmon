@@ -73,6 +73,7 @@ Press `Ctrl+E` or the **Live preview / Source** button at the top right to switc
 | Image           | `![caption](attachments/pic.png)`  | See "Images" below                   |
 | Frontmatter     | A `---` block at the top           | See [Properties](properties.md)      |
 | Table           | `\| col \| col \|` + separator row | See "Tables" below                   |
+| Math            | `$x^2$`, `$$ … $$`                 | See "Math" below                     |
 
 HTML is shown as plain text, not rendered.
 
@@ -89,6 +90,24 @@ GFM tables are supported. The second line is the separator row; use `:` to set a
 When the cursor is outside the table, it's shown as a table, with bold, code, links and wikilinks rendered inside cells; wide tables scroll sideways. Click a cell (or move into the table with the arrow keys) and the whole table turns back into Markdown with the cursor in that cell, so you edit the raw text. `Ctrl`+click a link or wikilink in a table to open it.
 
 To use `|` inside a cell, write `\|`. This includes a wikilink's display text: `[[Note\|shown text]]`. Tables inside quotes (`>`) or lists are not rendered.
+
+### Math
+
+LaTeX math is rendered with KaTeX.
+
+```markdown
+Inline: $E = mc^2$
+
+$$
+\int_0^1 x^2 \, dx = \frac{1}{3}
+$$
+```
+
+- **Inline** math goes between single dollar signs. To keep prices as text, the opening `$` can't be followed by a space, and the next `$` closes it only if it isn't preceded by a space or followed by a digit, so `It costs $5 and $10` isn't math. Write `\$` for a literal dollar sign.
+- A **block** starts with a line beginning with `$$` and ends at the next line ending with `$$`. `$$ x^2 $$` on its own line is a one-line block. A block can't contain blank lines; if it isn't closed before one, it's shown as text.
+- Like other elements, math shows its source while the cursor is on it. Inside a block, a preview of the formula appears below the source while you edit.
+- Math works in headings, lists, quotes and table cells (in a table, write `|` as `\|`, and use `\Vert` for ‖). It isn't rendered in code or in source mode (`Ctrl+E`).
+- If the TeX has an error, it's shown in red; hover over it to see the message.
 
 ### Code blocks
 

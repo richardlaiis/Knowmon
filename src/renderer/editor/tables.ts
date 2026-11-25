@@ -8,6 +8,8 @@ import { syntaxTree } from '@codemirror/language'
 import { type EditorState, type Extension, type Range, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
+import { renderMath } from './mathRender'
+import { mathSource } from './mathSyntax'
 import { WIKILINK, frontmatterEnd, splitWikilink } from './syntax'
 
 export type Align = 'left' | 'center' | 'right' | null
@@ -23,6 +25,8 @@ export interface CellSpan {
   url?: string
   /** wikilink 目標 */
   target?: string
+  /** 數學式（text 是 TeX）；display 為 $$…$$ */
+  math?: 'inline' | 'display'
 }
 
 export interface TableCell {
@@ -123,6 +127,15 @@ function cellSpans(
         const code = doc.sliceString(marks[0].to, marks[marks.length - 1].from)
         return emit(code.replace(/\\\|/g, '|'), { ...style, code: true })
       }
+      case 'InlineMath': {
+        // 和程式碼一樣，格子裡的 \| 還原成 |
+        const src = mathSource(n, (a, b) => doc.sliceString(a, b))
+        if (!src.tex) return raw()
+        return emit(src.tex.replace(/\\\|/g, '|'), {
+          ...style,
+          math: src.display ? 'display' : 'inline'
+        })
+      }
       case 'Escape':
         return emit(doc.sliceString(n.from + 1, n.to), style)
       case 'Link': {
@@ -160,20 +173,24 @@ function cellSpans(
   }
   const text = pieces.map((p) => p.text).join('')
   const out: CellSpan[] = []
+  // 同一段（同一個 style 物件）的字元一定合併；數學式之間不合併（相鄰的 $a$$b$ 是兩個公式）
+  let lastStyle: Style | null = null
   const push = (s: string, style: Style): void => {
     if (!s) return
     const last = out[out.length - 1]
-    if (last && sameStyle(last, style)) last.text += s
+    if (last && (style === lastStyle || sameStyle(last, style))) last.text += s
     else out.push({ text: s, ...style })
+    lastStyle = style
   }
   let pos = 0
   for (const m of text.matchAll(WIKILINK)) {
     const a = m.index!
     const b = a + m[0].length
-    if (chars.slice(a, b).some((s) => s.code)) continue
+    if (chars.slice(a, b).some((s) => s.code || s.math)) continue
     for (let i = pos; i < a; i++) push(text[i], chars[i])
     const { target, textStart } = splitWikilink(m[1])
     out.push({ text: m[1].slice(textStart), ...chars[a], url: undefined, target })
+    lastStyle = null
     pos = b
   }
   for (let i = pos; i < text.length; i++) push(text[i], chars[i])
@@ -184,6 +201,8 @@ function sameStyle(a: Style, b: Style): boolean {
   return (
     !a.target &&
     !b.target &&
+    !a.math &&
+    !b.math &&
     !!a.bold === !!b.bold &&
     !!a.italic === !!b.italic &&
     !!a.strike === !!b.strike &&
@@ -261,7 +280,7 @@ export function parseTable(state: EditorState, table: SyntaxNode): TableModel {
 // ---- Widget ----
 
 function spanDOM(s: CellSpan): Node {
-  let el: Node = document.createTextNode(s.text)
+  let el: Node = s.math ? renderMath(s.text, s.math === 'display') : document.createTextNode(s.text)
   const wrap = (tag: string, cls?: string): HTMLElement => {
     const e = document.createElement(tag)
     if (cls) e.className = cls

@@ -166,6 +166,7 @@ notes_fts USING fts5(title, body, tokenize='trigram')
 
 - [x] Linux 試打包：deb 與 AppImage 可安裝，打包版的向量功能（sqlite-vec）正常、設定沿用開發版（2026-10-20）
 - [x] 表格即時渲染：游標不在表格時顯示成表格，進入時顯示原始碼（2026-11-11，見 `docs/plans/table-rendering.md`）
+- [x] LaTeX math rendering (KaTeX): `$…$` and `$$…$$` in the editor and table cells, also `\(…\)` / `\[…\]` in AI replies (2026-11-25, see `docs/plans/latex-rendering.md`)
 - [x] Logo 與介面圖示：正式應用程式圖示（取代 Electron 預設）、歡迎頁與空白頁、側欄／分頁／檔案樹圖示（2026-11-13，見 `docs/plans/ui-logo-icons.md`）
 - [x] 雲端對話模型：OpenAI、Gemini、OpenAI 相容 API（只負責對話，embedding 仍走 Ollama；見 `docs/plans/cloud-providers.md`）
 - [ ] 設定頁：整合時間與 Semantic 參數、AI 設定、主題與介面偏好

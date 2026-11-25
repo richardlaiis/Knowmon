@@ -1,6 +1,7 @@
 // 以 React 元素渲染 parseMarkdown 的結果；wikilink 可點擊開啟筆記，問答的 [n] 可點擊開啟來源
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import type { AskSource } from '../../shared/types'
+import { renderMath } from '../editor/mathRender'
 import { parseMarkdown, type MdBlock, type MdInline } from './parseMarkdown'
 
 export interface MarkdownProps {
@@ -12,6 +13,27 @@ export interface MarkdownProps {
     sources: AskSource[]
     onOpen: (source: AskSource, newTab: boolean) => void
   }
+}
+
+/** KaTeX 產生的 DOM 節點放進 ref（不經過 HTML 字串） */
+function TexMath({
+  tex,
+  display,
+  block
+}: {
+  tex: string
+  display: boolean
+  block?: boolean
+}): React.JSX.Element {
+  const ref = useRef<HTMLDivElement & HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    ref.current?.replaceChildren(renderMath(tex, display))
+  }, [tex, display])
+  return block ? (
+    <div ref={ref} className="md-math-block" />
+  ) : (
+    <span ref={ref} className="md-math" />
+  )
 }
 
 export function Markdown({
@@ -45,6 +67,8 @@ export function Markdown({
               {inline(n.children)}
             </a>
           )
+        case 'math':
+          return <TexMath key={i} tex={n.tex} display={n.display} />
         case 'cite': {
           const source = citations?.sources.find((s) => s.n === n.n)
           if (!source) return `[${n.n}]`
@@ -106,6 +130,8 @@ export function Markdown({
           return <blockquote key={i}>{blocks(b.children)}</blockquote>
         case 'hr':
           return <hr key={i} />
+        case 'math':
+          return <TexMath key={i} tex={b.tex} display block />
       }
     })
 

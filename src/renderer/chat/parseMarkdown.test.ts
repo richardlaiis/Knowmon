@@ -100,6 +100,49 @@ describe('parseMarkdown', () => {
     ])
   })
 
+  it('數學式：$…$、$$…$$、\\(…\\)、\\[…\\]；金額不算', () => {
+    expect(
+      parseMarkdown('質能 $E=mc^2$，總和 $$\\sum x$$ 與 \\(a\\)、\\[b\\]；花了 $5 和 $10')
+    ).toEqual([
+      {
+        t: 'p',
+        children: [
+          { t: 'text', text: '質能 ' },
+          { t: 'math', tex: 'E=mc^2', display: false },
+          { t: 'text', text: '，總和 ' },
+          { t: 'math', tex: '\\sum x', display: true },
+          { t: 'text', text: ' 與 ' },
+          { t: 'math', tex: 'a', display: false },
+          { t: 'text', text: '、' },
+          { t: 'math', tex: 'b', display: true },
+          { t: 'text', text: '；花了 $5 和 $10' }
+        ]
+      }
+    ])
+    expect(parseMarkdown('`$x$` \\$y$')).toEqual([
+      {
+        t: 'p',
+        children: [
+          { t: 'code', text: '$x$' },
+          { t: 'text', text: ' $y$' }
+        ]
+      }
+    ])
+  })
+
+  it('數學區塊：$$ 與 \\[，引用裡的也可以；串流中沒收尾的顯示原文', () => {
+    expect(parseMarkdown('公式：\n$$\na^2\n$$\n\n\\[\nb\n\\]\n\n> $$ c $$')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: '公式：' }] },
+      { t: 'math', tex: 'a^2' },
+      { t: 'math', tex: 'b' },
+      { t: 'quote', children: [{ t: 'math', tex: 'c' }] }
+    ])
+    expect(parseMarkdown('結果是\n\n$$\n\\frac{1}{')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: '結果是' }] },
+      { t: 'p', children: [{ t: 'text', text: '$$\n\\frac{1}{' }] }
+    ])
+  })
+
   it('段落內換行變成空白，HTML 以原文顯示', () => {
     expect(parseMarkdown('第一行\n第二行 <b>x</b>')).toEqual([
       {

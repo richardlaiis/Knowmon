@@ -119,6 +119,21 @@ describe('parseTable', () => {
     expect(m.rows[1][0].spans).toEqual([{ text: '[[x]]', code: true }])
   })
 
+  it('數學式成為 math span（\\| 還原成 |），相鄰的公式不合併、裡面的 [[ ]] 不算連結', () => {
+    const m = modelOf('| a |\n|---|\n| 長度 $\\|v\\|$ 與 $$x$$ |\n| $a$$b$ |\n| $[[x]]$ |\n\n‸')
+    expect(m.rows[0][0].spans).toEqual([
+      { text: '長度 ' },
+      { text: '|v|', math: 'inline' },
+      { text: ' 與 ' },
+      { text: 'x', math: 'display' }
+    ])
+    expect(m.rows[1][0].spans).toEqual([
+      { text: 'a', math: 'inline' },
+      { text: 'b', math: 'inline' }
+    ])
+    expect(m.rows[2][0].spans).toEqual([{ text: '[[x]]', math: 'inline' }])
+  })
+
   it('格子的位置相對於表格第一行的行首', () => {
     const src = '前言\n\n| a | bb |\n|---|---|\n| x |  |\n\n‸'
     const m = modelOf(src)
