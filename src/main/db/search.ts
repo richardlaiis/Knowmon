@@ -1,11 +1,11 @@
-// 全文搜尋（FTS5 trigram）。trigram 只能比對 3 字以上，較短的詞（常見的 2 字中文詞）改用 LIKE。
+// Full-text search (FTS5 trigram). trigram only matches terms of 3+ characters, so shorter ones (common 2-character Chinese words) use LIKE.
 import type { SearchHit } from '../../shared/types'
 import type { DB } from '.'
 import { clip, findAll, toSegments, type Range } from './segments'
 
 const SNIPPET_MAX = 160
 
-/** 依空白切詞，去掉重複（不分大小寫） */
+/** Splits on whitespace and removes duplicates (case-insensitive) */
 export function searchTerms(query: string): string[] {
   const seen = new Set<string>()
   return query
@@ -23,7 +23,7 @@ const isLong = (t: string): boolean => [...t].length >= 3
 const likePattern = (t: string): string => '%' + t.replace(/[\\%_]/g, (c) => '\\' + c) + '%'
 const quote = (t: string): string => '"' + t.replace(/"/g, '""') + '"'
 
-/** 所有詞都要出現（AND）。標題包含所有詞的排前面，其次依 bm25 或最近修改時間。 */
+/** Every term must appear (AND). Notes whose titles contain every term come first, then by bm25 or most recent modification. */
 export function searchNotes(db: DB, query: string, limit = 50): SearchHit[] {
   const terms = searchTerms(query)
   if (terms.length === 0) return []
@@ -60,7 +60,7 @@ export function searchNotes(db: DB, query: string, limit = 50): SearchHit[] {
   return rows.map((r) => ({ path: r.path, title: r.title, snippet: snippet(r.body, terms) }))
 }
 
-/** 擷取第一個命中位置附近的文字；內文沒有命中（只有標題命中）時取開頭 */
+/** Extracts the text around the first match; when the body has no match (only the title does), takes the start */
 export function snippet(body: string, terms: readonly string[]): SearchHit['snippet'] {
   const text = body.trim()
   const ranges: Range[] = terms.flatMap((t) => findAll(text, t))

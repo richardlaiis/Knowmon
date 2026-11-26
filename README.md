@@ -10,66 +10,65 @@
 </p>
 
 <p align="center">
-  本地優先的 Markdown 筆記：除了連結，也依「什麼時候寫的」把筆記串起來。<br>
-  <a href="docs/user-guide/zh-TW/README.md">使用說明</a> ·
-  <a href="docs/user-guide/en/README.md">English guide</a> ·
-  <a href="#快速開始">快速開始</a>
+  Local-first Markdown notes that are linked not only by what they reference, but also by when they were written.<br>
+  <a href="docs/user-guide/en/README.md">User guide</a> ·
+  <a href="#quick-start">Quick start</a>
 </p>
 
-類 Obsidian 的本地 Markdown 筆記軟體，多了兩個特色：
+An Obsidian-style local Markdown note-taking app with two extra features:
 
-- **時間脈絡連結**：除了 `[[wikilink]]`，也會依「同一段時間寫的」「同一天的事」「同資料夾的前後篇」自動連結筆記。
-- **本地 AI**：透過 [Ollama](https://ollama.com) 總結筆記、向筆記提問、交給 Agent 整理。內容不離開你的電腦；沒有 Ollama 時其他功能照常。
+- **Time-context links**: besides `[[wikilink]]`s, notes are linked automatically when they were written in the same session, are about the same day, or are consecutive notes in the same folder.
+- **Local AI**: use [Ollama](https://ollama.com) to summarize notes, ask questions about them, or hand tasks to the Agent. By default your notes never leave your computer, and everything else works without Ollama.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/screenshot-dark.png">
-  <img src="docs/images/screenshot-light.png" alt="Knowmon：檔案樹、編輯器與局部圖譜">
+  <img src="docs/images/screenshot-light.png" alt="Knowmon: file tree, editor and local graph">
 </picture>
 
-## 快速開始
+## Quick start
 
-**一般使用者**：到 [Releases](https://github.com/richardlaiis/Knowmon/releases) 下載安裝檔（Linux：deb／rpm／AppImage；Windows 與 macOS 為實驗性），各平台的安裝方式見[安裝說明](docs/user-guide/zh-TW/installation.md#下載安裝檔)（[English](docs/user-guide/en/installation.md#download-an-installer)）。AI 功能另需 [Ollama](https://ollama.com) 與 `ollama pull bge-m3`、`ollama pull qwen3:8b`。
+**Users**: download an installer from [Releases](https://github.com/richardlaiis/Knowmon/releases) (Linux: deb, rpm or AppImage; Windows and macOS are experimental). See the [installation guide](docs/user-guide/en/installation.md#download-an-installer) for each platform. The AI features also need [Ollama](https://ollama.com) plus `ollama pull bge-m3` and `ollama pull qwen3:8b`.
 
-**開發者**：從原始碼執行，需要 Node.js 22 以上。
+**Developers**: run from source. Requires Node.js 22 or later.
 
 ```bash
 npm install
 npm run dev
 ```
 
-**Linux 第一次執行前**要設定 Electron sandbox，否則 App 會閃退（重新安裝 `node_modules` 後要再做一次）：
+**On Linux, before the first run**, set up the Electron sandbox or the app will crash on startup (repeat this after reinstalling `node_modules`):
 
 ```bash
 sudo chown root:root node_modules/electron/dist/chrome-sandbox
 sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 ```
 
-啟動後按「Open folder」選一個資料夾作為 vault，可以先用 `cp -r test-vault ~/knowmon-test-vault` 試用。其他安裝問題（`Electron failed to install correctly`、終端機警告訊息等）見[安裝說明](docs/user-guide/zh-TW/installation.md#安裝時的常見問題)。
+Once it starts, click "Open folder" and choose a folder to use as the vault. To try it out, use `cp -r test-vault ~/knowmon-test-vault`. For other installation problems (`Electron failed to install correctly`, warnings in the terminal, and so on), see the [installation guide](docs/user-guide/en/installation.md#installation-troubleshooting).
 
-## 常用指令
+## Common commands
 
-| 指令                         | 用途                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `npm run dev`                | 開發模式（renderer 熱更新）                                            |
-| `npm start`                  | 建置後執行正式版本（加 `-- --skipBuild` 直接執行上次建置的 out/）      |
-| `npx vitest run`             | 單元與整合測試                                                         |
-| `npm run typecheck`          | 型別檢查（不要用 `npx tsc --noEmit`，它不會檢查任何檔案）              |
-| `npm run lint`               | ESLint + Prettier                                                      |
-| `npm run build:linux`        | 產生 `dist/` 下的 AppImage、deb 與 rpm（Windows / macOS 需在各自平台） |
-| `node scripts/gen-icons.mjs` | 改了 `build/icon.svg`（Logo）後重新產生各平台圖示（需要 ImageMagick）  |
+| Command                      | Purpose                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `npm run dev`                | Development mode (hot reload for the renderer)                                            |
+| `npm start`                  | Build and run the production version (add `-- --skipBuild` to run the last build in out/) |
+| `npx vitest run`             | Unit and integration tests                                                                |
+| `npm run typecheck`          | Type check (don't use `npx tsc --noEmit`: it checks no files)                             |
+| `npm run lint`               | ESLint + Prettier                                                                         |
+| `npm run build:linux`        | Build the AppImage, deb and rpm in `dist/` (Windows and macOS must build on their own OS) |
+| `node scripts/gen-icons.mjs` | Regenerate the platform icons after changing `build/icon.svg` (needs ImageMagick)         |
 
-## 文件
+## Documentation
 
-| 想知道…                              | 看這裡                                          |
-| ------------------------------------ | ----------------------------------------------- |
-| 怎麼使用（功能、快捷鍵、資料存哪裡） | [`docs/user-guide/`](docs/user-guide/README.md) |
-| 怎麼測試（自動測試、手動測試清單）   | [`docs/testing.md`](docs/testing.md)            |
-| 專案目標、技術選型、進度與下一步     | [`docs/roadmap.md`](docs/roadmap.md)            |
-| 已做出的設計決定與實作細節           | [`docs/architecture.md`](docs/architecture.md)  |
-| 時間層的概念與規則                   | [`docs/time-layer.md`](docs/time-layer.md)      |
-| 各階段的實作計畫與實測紀錄           | [`docs/plans/`](docs/plans/)                    |
-| 怎麼發布新版本（CI、打包、Release）  | [`docs/releasing.md`](docs/releasing.md)        |
+| To learn about…                                    | See                                             |
+| -------------------------------------------------- | ----------------------------------------------- |
+| Using Knowmon (features, shortcuts, where data is) | [`docs/user-guide/`](docs/user-guide/README.md) |
+| Testing (automated tests, manual checklist)        | [`docs/testing.md`](docs/testing.md)            |
+| Goals, technology choices, progress and next steps | [`docs/roadmap.md`](docs/roadmap.md)            |
+| Design decisions and implementation details        | [`docs/architecture.md`](docs/architecture.md)  |
+| Concepts and rules of the time layer               | [`docs/time-layer.md`](docs/time-layer.md)      |
+| Implementation plans and test notes for each phase | [`docs/plans/`](docs/plans/)                    |
+| Releasing a new version (CI, packaging, Release)   | [`docs/releasing.md`](docs/releasing.md)        |
 
-## 授權
+## License
 
 [MIT](LICENSE)

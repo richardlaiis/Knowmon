@@ -1,4 +1,4 @@
-// 右側面板的 AI 分頁：對話服務（Ollama 或雲端）的連線與 embedding 進度，下面切換對話（問答）、agent 與目前筆記的總結
+// The AI tab in the right panel: the chat provider's (Ollama or cloud) connection and embedding progress, with a switch below between chat (Q&A), the agent and a summary of the current note
 import { useState } from 'react'
 import { PROVIDER_LABELS, activeChatModel } from '../../shared/llm'
 import type { LlmStatus, SummaryLanguage } from '../../shared/types'
@@ -16,9 +16,9 @@ export interface AiPanelProps {
   onModeChange: (mode: AiMode) => void
   chat: Omit<ChatPanelProps, 'online'>
   agent: Omit<AgentPanelProps, 'online'>
-  /** agent 有寫入提案在等待確認（模式按鈕上顯示提醒點） */
+  /** The agent has a write proposal waiting for confirmation (shows a dot on the mode button) */
   agentWaiting: boolean
-  /** 目前開著的筆記；沒有時只顯示狀態 */
+  /** The currently open note; only the status is shown when there is none */
   note: string | null
   summary: SummaryState | null
   language: SummaryLanguage

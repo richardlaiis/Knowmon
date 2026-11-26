@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { EventsLog, movedPath, replay } from './events-log'
 
 describe('EventsLog', () => {
-  it('append 後可讀回，略過損毀的行', () => {
+  it('reads back what was appended, skipping corrupt lines', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowmon-log-'))
     try {
       const log = new EventsLog(path.join(dir, 'events.jsonl'))
@@ -24,7 +24,7 @@ describe('EventsLog', () => {
 })
 
 describe('replay', () => {
-  it('rename 搬移歷程、delete 清除歷程', () => {
+  it('rename moves history and delete clears it', () => {
     const result = replay([
       { ts: 1, kind: 'create', path: 'a.md' },
       { ts: 2, kind: 'edit', path: 'a.md' },
@@ -44,20 +44,20 @@ describe('replay', () => {
     })
   })
 
-  it('資料夾改名與刪除會影響底下所有筆記', () => {
+  it('renaming and deleting a folder affects every note under it', () => {
     const result = replay([
-      { ts: 1, kind: 'create', path: '專案/a.md' },
-      { ts: 2, kind: 'create', path: '專案/子/b.md' },
-      { ts: 3, kind: 'create', path: '專案外.md' },
-      { ts: 4, op: 'rename', from: '專案', to: '封存/專案' },
-      { ts: 5, op: 'delete', path: '封存/專案/子' }
+      { ts: 1, kind: 'create', path: 'Projects/a.md' },
+      { ts: 2, kind: 'create', path: 'Projects/sub/b.md' },
+      { ts: 3, kind: 'create', path: 'Projects-outside.md' },
+      { ts: 4, op: 'rename', from: 'Projects', to: 'Archive/Projects' },
+      { ts: 5, op: 'delete', path: 'Archive/Projects/sub' }
     ])
-    expect([...result.keys()].sort()).toEqual(['封存/專案/a.md', '專案外.md'])
+    expect([...result.keys()].sort()).toEqual(['Archive/Projects/a.md', 'Projects-outside.md'])
   })
 })
 
 describe('movedPath', () => {
-  it('只比對完整的路徑片段', () => {
+  it('matches only whole path segments', () => {
     expect(movedPath('a/b.md', 'a', 'x')).toBe('x/b.md')
     expect(movedPath('ab/b.md', 'a', 'x')).toBeNull()
     expect(movedPath('a', 'a', 'x')).toBe('x')

@@ -1,4 +1,4 @@
-// AI 分頁的 Agent：任務、執行步驟（可展開）、寫入提案的確認卡片、最終回答
+// The Agent in the AI tab: the task, execution steps (expandable), confirmation cards for write proposals, and the final answer
 import { useEffect, useRef, useState } from 'react'
 import type { AgentDecision, AgentProposal, AgentStep } from '../../shared/types'
 import { wantsNewTab } from '../src/workspace/tabs'
@@ -7,9 +7,9 @@ import { Markdown } from './Markdown'
 
 export interface AgentPanelProps {
   session: AgentSession
-  /** 對話服務可用（Ollama 或雲端） */
+  /** The chat provider is available (Ollama or cloud) */
   online: boolean
-  /** 每次改變時聚焦輸入框（Ctrl/Cmd+Shift+G） */
+  /** Focuses the input whenever it changes (Ctrl/Cmd+Shift+G) */
   focusKey: number
   onRun: (task: string) => void
   onStop: () => void
@@ -20,9 +20,9 @@ export interface AgentPanelProps {
 }
 
 const EXAMPLES = [
-  '上週寫了哪些筆記？各自連到哪些筆記？',
-  '把關於習慣的筆記整理成一篇摘要筆記',
-  '幫這個月的日記加上「回顧」標籤'
+  'Which notes did I write last week, and what does each of them link to?',
+  'Collect my notes about habits into one summary note',
+  'Add the tag "review" to my journal entries from this month'
 ]
 
 export function AgentPanel(props: AgentPanelProps): React.JSX.Element {
@@ -36,7 +36,7 @@ export function AgentPanel(props: AgentPanelProps): React.JSX.Element {
     if (props.focusKey) inputRef.current?.focus()
   }, [props.focusKey])
 
-  // 新的內容出現時捲到底（使用者往上捲去看舊內容時不打擾）
+  // Scroll to the bottom when new content appears (without interrupting a user who scrolled up to read)
   const last = session.tasks[session.tasks.length - 1]
   const size = last
     ? last.items.reduce((n, i) => n + (i.kind === 'text' ? i.text.length : 1), 0)
@@ -98,7 +98,7 @@ export function AgentPanel(props: AgentPanelProps): React.JSX.Element {
           }
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            // 輸入法選字時的 Enter 不送出
+            // Enter during IME composition doesn't send
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               send()
@@ -196,7 +196,7 @@ function StepView({
   onOpenNote
 }: {
   step: AgentStep
-  /** 任務還在執行（停止後的確認卡片不能再操作） */
+  /** The task is still running (confirmation cards can't be used after stopping) */
   active: boolean
   onDecide: (step: AgentStep, decision: AgentDecision) => void
   onOpenNote: (path: string, newTab: boolean) => void
@@ -265,7 +265,7 @@ function NoteList({
   )
 }
 
-/** 寫入提案：可修改後 Apply，或 Reject */
+/** A write proposal: edit it and Apply, or Reject */
 function ProposalCard({
   proposal,
   editable,

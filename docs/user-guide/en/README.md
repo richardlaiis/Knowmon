@@ -1,7 +1,5 @@
 # Knowmon User Guide
 
-> [繁體中文版](../zh-TW/README.md)
-
 Knowmon is a local-first Markdown note-taking app. Your notes are plain `.md` files on your computer; Knowmon links them together, searches them, and draws a map of how they relate. On top of that, it has two things most note apps don't:
 
 - **Time context**: besides the `[[links]]` you write yourself, Knowmon connects notes that you _wrote together_, notes about _the same day_, and _consecutive_ notes in the same folder — automatically.

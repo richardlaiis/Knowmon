@@ -1,5 +1,5 @@
-// 問答對話的狀態（純函式）：送出問題、取得 request id、套用 main 推送的片段。
-// 對話只存在記憶體，換 vault 時清空。
+// Q&A conversation state (pure functions): sending a question, getting the request id, applying chunks pushed by main.
+// Conversations exist only in memory and are cleared when switching vaults.
 import type { AnswerChunk, AskSource, ChatTurn, DateRange } from '../../shared/types'
 
 export interface Question {
@@ -9,18 +9,18 @@ export interface Question {
 
 export interface Answer {
   role: 'assistant'
-  /** main 回傳的 request id；拿到之前為 null */
+  /** The request id returned by main; null until it arrives */
   id: string | null
   text: string
   status: 'searching' | 'running' | 'done' | 'stopped' | 'error'
   error: string | null
   sources: AskSource[]
-  /** 回答中實際引用的編號（完成後才有） */
+  /** Numbers actually cited in the answer (only once finished) */
   cited: number[]
   range: DateRange | null
-  /** false = 這次沒有用到向量 */
+  /** false = no vectors were used this time */
   vector: boolean
-  /** 拿到 id 之前先收到的片段（理論上不會發生，保險起見先存著） */
+  /** Chunks received before the id arrived (shouldn't happen in theory, kept just in case) */
   early: AnswerChunk[]
 }
 
@@ -32,7 +32,7 @@ export interface Conversation {
 
 export const emptyConversation = (): Conversation => ({ entries: [] })
 
-/** 最後一則回答 */
+/** The last answer */
 export function lastAnswer(c: Conversation): Answer | null {
   const e = c.entries[c.entries.length - 1]
   return e?.role === 'assistant' ? e : null
@@ -43,7 +43,7 @@ export function isRunning(c: Conversation): boolean {
   return !!a && (a.status === 'searching' || a.status === 'running')
 }
 
-/** 送給 main 的對話紀錄：只取完成的問答（失敗、停止且沒有內容的不算） */
+/** Conversation history sent to main: only finished Q&A (failed, or stopped without content, don't count) */
 export function chatHistory(c: Conversation): ChatTurn[] {
   const out: ChatTurn[] = []
   for (let i = 0; i + 1 < c.entries.length; i += 2) {
@@ -79,7 +79,7 @@ function updateLast(c: Conversation, f: (a: Answer) => Answer): Conversation {
   return next === a ? c : { entries: [...c.entries.slice(0, -1), next] }
 }
 
-/** 取得 request id，套用之前先收到的片段 */
+/** Takes the request id and applies chunks received before it */
 export function withAnswerId(c: Conversation, id: string): Conversation {
   return updateLast(c, (a) => {
     if (a.id !== null || !isActive(a)) return a
@@ -111,7 +111,7 @@ function applyTo(a: Answer, c: AnswerChunk): Answer {
   return { ...next, status: 'done', cited: c.cited ?? [] }
 }
 
-/** 使用者按下停止：之後到達的片段都忽略 */
+/** The user clicked Stop: ignore every chunk that arrives afterwards */
 export function stopAnswer(c: Conversation): Conversation {
   return updateLast(c, (a) => (isActive(a) ? { ...a, status: 'stopped' } : a))
 }
@@ -120,7 +120,7 @@ export function failAnswer(c: Conversation, error: string): Conversation {
   return updateLast(c, (a) => (isActive(a) ? { ...a, status: 'error', error } : a))
 }
 
-/** 複製用的文字：[n] 換成 [[來源標題]]，貼進筆記仍是有效的連結 */
+/** Text for copying: [n] becomes [[source title]], so it's still a working link when pasted into a note */
 export function answerForCopy(a: Answer): string {
   const titles = new Map(a.sources.map((s) => [s.n, s.title]))
   return a.text
@@ -131,9 +131,9 @@ export function answerForCopy(a: Answer): string {
     .trim()
 }
 
-/** 來源排序：被引用的在前（依編號），其餘的另外列出 */
+/** Source order: cited ones first (by number), the rest listed separately */
 export function splitSources(a: Answer): { cited: AskSource[]; other: AskSource[] } {
-  // 串流中還不知道最後引用了哪些，先從目前的文字找
+  // While streaming the final citations aren't known yet, so look in the current text
   const used = new Set(
     a.status === 'done' ? a.cited : [...a.text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]))
   )
@@ -146,7 +146,7 @@ export function splitSources(a: Answer): { cited: AskSource[]; other: AskSource[
 const MODE_KEY = 'knowmon.ai.mode'
 export type AiMode = 'chat' | 'agent' | 'summary'
 
-/** AI 分頁目前顯示對話、agent 或總結（所有 vault 共用），預設對話 */
+/** Whether the AI tab shows chat, the agent or the summary (shared by all vaults), chat by default */
 export function loadAiMode(): AiMode {
   try {
     const v = localStorage.getItem(MODE_KEY)
@@ -160,6 +160,6 @@ export function saveAiMode(mode: AiMode): void {
   try {
     localStorage.setItem(MODE_KEY, mode)
   } catch {
-    // 無法儲存時只影響下次啟動
+    // If it can't be saved, only the next launch is affected
   }
 }

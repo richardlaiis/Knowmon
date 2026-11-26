@@ -1,26 +1,26 @@
-// semantic 邊：整篇向量（vec_notes）相似度高的筆記相連。和時間邊一樣不做增量，讀取圖譜前整批重算。
+// Semantic edges: notes whose note vectors (vec_notes) are highly similar are linked. Like time edges, not incremental: recomputed in one batch before the graph is read.
 //
-// 1000 篇、1024 維時兩兩比較約 0.5 秒（vec0 逐篇 KNN 約 1.5 秒），所以在 JS 裡算，
-// 每算完幾列就讓出 event loop，main process 的 IPC 不會被卡住。
+// Comparing all pairs at 1000 notes and 1024 dimensions takes about 0.5 seconds (per-note vec0 KNN takes about 1.5 seconds), so it's computed in JS,
+// yielding the event loop every few rows so the main process's IPC isn't blocked.
 import type { SemanticSettings } from '../../shared/types'
 import type { DB } from '.'
 import { listNoteVectors } from './vectors'
 
 export interface SemanticPair {
-  /** vectors 的索引，i < j */
+  /** Indexes into vectors, i < j */
   i: number
   j: number
   similarity: number
 }
 
-/** 每算這麼多個內積就讓出一次 event loop（約 10ms） */
+/** Yield the event loop after this many dot products (about 10ms) */
 const YIELD_EVERY = 20_000_000
 
 const nextTick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
 /**
- * 每篇取相似度最高的 maxPerNote 篇（≥ threshold），兩兩相連的聯集。
- * vectors 必須已正規化（內積 = cosine 相似度）。
+ * The union of each note's maxPerNote most similar notes (≥ threshold), linked pairwise.
+ * vectors must be normalized (dot product = cosine similarity).
  */
 export async function semanticPairs(
   vectors: readonly Float32Array[],
@@ -29,7 +29,7 @@ export async function semanticPairs(
 ): Promise<SemanticPair[]> {
   const n = vectors.length
   const k = settings.semanticMaxPerNote
-  // 每篇目前的前 k 名（相似度由大到小）
+  // Each note's current top k (similarity descending)
   const top: { other: number; sim: number }[][] = Array.from({ length: n }, () => [])
   const offer = (row: number, other: number, sim: number): void => {
     const list = top[row]
@@ -66,7 +66,7 @@ export async function semanticPairs(
   return [...pairs.values()].sort((x, y) => x.i - y.i || x.j - y.j)
 }
 
-/** 以目前的整篇向量重算所有 semantic 邊。無方向：路徑字典序較小者為 src，權重為相似度。 */
+/** Recomputes all semantic edges from the current note vectors. Undirected: the path that sorts first is src, weighted by similarity. */
 export async function rebuildSemanticLinks(
   db: DB,
   settings: SemanticSettings,
@@ -78,7 +78,7 @@ export async function rebuildSemanticLinks(
     settings,
     pause
   )
-  // 計算途中筆記可能被刪除或改名：寫入時以當下的 DB 為準
+  // Notes may be deleted or renamed mid-computation, so writes go by the DB at that moment
   const paths = new Map(
     (db.prepare('SELECT id, path FROM notes').all() as { id: number; path: string }[]).map((r) => [
       r.id,

@@ -9,7 +9,7 @@ import {
   SUMMARY_DIRECT_MAX
 } from './summarize'
 
-/** 回覆是陣列時逐段串流 */
+/** When the reply is an array, stream it piece by piece */
 function fakeChat(replies: (messages: ChatMessage[], i: number) => string | string[]): {
   chat: (m: ChatMessage[], onDelta?: (t: string) => void) => Promise<string>
   calls: ChatMessage[][]
@@ -28,7 +28,7 @@ function fakeChat(replies: (messages: ChatMessage[], i: number) => string | stri
 }
 
 describe('summaryMessages', () => {
-  it('要求繁體中文、條列，附上原文的連結清單，並包含標題與內容', () => {
+  it('asks for Traditional Chinese bullets, with the list of links from the original, the title and the content', () => {
     const [system, user] = summaryMessages(
       'note',
       '讀書會',
@@ -37,7 +37,7 @@ describe('summaryMessages', () => {
     expect(system.role).toBe('system')
     expect(system.content).toContain('繁體中文')
     expect(system.content).toContain('可用連結')
-    // 範例會被小模型原樣抄進總結，提示詞裡不能有 [[...]]
+    // Small models copy examples verbatim into the summary, so the prompt must not contain [[...]]
     expect(system.content).not.toMatch(/\[\[/)
     expect(user.content).toContain('「讀書會」')
     expect(user.content).toContain('內容 [[原子習慣]]')
@@ -46,7 +46,7 @@ describe('summaryMessages', () => {
     expect(summaryMessages('selection', '讀書會', 'x')[1].content).toContain('選取')
   })
 
-  it('英文模式：英文提示詞、保留 wikilink、內容原樣送出', () => {
+  it('English mode: English prompt, wikilinks kept, content sent as is', () => {
     const [system, user] = summaryMessages('note', '讀書會', '內容 [[原子習慣]]', 'en')
     expect(system.content).toContain('in English')
     expect(system.content).not.toMatch(/\[\[/)
@@ -60,7 +60,7 @@ describe('summaryMessages', () => {
 })
 
 describe('summarize', () => {
-  it('短內容直接總結並串流', async () => {
+  it('summarizes short content directly and streams it', async () => {
     const { chat, calls } = fakeChat(() => '- 重點')
     const deltas: string[] = []
     expect(await summarize(chat, 'note', 't', '  內容  ', (d) => deltas.push(d))).toBe('- 重點')
@@ -69,13 +69,13 @@ describe('summarize', () => {
     expect(deltas).toEqual(['- 重點'])
   })
 
-  it('空白內容直接報錯，不呼叫模型', async () => {
+  it('throws for blank content without calling the model', async () => {
     const { chat, calls } = fakeChat(() => '')
     await expect(summarize(chat, 'note', 't', '\n \n', () => {})).rejects.toThrow('empty')
     expect(calls).toHaveLength(0)
   })
 
-  it('過長的內容先分段摘要再合併，只有最後的結果被串流', async () => {
+  it('summarizes overlong content in parts and then combines them, streaming only the final result', async () => {
     const section = (i: number): string => `## 第${i}節\n\n` + '內容。'.repeat(1000)
     const text = [1, 2, 3, 4, 5].map(section).join('\n\n')
     expect(text.length).toBeGreaterThan(SUMMARY_DIRECT_MAX)
@@ -96,10 +96,26 @@ describe('summarize', () => {
     expect(en.calls.at(-1)![1].content).toContain('Key points of part 1:')
     expect(en.calls.every((c) => c[0].content.includes('in English'))).toBe(true)
   })
+
+  it('the given character budget decides whether to split and how long each part is', async () => {
+    const text = [1, 2, 3, 4].map((i) => `## 第${i}節\n\n` + '內容。'.repeat(100)).join('\n\n')
+    expect(text.length).toBeLessThan(SUMMARY_DIRECT_MAX)
+    const direct = fakeChat(() => '- 重點')
+    await summarize(direct.chat, 'note', 't', text, () => {})
+    expect(direct.calls).toHaveLength(1)
+
+    const small = fakeChat(() => '- 重點')
+    await summarize(small.chat, 'note', 't', text, () => {}, 'zh-TW', {
+      summaryDirect: 500,
+      summaryPart: 400
+    })
+    // 400 characters per part: each of the four sections is a part, then one combine call
+    expect(small.calls).toHaveLength(5)
+  })
 })
 
 describe('splitForSummary', () => {
-  it('每段不超過上限，合起來包含全部內容', () => {
+  it('no part exceeds the limit, and together they contain everything', () => {
     const text = Array.from({ length: 20 }, (_, i) => `段落${i}。` + '字'.repeat(90)).join('\n\n')
     const parts = splitForSummary(text, 500)
     expect(parts.every((p) => p.length <= 500)).toBe(true)
@@ -108,7 +124,7 @@ describe('splitForSummary', () => {
 })
 
 describe('linkTargets', () => {
-  it('去重（不分大小寫）、去掉 #標題 與 |顯示文字，略過程式碼裡的', () => {
+  it('dedupes case-insensitively, strips #heading and |label, and skips links in code', () => {
     expect(linkTargets('[[A]] [[a#h|x]] [[B|b]] `[[C]]`\n```\n[[D]]\n```')).toEqual(['A', 'B'])
   })
 })
@@ -119,36 +135,36 @@ describe('createLinkFilter', () => {
     return pieces.map((p) => f.push(p)).join('') + f.flush()
   }
 
-  it('保留原文有的連結，其他的改成純文字', () => {
+  it('keeps links that are in the original and turns others into plain text', () => {
     expect(run(['原子習慣'], ['見 [[原子習慣]]、[[wikilink]] 與 [[假的|顯示]]'])).toBe(
       '見 [[原子習慣]]、wikilink 與 顯示'
     )
   })
 
-  it('連結被切在多個片段之間也能判斷', () => {
+  it('handles links split across several chunks', () => {
     const pieces = ['見 [', '[原子', '習慣]', ']，[[不存', '在]]。']
     expect(run(['原子習慣'], pieces)).toBe('見 [[原子習慣]]，不存在。')
   })
 
-  it('比對不分大小寫、可帶 #標題', () => {
+  it('matches case-insensitively, with an optional #heading', () => {
     expect(run(['Deep Work'], ['[[deep work#ch1|DW]]'])).toBe('[[deep work#ch1|DW]]')
   })
 
-  it('不是連結的中括號原樣輸出，未完成的在 flush 時輸出', () => {
+  it('outputs non-link brackets as is, and unfinished ones on flush', () => {
     expect(run([], ['陣列 a[0] 與 [x](https://a.b) 和 [[未完'])).toBe(
       '陣列 a[0] 與 [x](https://a.b) 和 [[未完'
     )
     expect(run([], ['[[a\nb]] ok'])).toBe('[[a\nb]] ok')
   })
 
-  it('顯示文字是路徑或與目標相同時只留標題', () => {
+  it('keeps only the title when the label is a path or the same as the target', () => {
     expect(
       run(['深度工作', '原子習慣'], ['[[深度工作 | 讀書筆記/深度工作.md]]、[[原子習慣|原子習慣]]'])
     ).toBe('[[深度工作]]、[[原子習慣]]')
     expect(run(['深度工作'], ['[[深度工作|DW]]'])).toBe('[[深度工作|DW]]')
   })
 
-  it('沒有連結時不暫存，片段立刻輸出', () => {
+  it('does not buffer when there are no links, outputting chunks immediately', () => {
     const f = createLinkFilter([])
     expect(f.push('- 第一點')).toBe('- 第一點')
     expect(f.push('，[')).toBe('，')
@@ -156,8 +172,8 @@ describe('createLinkFilter', () => {
   })
 })
 
-describe('summarize 的連結過濾', () => {
-  it('串流與回傳值都移除原文沒有的連結', async () => {
+describe('link filtering in summarize', () => {
+  it('removes links not in the original from both the stream and the return value', async () => {
     const { chat } = fakeChat(() => ['- 參考 [[原子', '習慣]] 和 [[wiki', 'link]]'])
     const deltas: string[] = []
     const out = await summarize(chat, 'note', 't', '讀 [[原子習慣]]', (d) => deltas.push(d))

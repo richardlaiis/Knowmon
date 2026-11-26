@@ -1,62 +1,62 @@
-# 階段 4 實作計畫：時間層
+# Phase 4 implementation plan: time layer
 
-完成標準：時間軸視圖可用，圖譜能依時間範圍與邊類型篩選。
+Done when: the timeline view works and the graph can be filtered by time range and edge type.
 
-## 已確認的決定（2026-10-08）
+## Confirmed decisions (2026-10-08)
 
-- 同意下方的 `types.ts` 合約變更。
-- `sequence` 的「同一主題」為同一資料夾（不用 tags，不改 schema）。
-- 時間參數存在 vault 內的 `.knowmon/settings.json`。
+- The `types.ts` contract changes below are approved.
+- The "same topic" for `sequence` is the same folder (no tags, no schema change).
+- Time parameters are stored inside the vault in `.knowmon/settings.json`.
 
-## 時間邊的定義
+## Time edge definitions
 
-三種邊都由純函式從 `notes` 與 `note_events` 推導（`src/main/indexer/timeLinks.ts`；session 切分在 `src/shared/time.ts`，main 與 renderer 共用），結果寫入 `links` 表（`type` 為 `same_session` / `same_day` / `sequence`，`dst` 一定不為 NULL）。
+All three edge types are derived by pure functions from `notes` and `note_events` (`src/main/indexer/timeLinks.ts`; session splitting is in `src/shared/time.ts`, shared by main and renderer), and the results are written to the `links` table (`type` is `same_session` / `same_day` / `sequence`, and `dst` is never NULL).
 
-| 類型           | 規則                                                                                                                                                                             | 方向    | 權重                  |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------------- |
-| `same_session` | 把全 vault 的 `edit` 事件依時間排序，相鄰兩筆間隔超過 `sessionGapMinutes`（預設 30）就切成新的 session（與網站分析的 session 逾時相同）。同一個 session 內被編輯的筆記兩兩相連。 | 無      | 共同出現的 session 數 |
-| `same_day`     | `event_date` 相差 ≤ `sameDayWindowDays`（預設 0，即同一天）。                                                                                                                    | 無      | `1 / (1 + 相差天數)`  |
-| `sequence`     | 同一個資料夾（含 vault 根目錄）裡有 `event_date` 的筆記，依日期（同日依路徑）排序，相鄰兩篇相連。例如 `日記/` 裡每天連到下一天。                                                 | 早 → 晚 | 1                     |
+| Type           | Rule                                                                                                                                                                                                                                                                     | Directed        | Weight                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- | ------------------------- |
+| `same_session` | Sort all `edit` events in the vault by time and start a new session when the gap between two consecutive events exceeds `sessionGapMinutes` (default 30), the same as a session timeout in web analytics. Notes edited in the same session are all linked to each other. | No              | Number of shared sessions |
+| `same_day`     | `event_date`s at most `sameDayWindowDays` apart (default 0, i.e. the same day).                                                                                                                                                                                          | No              | `1 / (1 + days apart)`    |
+| `sequence`     | Within a folder (including the vault root), notes with an `event_date` are sorted by date (by path within a day) and neighbors are linked. For example, in `日記/` each day links to the next.                                                                           | Earlier → later | 1                         |
 
-- 只看 `edit`，不看 `open`（只是閱讀）與 `create`（第一次開啟既有 vault 時，每篇都用 birthtime 記一筆 `create`；git clone 之類的情況會讓全部筆記擠在同一刻，變成完全圖）。
-- **大量變更保護**：一個 session 編輯超過 `sessionMaxNotes`（預設 20）篇時視為批次操作（外部同步、全域取代、git pull），該 session 不產生邊。
-- 無方向的邊以路徑字典序較小者為 `source` 存一列。
+- Only `edit` counts, not `open` (just reading) or `create` (the first time an existing vault is opened, every note gets a `create` at its birthtime; something like a git clone puts all notes at the same moment, which would make a complete graph).
+- **Bulk-change protection**: a session that edits more than `sessionMaxNotes` notes (default 20) is treated as a batch operation (external sync, global replace, git pull) and produces no edges.
+- Undirected edges are stored as one row, with the path that sorts first as `source`.
 
-### 何時重算
+### When to recompute
 
-時間邊依賴事件、`event_date`、路徑與設定，任何一項改變都可能影響全 vault，所以不做增量：
+Time edges depend on events, `event_date`, paths and settings, and a change to any of them can affect the whole vault, so there are no incremental updates:
 
-- `Vault` 在記錄事件、重新索引、改名、刪除、修改設定時標記 dirty。
-- `graph()` 讀取前若 dirty 就整批重算（一個 transaction：刪掉三種時間邊，再寫入）。1000 篇、5 萬筆事件預估數十 ms，會加測試量測。
-- DB 被刪除時跟著重建（事件從 `events.jsonl` 重播後重算），不需要 schema 變更，`SCHEMA_VERSION` 不變。
+- `Vault` marks them dirty when recording events, re-indexing, renaming, deleting or changing settings.
+- If dirty, `graph()` recomputes everything before reading (in one transaction: delete the three time edge types, then write them). Estimated at tens of ms for 1000 notes and 50,000 events; a test will measure it.
+- When the DB is deleted they are rebuilt along with it (recomputed after events are replayed from `events.jsonl`), so no schema change is needed and `SCHEMA_VERSION` stays the same.
 
-## 設定
+## Settings
 
-時間參數存在 **vault 內** `<vault>/.knowmon/settings.json`（跟著 vault 走，與 `.obsidian/` 類似；不存在時用預設值）。main 驗證並限制範圍：
+Time parameters are stored **inside the vault** in `<vault>/.knowmon/settings.json` (they travel with the vault, like `.obsidian/`; defaults are used when it's missing). Main validates them and clamps their range:
 
-| 參數                | 預設 | 範圍  |
-| ------------------- | ---- | ----- |
-| `sessionGapMinutes` | 30   | 5–240 |
-| `sessionMaxNotes`   | 20   | 2–200 |
-| `sameDayWindowDays` | 0    | 0–7   |
+| Parameter           | Default | Range |
+| ------------------- | ------- | ----- |
+| `sessionGapMinutes` | 30      | 5–240 |
+| `sessionMaxNotes`   | 20      | 2–200 |
+| `sameDayWindowDays` | 0       | 0–7   |
 
-UI：時間軸與全域圖譜工具列上的齒輪按鈕，打開一個小對話框編輯這三個值。階段 8 的設定頁再整合。
+UI: a gear button in the timeline and global graph toolbars opens a small dialog for editing these three values. Phase 8's settings page will integrate them later.
 
-## IPC 合約變更（`src/shared/types.ts`，需同意）
+## IPC contract changes (`src/shared/types.ts`, need approval)
 
 ```ts
-export type LinkType = 'wikilink' | 'same_session' | 'same_day' | 'sequence' // 階段 5 加入 semantic
+export type LinkType = 'wikilink' | 'same_session' | 'same_day' | 'sequence' // phase 5 adds semantic
 
 export interface GraphNode {
   path: string
   title: string
   eventDate: string | null
-  /** 有 create / edit 事件的日期（本地時區 YYYY-MM-DD，遞增），圖譜「寫作時間」篩選用 */
+  /** Dates with create / edit events (local time zone YYYY-MM-DD, ascending), for the graph's "written time" filter */
   activeDays: string[]
 }
-// GraphEdge 不變（type 已是 LinkType）。同一對筆記可能同時有多種類型的邊。
+// GraphEdge is unchanged (type is already LinkType). A pair of notes may have edges of several types.
 
-/** 時間軸「寫作時間」模式用：create / edit 事件 */
+/** For the timeline's "written time" mode: create / edit events */
 export interface ActivityEvent {
   path: string
   title: string
@@ -70,56 +70,56 @@ export interface TimeSettings {
   sameDayWindowDays: number
 }
 
-// KnowmonAPI 新增：
+// Added to KnowmonAPI:
 timeline: {
-  /** [from, to) 之間的 create / edit 事件，依時間排序 */
+  /** create / edit events in [from, to), sorted by time */
   activity(from: number, to: number): Promise<ActivityEvent[]>
 }
 settings: {
   getTime(): Promise<TimeSettings>
-  /** 寫入並回傳實際套用（限制範圍後）的值；時間邊會重算 */
+  /** Writes and returns the values actually applied (after clamping); time edges are recomputed */
   setTime(s: Partial<TimeSettings>): Promise<TimeSettings>
 }
 ```
 
-「事件時間」模式的時間軸只需要 `notes.list()` 已有的 `eventDate`，不另外加 IPC。
+The timeline's "event date" mode only needs the `eventDate` that `notes.list()` already returns, so no extra IPC.
 
-## 時間軸視圖（`src/renderer/timeline/`）
+## Timeline view (`src/renderer/timeline/`)
 
-新的分頁種類 `timeline`（和圖譜一樣最多一個），由側欄「Timeline」按鈕或 `Ctrl/Cmd+Shift+T` 開啟。
+A new tab kind, `timeline` (at most one, like the graph), opened by the "Timeline" sidebar button or `Ctrl/Cmd+Shift+T`.
 
-- 兩種模式（切換鈕，偏好存 localStorage `knowmon.timeline.mode`）：
-  - **事件時間**：有 `event_date` 的筆記依日期分組（新的在上）；底部顯示「N 篇沒有日期」。
-  - **寫作時間**：依天分組，每天再分成 session（`14:02–15:10 · 3 篇`），列出該 session 編輯的筆記，新建立的標示「new」。session 切分與 `same_session` 用同一個函式、同一個設定。
-- 上方一條月份長條圖（每月筆記數），點擊捲到該月。
-- 點筆記取代目前分頁，`Ctrl/Cmd+點擊`或中鍵開新分頁（與其他地方一致）；目前開著的筆記以強調色標示。
-- 分組、session、長條圖都是純函式（`timeline/model.ts`），附測試。
+- Two modes (a toggle, with the preference in localStorage `knowmon.timeline.mode`):
+  - **Event date**: notes with an `event_date`, grouped by date (newest first); "N undated notes" at the bottom.
+  - **Written**: grouped by day, then split into sessions (`14:02–15:10 · 3 notes`), listing the notes edited in each session, with newly created ones marked "new". Session splitting uses the same function and settings as `same_session`.
+- A monthly bar chart at the top (notes per month); clicking scrolls to that month.
+- Clicking a note replaces the current tab, `Ctrl/Cmd+click` or middle-click opens a new tab (as elsewhere); the currently open note is shown in the accent color.
+- Grouping, sessions and the bar chart are pure functions (`timeline/model.ts`) with tests.
 
-## 圖譜篩選
+## Graph filters
 
-- **邊類型**：工具列四個可切換的色塊（Links / Session / Same day / Sequence），全域圖與局部圖都有，偏好各自存 localStorage（`knowmon.graph.types`、`knowmon.graph.localTypes`），預設全開。邊類型影響版面（時間邊也參與排版），切換時沿用座標快取、輕度重新加熱，不會整張重排。
-- **時間範圍**（只在全域圖）：
-  - 時間軸可選「事件時間」（`eventDate`）或「寫作時間」（`activeDays` 有任一天落在範圍內）。
-  - 雙把手滑桿，範圍為所有日期的最小到最大值，顯示起訖日期；「Reset」恢復全範圍。
-  - 沒有日期的筆記：「Undated」勾選框決定是否顯示（預設顯示；寫作時間模式下每篇都有日期）。
-  - 時間篩選只隱藏節點（Cytoscape `display: none`，相連的邊一起隱藏），**不重新排版**，拖動滑桿時節點在固定位置出現、消失。大型圖譜以 `requestAnimationFrame` 節流套用。
-- 邊的樣式：每種類型一個顏色（`main.css` 新增 `--edge-session`、`--edge-day`、`--edge-sequence`，深淺色各一組），`same_session` 虛線、`same_day` 點線。
-- `edgeId` 加上類型（同一對筆記可能有多種邊）；`filterGraph(data, filter)` 為純函式，附測試。
+- **Edge types**: four toggleable swatches in the toolbar (Links / Session / Same day / Sequence), in both the global and local graphs, with separate preferences in localStorage (`knowmon.graph.types`, `knowmon.graph.localTypes`), all on by default. Edge types affect layout (time edges take part too); toggling reuses the position cache with a gentle reheat instead of redoing the whole layout.
+- **Time range** (global graph only):
+  - The timeline can be "event date" (`eventDate`) or "written time" (any day in `activeDays` falls in the range).
+  - A two-handle slider spanning the earliest to latest date, showing the start and end dates; "Reset" restores the full range.
+  - Undated notes: an "Undated" checkbox decides whether they are shown (shown by default; in written mode every note has dates).
+  - The time filter only hides nodes (Cytoscape `display: none`, with their edges hidden too) and **doesn't re-run layout**, so nodes appear and disappear in fixed positions while dragging the slider. On large graphs it's applied throttled by `requestAnimationFrame`.
+- Edge styles: one color per type (`main.css` gains `--edge-session`, `--edge-day` and `--edge-sequence`, with light and dark sets), with `same_session` dashed and `same_day` dotted.
+- `edgeId` includes the type (a pair of notes may have several edges); `filterGraph(data, filter)` is pure, with tests.
 
-## 進行順序
+## Order of work
 
-1. `shared/time.ts`（session 切分、三種邊的推導）+ 測試
-2. 設定讀寫、時間邊寫入 DB、`getGraph` 加上 `activeDays` 與時間邊、IPC + 測試（含重算效能）
-3. 圖譜邊類型篩選與樣式
-4. 圖譜時間滑桿
-5. 時間軸視圖 + 分頁
-6. 設定對話框
-7. 用 `test-vault/` 實際執行 App 驗證；更新 README（快捷鍵、手動測試）、`architecture.md`、`roadmap.md`
+1. `shared/time.ts` (session splitting, deriving the three edge types) + tests
+2. Reading/writing settings, writing time edges to the DB, adding `activeDays` and time edges to `getGraph`, IPC + tests (including recompute performance)
+3. Graph edge-type filters and styles
+4. Graph time slider
+5. Timeline view + tab
+6. Settings dialog
+7. Verify in the running app with `test-vault/`; update the README (shortcuts, manual tests), `architecture.md`, `roadmap.md`
 
-## 實作結果（2026-10-08）
+## Results (2026-10-08)
 
-- 依計畫完成，`types.ts` 的變更與上面相同；沒有新增相依套件，schema 不變。
-- 測試：新增 37 個（共 234 個），含 1000 篇、5 萬筆編輯事件時重算時間邊 < 500ms。
-- 用 `test-vault/` 的副本加上合成的編輯歷程實際執行 App（CDP 驅動）驗證：時間邊與預期一致；時間滑桿篩選後節點位置不變；時間軸兩種模式；設定對話框存檔後 `settings.json` 更新、時間邊立即重算；深色主題。
-- 過程中的調整：側欄多了「Timeline」按鈕後放不下，改為可換行；時間軸的時間改用 24 小時制（AM/PM 會換行）；深色主題的 `sequence` 顏色改用 Nord 紫色（原本的藍色和一般連結太像）。
-- 已知限制：haystack 邊不支援箭頭，`sequence` 的方向沒有畫出來；同一對筆記的多種邊重疊在同一條線上。
+- Completed as planned, with the `types.ts` changes exactly as above; no new dependencies and no schema change.
+- Tests: 37 new (234 in total), including recomputing time edges in < 500 ms with 1000 notes and 50,000 edit events.
+- Verified in the running app (driven over CDP) with a copy of `test-vault/` plus synthetic editing history: time edges match expectations; node positions stay put after time slider filtering; both timeline modes; saving the settings dialog updates `settings.json` and recomputes time edges immediately; dark theme.
+- Adjustments along the way: the sidebar ran out of room after the "Timeline" button was added, so it now wraps; timeline times use the 24-hour clock (AM/PM wrapped onto a new line); in the dark theme, `sequence` uses Nord purple (the original blue looked too much like ordinary links).
+- Known limitations: haystack edges don't support arrows, so the direction of `sequence` isn't drawn; multiple edge types between the same pair overlap on one line.

@@ -12,7 +12,7 @@ import {
   tableDecorations
 } from './tables'
 
-/** 用 ‸ 標示游標位置（或兩個 ‸ 標示選取範圍）建立 state，並確保整份文件都已解析 */
+/** Builds a state with ‸ marking the cursor (or two ‸ marking a selection), making sure the whole document is parsed */
 function stateOf(src: string): EditorState {
   const marks: number[] = []
   let doc = ''
@@ -39,15 +39,15 @@ function modelOf(src: string): TableModel {
   for (let n = syntaxTree(state).topNode.firstChild; n; n = n.nextSibling) {
     if (n.name === 'Table') table = n
   }
-  if (!table) throw new Error('沒有表格')
+  if (!table) throw new Error('No table')
   return parseTable(state, table)
 }
 
-/** 每格的純文字 */
+/** The plain text of each cell */
 const texts = (m: TableModel): string[][] =>
   [m.header, ...m.rows].map((r) => r.map((c) => c.spans.map((s) => s.text).join('')))
 
-/** 被換成表格 widget 的原文 */
+/** The source replaced by the table widget */
 function widgets(src: string): string[] {
   const state = stateOf(src)
   const out: string[] = []
@@ -59,10 +59,10 @@ function widgets(src: string): string[] {
   return out
 }
 
-const TABLE = '| 名稱 | 數量 |\n| --- | ---: |\n| 蘋果 | 3 |'
+const TABLE = '| Name | Count |\n| --- | ---: |\n| Apples | 3 |'
 
 describe('parseTable', () => {
-  it('表頭、內容與對齊', () => {
+  it('header, body and alignment', () => {
     const m = modelOf('| a | b | c | d |\n|:--|:-:|--:|---|\n| 1 | 2 | 3 | 4 |\n\n‸')
     expect(m.align).toEqual(['left', 'center', 'right', null])
     expect(texts(m)).toEqual([
@@ -71,14 +71,14 @@ describe('parseTable', () => {
     ])
   })
 
-  it('沒有開頭與結尾的 | 也可以', () => {
+  it('works without leading and trailing |', () => {
     expect(texts(modelOf('a | b\n--|--\n1 | 2\n\n‸'))).toEqual([
       ['a', 'b'],
       ['1', '2']
     ])
   })
 
-  it('欄數以表頭為準：太短補空格子，太長截掉', () => {
+  it('the header sets the column count: short rows are padded, long rows are cut', () => {
     const m = modelOf('| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 |\n| | x | |\n\n‸')
     expect(texts(m)).toEqual([
       ['a', 'b', 'c'],
@@ -88,43 +88,43 @@ describe('parseTable', () => {
     ])
   })
 
-  it('\\| 跳脫成 |', () => {
+  it('\\| unescapes to |', () => {
     expect(texts(modelOf('| a |\n|---|\n| x \\| y |\n\n‸'))[1]).toEqual(['x | y'])
   })
 
-  it('行內樣式轉成 span，隱藏標記', () => {
+  it('inline styles become spans, with marks hidden', () => {
     const m = modelOf(
-      '| a |\n|---|\n| **粗** *斜* ~~刪~~ `碼` |\n| [文字](https://example.com) |\n\n‸'
+      '| a |\n|---|\n| **bold** *italic* ~~struck~~ `code` |\n| [text](https://example.com) |\n\n‸'
     )
     expect(m.rows[0][0].spans).toEqual([
-      { text: '粗', bold: true },
+      { text: 'bold', bold: true },
       { text: ' ' },
-      { text: '斜', italic: true },
+      { text: 'italic', italic: true },
       { text: ' ' },
-      { text: '刪', strike: true },
+      { text: 'struck', strike: true },
       { text: ' ' },
-      { text: '碼', code: true }
+      { text: 'code', code: true }
     ])
-    expect(m.rows[1][0].spans).toEqual([{ text: '文字', url: 'https://example.com' }])
+    expect(m.rows[1][0].spans).toEqual([{ text: 'text', url: 'https://example.com' }])
   })
 
-  it('wikilink（顯示文字的 | 在表格裡要寫成 \\|）；程式碼裡的不算', () => {
-    const m = modelOf('| a |\n|---|\n| 見 [[筆記 A]] 與 [[b/c\\|C]] |\n| `[[x]]` |\n\n‸')
+  it('wikilinks (the | of a label must be written \\| in a table); not inside code', () => {
+    const m = modelOf('| a |\n|---|\n| See [[Note A]] and [[b/c\\|C]] |\n| `[[x]]` |\n\n‸')
     expect(m.rows[0][0].spans).toEqual([
-      { text: '見 ' },
-      { text: '筆記 A', target: '筆記 A' },
-      { text: ' 與 ' },
+      { text: 'See ' },
+      { text: 'Note A', target: 'Note A' },
+      { text: ' and ' },
       { text: 'C', target: 'b/c' }
     ])
     expect(m.rows[1][0].spans).toEqual([{ text: '[[x]]', code: true }])
   })
 
-  it('數學式成為 math span（\\| 還原成 |），相鄰的公式不合併、裡面的 [[ ]] 不算連結', () => {
-    const m = modelOf('| a |\n|---|\n| 長度 $\\|v\\|$ 與 $$x$$ |\n| $a$$b$ |\n| $[[x]]$ |\n\n‸')
+  it('math becomes a math span (\\| restored to |); adjacent formulas are not merged, and [[ ]] inside is not a link', () => {
+    const m = modelOf('| a |\n|---|\n| Length $\\|v\\|$ and $$x$$ |\n| $a$$b$ |\n| $[[x]]$ |\n\n‸')
     expect(m.rows[0][0].spans).toEqual([
-      { text: '長度 ' },
+      { text: 'Length ' },
       { text: '|v|', math: 'inline' },
-      { text: ' 與 ' },
+      { text: ' and ' },
       { text: 'x', math: 'display' }
     ])
     expect(m.rows[1][0].spans).toEqual([
@@ -134,53 +134,53 @@ describe('parseTable', () => {
     expect(m.rows[2][0].spans).toEqual([{ text: '[[x]]', math: 'inline' }])
   })
 
-  it('格子的位置相對於表格第一行的行首', () => {
-    const src = '前言\n\n| a | bb |\n|---|---|\n| x |  |\n\n‸'
+  it("cell positions are relative to the start of the table's first line", () => {
+    const src = 'Intro\n\n| a | bb |\n|---|---|\n| x |  |\n\n‸'
     const m = modelOf(src)
     const doc = src.replace('‸', '')
     const base = doc.indexOf('| a')
     expect(doc[base + m.header[1].offset]).toBe('b')
     expect(doc[base + m.rows[0][0].offset]).toBe('x')
-    // 空格子：放在 | 與一個空白後面
+    // An empty cell: placed after the | and one space
     expect(doc.slice(base + m.rows[0][1].offset - 2, base + m.rows[0][1].offset)).toBe('| ')
   })
 })
 
-describe('表格裝飾', () => {
-  it('游標在表格外：整張（整行）換成表格', () => {
-    expect(widgets(`前言\n\n${TABLE}\n\n後記‸`)).toEqual([TABLE])
-    expect(widgets(`‸前言\n\n${TABLE}`)).toEqual([TABLE])
+describe('table decorations', () => {
+  it('cursor outside the table: the whole table (full lines) becomes a table', () => {
+    expect(widgets(`Intro\n\n${TABLE}\n\nOutro‸`)).toEqual([TABLE])
+    expect(widgets(`‸Intro\n\n${TABLE}`)).toEqual([TABLE])
   })
 
-  it('游標在表格裡、行首行尾或選取範圍跨進表格：顯示原始碼', () => {
-    expect(widgets(`前言\n\n| 名‸稱 | 數量 |\n| --- | ---: |\n| 蘋果 | 3 |`)).toEqual([])
-    expect(widgets(`前言\n\n${TABLE}‸\n\n後記`)).toEqual([])
-    expect(widgets(`前言\n\n‸${TABLE}\n\n後記`)).toEqual([])
-    expect(widgets(`前‸言\n\n| 名稱‸ | 數量 |\n| --- | ---: |\n| 蘋果 | 3 |`)).toEqual([])
+  it('cursor in the table, at a line start or end, or a selection reaching into it: shows the source', () => {
+    expect(widgets(`Intro\n\n| Na‸me | Count |\n| --- | ---: |\n| Apples | 3 |`)).toEqual([])
+    expect(widgets(`Intro\n\n${TABLE}‸\n\nOutro`)).toEqual([])
+    expect(widgets(`Intro\n\n‸${TABLE}\n\nOutro`)).toEqual([])
+    expect(widgets(`Int‸ro\n\n| Name‸ | Count |\n| --- | ---: |\n| Apples | 3 |`)).toEqual([])
   })
 
-  it('兩張表格只展開游標所在的那張', () => {
+  it('with two tables, only the one with the cursor expands', () => {
     const second = '| x |\n|---|\n| y |'
     expect(widgets(`${TABLE}\n\n| ‸x |\n|---|\n| y |`)).toEqual([TABLE])
     expect(widgets(`${TABLE}\n\n${second}\n\n‸`)).toEqual([TABLE, second])
   })
 
-  it('引用、清單、frontmatter 裡的表格與沒有分隔列的不渲染', () => {
+  it('tables in quotes, lists or frontmatter, and ones without a delimiter row, are not rendered', () => {
     expect(widgets('> | a |\n> |---|\n> | 1 |\n\n‸')).toEqual([])
-    expect(widgets('- 項目\n\n  | a |\n  |---|\n  | 1 |\n\n‸')).toEqual([])
+    expect(widgets('- Item\n\n  | a |\n  |---|\n  | 1 |\n\n‸')).toEqual([])
     expect(widgets('---\n| a |\n|---|\n---\n\n‸')).toEqual([])
     expect(widgets('| a | b |\n| 1 | 2 |\n\n‸')).toEqual([])
   })
 
-  it('原文相同的表格 widget 視為相同（不重建 DOM）', () => {
+  it('table widgets with the same source are equal (no DOM rebuild)', () => {
     const a = renderedTables(stateOf(`${TABLE}\n\n‸`))
-    const b = renderedTables(stateOf(`${TABLE}\n\n其他‸`))
+    const b = renderedTables(stateOf(`${TABLE}\n\nOther‸`))
     const wa = new TableWidget(TABLE, parseTable(stateOf(`${TABLE}\n\n‸`), a[0].node))
-    const wb = new TableWidget(TABLE, parseTable(stateOf(`${TABLE}\n\n其他‸`), b[0].node))
+    const wb = new TableWidget(TABLE, parseTable(stateOf(`${TABLE}\n\nOther‸`), b[0].node))
     expect(wa.eq(wb)).toBe(true)
   })
 
-  it('即時渲染不再對被取代的表格產生其他裝飾', () => {
+  it('live rendering produces no other decorations for replaced tables', () => {
     const src = '| **a** | [[b]] |\n|---|---|\n| `c` | d |\n\n‸'
     const state = stateOf(src)
     let count = 0
@@ -188,7 +188,7 @@ describe('表格裝飾', () => {
       count++
     })
     expect(count).toBe(0)
-    // 游標進入表格時照常渲染行內樣式
+    // Inline styles render as usual when the cursor enters the table
     const inside = stateOf('| **a** | [[b]] |\n|---|---|\n| `c` | d‸ |\n\n')
     let n = 0
     buildDecorations(inside).between(0, inside.doc.length, () => {

@@ -1,5 +1,23 @@
-// LLM 相關設定的預設值與範圍。main 與 renderer 共用。
-import type { ChatProvider, CloudProvider, LlmSettings, SemanticSettings } from './types'
+// Defaults and ranges for LLM settings. Shared by main and renderer.
+import type {
+  ChatLimits,
+  ChatProvider,
+  CloudProvider,
+  LlmSettings,
+  SemanticSettings
+} from './types'
+
+/** 8192 is the baseline for scaling the character budgets (see main/llm/budget.ts); no output limit */
+export const DEFAULT_CHAT_LIMITS: ChatLimits = {
+  contextTokens: 8_192,
+  maxOutputTokens: null
+}
+
+/** Allowed range for each field (inclusive, in tokens) */
+export const CHAT_LIMITS: Record<keyof ChatLimits, [number, number]> = {
+  contextTokens: [2_048, 1_048_576],
+  maxOutputTokens: [256, 131_072]
+}
 
 export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   baseUrl: 'http://127.0.0.1:11434',
@@ -7,7 +25,9 @@ export const DEFAULT_LLM_SETTINGS: LlmSettings = {
   embedModel: 'bge-m3',
   provider: 'ollama',
   cloudModels: {},
-  customBaseUrl: ''
+  customBaseUrl: '',
+  ollamaLimits: DEFAULT_CHAT_LIMITS,
+  cloudLimits: DEFAULT_CHAT_LIMITS
 }
 
 export const CLOUD_PROVIDERS: readonly CloudProvider[] = ['openai', 'gemini', 'custom']
@@ -19,7 +39,7 @@ export const PROVIDER_LABELS: Record<ChatProvider, string> = {
   custom: 'Custom API'
 }
 
-/** 各雲端服務的 API 位址（OpenAI 相容）；custom 由使用者填 */
+/** API address of each cloud provider (OpenAI-compatible); custom is entered by the user */
 export const CLOUD_BASE_URLS: Record<Exclude<CloudProvider, 'custom'>, string> = {
   openai: 'https://api.openai.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai'
@@ -28,14 +48,14 @@ export const CLOUD_BASE_URLS: Record<Exclude<CloudProvider, 'custom'>, string> =
 export const isCloudProvider = (p: unknown): p is CloudProvider =>
   CLOUD_PROVIDERS.includes(p as CloudProvider)
 
-/** 雲端服務的 API 位址；custom 沒填時為空字串 */
+/** A cloud provider's API address; an empty string when custom hasn't been filled in */
 export function cloudBaseUrl(s: LlmSettings, provider: CloudProvider): string {
   return provider === 'custom' ? s.customBaseUrl : CLOUD_BASE_URLS[provider]
 }
 
 /**
- * 自訂 API 位址：https，或連到本機（localhost、127.x、[::1]）的 http。
- * API key 會放在 header，不允許以明文送到其他機器。合法時回傳去掉結尾 / 的位址，否則 null。
+ * Custom API address: https, or http to this computer (localhost, 127.x, [::1]).
+ * The API key goes in a header, so it must never be sent in plain text to another machine. Returns the address without a trailing / when valid, otherwise null.
  */
 export function cleanCustomBaseUrl(input: string): string | null {
   const s = input.trim()
@@ -55,13 +75,13 @@ export const DEFAULT_SEMANTIC_SETTINGS: SemanticSettings = {
   semanticMaxPerNote: 5
 }
 
-/** 每個參數允許的範圍（含兩端） */
+/** Allowed range for each parameter (inclusive) */
 export const SEMANTIC_LIMITS: Record<keyof SemanticSettings, [number, number]> = {
   semanticThreshold: [0.3, 0.95],
   semanticMaxPerNote: [1, 20]
 }
 
-/** 以 base 為底套用 input 中合法的欄位：門檻取到小數第二位，每篇上限取整數，超出範圍取最近的邊界 */
+/** Applies the valid fields of input on top of base: the threshold is rounded to two decimals, the per-note limit to an integer, and out-of-range values are clamped to the nearest bound */
 export function clampSemanticSettings(
   input: unknown,
   base: SemanticSettings = DEFAULT_SEMANTIC_SETTINGS
@@ -78,9 +98,40 @@ export function clampSemanticSettings(
   return out
 }
 
+const clampInt = (v: number, [min, max]: [number, number]): number =>
+  Math.min(max, Math.max(min, Math.round(v)))
+
 /**
- * 以 base 為底套用 input 中合法的欄位：模型為非空字串；baseUrl 必須是 http(s)，去掉結尾的 /；
- * provider 必須是已知的服務；customBaseUrl 見 cleanCustomBaseUrl（空字串 = 清除）。
+ * Applies the valid fields of input on top of base: rounded to integers and clamped to the nearest bound;
+ * a null or empty maxOutputTokens means the model default.
+ * When ollama is true, the output limit can't exceed the context (Ollama's num_predict also uses context).
+ */
+export function cleanChatLimits(
+  input: unknown,
+  base: ChatLimits = DEFAULT_CHAT_LIMITS,
+  ollama = false
+): ChatLimits {
+  const out = { ...base }
+  if (input && typeof input === 'object') {
+    const v = input as Record<string, unknown>
+    if (typeof v.contextTokens === 'number' && Number.isFinite(v.contextTokens)) {
+      out.contextTokens = clampInt(v.contextTokens, CHAT_LIMITS.contextTokens)
+    }
+    if (v.maxOutputTokens === null || v.maxOutputTokens === '') out.maxOutputTokens = null
+    else if (typeof v.maxOutputTokens === 'number' && Number.isFinite(v.maxOutputTokens)) {
+      out.maxOutputTokens = clampInt(v.maxOutputTokens, CHAT_LIMITS.maxOutputTokens)
+    }
+  }
+  if (ollama && out.maxOutputTokens !== null && out.maxOutputTokens > out.contextTokens) {
+    out.maxOutputTokens = out.contextTokens
+  }
+  return out
+}
+
+/**
+ * Applies the valid fields of input on top of base: models must be non-empty strings; baseUrl must be http(s), with any trailing / removed;
+ * provider must be a known provider; customBaseUrl follows cleanCustomBaseUrl (an empty string clears it);
+ * ollamaLimits and cloudLimits follow cleanChatLimits.
  */
 export function cleanLlmSettings(
   input: unknown,
@@ -108,16 +159,23 @@ export function cleanLlmSettings(
     if (!v.customBaseUrl.trim()) out.customBaseUrl = ''
     else out.customBaseUrl = cleanCustomBaseUrl(v.customBaseUrl) ?? out.customBaseUrl
   }
+  out.ollamaLimits = cleanChatLimits(v.ollamaLimits, base.ollamaLimits, true)
+  out.cloudLimits = cleanChatLimits(v.cloudLimits, base.cloudLimits)
   return out
 }
 
-/** Ollama 的模型名稱沒寫 tag 時等於 :latest */
+/** An Ollama model name without a tag means :latest */
 export function sameModel(a: string, b: string): boolean {
   const full = (m: string): string => (m.includes(':') ? m : `${m}:latest`)
   return full(a) === full(b)
 }
 
-/** 目前對話使用的模型（雲端服務沒選模型時為空字串） */
+/** The context length and output limit of the current chat provider */
+export function activeChatLimits(s: LlmSettings): ChatLimits {
+  return s.provider === 'ollama' ? s.ollamaLimits : s.cloudLimits
+}
+
+/** The current chat model (an empty string when no model is chosen for the cloud provider) */
 export function activeChatModel(s: LlmSettings): string {
   return s.provider === 'ollama' ? s.chatModel : (s.cloudModels[s.provider] ?? '')
 }

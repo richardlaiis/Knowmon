@@ -6,7 +6,7 @@ export interface EdgeTypeFilterProps {
   onChange: (next: Set<LinkType>) => void
 }
 
-/** 邊類型的開關：每種類型一個帶顏色的按鈕 */
+/** Edge type toggles: one colored button per type */
 export function EdgeTypeFilter({ value, onChange }: EdgeTypeFilterProps): React.JSX.Element {
   return (
     <div className="edge-types" role="group" aria-label="Edge types">

@@ -24,9 +24,9 @@ const source = (n: number, title: string): AskSource => ({
   snippet: [],
   date: '2026-09-01'
 })
-const sources = [source(1, '跑步'), source(2, '料理')]
+const sources = [source(1, 'Running'), source(2, 'Cooking')]
 
-/** 一輪完整的問答 */
+/** One complete round of Q&A */
 function round(c: Conversation, q: string, id: string, a: string): Conversation {
   let next = withAnswerId(askQuestion(c, q), id)
   next = applyAnswerChunk(next, { id, delta: '', done: false, sources, range: null, vector: true })
@@ -35,8 +35,8 @@ function round(c: Conversation, q: string, id: string, a: string): Conversation 
 }
 
 describe('conversation', () => {
-  it('送出問題、收到來源、串流回答、完成', () => {
-    let c = askQuestion(emptyConversation(), '跑了多遠？')
+  it('sends a question, receives sources, streams the answer, finishes', () => {
+    let c = askQuestion(emptyConversation(), 'How far did I run?')
     expect(c.entries.map((e) => e.role)).toEqual(['user', 'assistant'])
     expect(lastAnswer(c)?.status).toBe('searching')
     expect(isRunning(c)).toBe(true)
@@ -45,27 +45,27 @@ describe('conversation', () => {
     const range = { from: '2026-09-01', to: '2026-09-30' }
     c = applyAnswerChunk(c, { id: 'r1', delta: '', done: false, sources, range, vector: false })
     expect(lastAnswer(c)).toMatchObject({ status: 'running', sources, range, vector: false })
-    c = applyAnswerChunk(c, { id: 'r1', delta: '五公里 [1]', done: false })
-    // 其他 request 的片段忽略
+    c = applyAnswerChunk(c, { id: 'r1', delta: '5 km [1]', done: false })
+    // Chunks for other requests are ignored
     c = applyAnswerChunk(c, { id: 'other', delta: 'x', done: false })
     c = applyAnswerChunk(c, { id: 'r1', delta: '', done: true, cited: [1] })
-    expect(lastAnswer(c)).toMatchObject({ text: '五公里 [1]', status: 'done', cited: [1] })
+    expect(lastAnswer(c)).toMatchObject({ text: '5 km [1]', status: 'done', cited: [1] })
     expect(isRunning(c)).toBe(false)
   })
 
-  it('拿到 id 之前收到的片段先存著', () => {
+  it('keeps chunks that arrive before the id', () => {
     let c = askQuestion(emptyConversation(), 'q')
     c = applyAnswerChunk(c, { id: 'r1', delta: '', done: false, sources })
-    c = applyAnswerChunk(c, { id: 'r1', delta: '甲', done: false })
+    c = applyAnswerChunk(c, { id: 'r1', delta: 'first', done: false })
     expect(lastAnswer(c)?.text).toBe('')
     c = withAnswerId(c, 'r1')
-    expect(lastAnswer(c)).toMatchObject({ text: '甲', status: 'running', early: [] })
+    expect(lastAnswer(c)).toMatchObject({ text: 'first', status: 'running', early: [] })
   })
 
-  it('停止後忽略之後的片段；錯誤帶上原因', () => {
+  it('ignores chunks after stopping; errors carry the reason', () => {
     let c = withAnswerId(askQuestion(emptyConversation(), 'q'), 'r1')
     c = stopAnswer(c)
-    c = applyAnswerChunk(c, { id: 'r1', delta: '晚到', done: false })
+    c = applyAnswerChunk(c, { id: 'r1', delta: 'late', done: false })
     expect(lastAnswer(c)).toMatchObject({ status: 'stopped', text: '' })
 
     c = withAnswerId(askQuestion(c, 'q2'), 'r2')
@@ -76,28 +76,30 @@ describe('conversation', () => {
     expect(lastAnswer(c)).toMatchObject({ status: 'error', error: 'No vault' })
   })
 
-  it('chatHistory 只取有內容且沒有失敗的問答', () => {
-    let c = round(emptyConversation(), '第一題', 'r1', '答一 [1]')
-    c = failAnswer(askQuestion(c, '失敗的題'), 'x')
-    c = stopAnswer(withAnswerId(askQuestion(c, '停掉的題'), 'r3'))
-    c = round(c, '第二題', 'r4', '答二')
+  it('chatHistory takes only Q&A with content that did not fail', () => {
+    let c = round(emptyConversation(), 'first question', 'r1', 'answer one [1]')
+    c = failAnswer(askQuestion(c, 'failed question'), 'x')
+    c = stopAnswer(withAnswerId(askQuestion(c, 'stopped question'), 'r3'))
+    c = round(c, 'second question', 'r4', 'answer two')
     expect(chatHistory(c)).toEqual([
-      { role: 'user', content: '第一題' },
-      { role: 'assistant', content: '答一 [1]' },
-      { role: 'user', content: '第二題' },
-      { role: 'assistant', content: '答二' }
+      { role: 'user', content: 'first question' },
+      { role: 'assistant', content: 'answer one [1]' },
+      { role: 'user', content: 'second question' },
+      { role: 'assistant', content: 'answer two' }
     ])
   })
 
-  it('複製時 [n] 換成 [[標題]]，不存在的編號保留', () => {
-    const a = lastAnswer(round(emptyConversation(), 'q', 'r1', '跑步 [1]、料理 [2]、其他 [7]'))!
-    expect(answerForCopy(a)).toBe('跑步 [[跑步]]、料理 [[料理]]、其他 [7]')
+  it('copying replaces [n] with [[title]], keeping numbers that do not exist', () => {
+    const a = lastAnswer(
+      round(emptyConversation(), 'q', 'r1', 'running [1], cooking [2], other [7]')
+    )!
+    expect(answerForCopy(a)).toBe('running [[Running]], cooking [[Cooking]], other [7]')
   })
 
-  it('來源分成被引用的與其他的；串流中依目前的文字判斷', () => {
-    const done = lastAnswer(round(emptyConversation(), 'q', 'r1', '跑步 [1]'))!
+  it('splits sources into cited and others; while streaming, decides by the current text', () => {
+    const done = lastAnswer(round(emptyConversation(), 'q', 'r1', 'running [1]'))!
     expect(splitSources(done)).toEqual({ cited: [sources[0]], other: [sources[1]] })
-    const streaming: Answer = { ...done, status: 'running', cited: [], text: '料理 [2]' }
+    const streaming: Answer = { ...done, status: 'running', cited: [], text: 'cooking [2]' }
     expect(splitSources(streaming)).toEqual({ cited: [sources[1]], other: [sources[0]] })
   })
 })

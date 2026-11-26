@@ -1,4 +1,4 @@
-// IPC handler：renderer 只能透過這裡（以及 preload 暴露的 KnowmonAPI）存取檔案與 DB
+// IPC handlers: the renderer can only reach files and the DB through here (and the KnowmonAPI exposed by preload)
 import { BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import { IPC } from '../shared/channels'
 import { isCloudProvider } from '../shared/llm'
@@ -38,7 +38,7 @@ function requireLlm(): LlmService {
   return llm
 }
 
-/** 目前開啟的 vault 根目錄（圖片協定用） */
+/** Root of the currently open vault (for the image protocol) */
 export function currentVaultRoot(): string | null {
   return current?.root ?? null
 }
@@ -49,7 +49,7 @@ function requireVault(): Vault {
 }
 
 export async function openVault(root: string, ctx: IpcContext): Promise<Vault> {
-  // 先停下背景 embedding，再關閉舊 vault 的 DB
+  // Stop background embedding first, then close the old vault's DB
   await llm?.attach(null)
   await current?.close()
   current = null
@@ -62,7 +62,7 @@ export async function openVault(root: string, ctx: IpcContext): Promise<Vault> {
   })
   current = vault
   saveSettings(ctx.settingsDir, { ...loadSettings(ctx.settingsDir), lastVault: vault.root })
-  // 不等連線檢查（Ollama 沒開時最多 2 秒）
+  // Don't wait for the connection check (up to 2 seconds when Ollama isn't running)
   void llm?.attach(vault)
   return vault
 }
@@ -92,7 +92,7 @@ export function registerIpc(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.vaultPick, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    // 不自動開啟上次的 vault，但對話框會從上次的位置開始
+    // The last vault isn't opened automatically, but the dialog starts at its location
     const { lastVault } = loadSettings(ctx.settingsDir)
     const opts: Electron.OpenDialogOptions = {
       title: 'Choose a vault folder',
@@ -184,7 +184,7 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.llmCancel, (_e, id: unknown) => requireLlm().cancel(String(id ?? '')))
 }
 
-/** renderer 傳來的確認結果；不合法時視為拒絕 */
+/** A confirmation result from the renderer; anything invalid counts as a rejection */
 function agentDecision(input: unknown): AgentDecision {
   if (!input || typeof input !== 'object') return { approved: false }
   const o = input as Record<string, unknown>
@@ -192,7 +192,7 @@ function agentDecision(input: unknown): AgentDecision {
   return { approved: o.approved === true, ...(edited ? { edited } : {}) }
 }
 
-/** 使用者修改後的提案：只取能修改的欄位，其餘由 main 沿用原本的提案 */
+/** The proposal as edited by the user: only the editable fields are taken, and main keeps the rest of the original proposal */
 function agentProposal(input: unknown): AgentProposal | undefined {
   if (!input || typeof input !== 'object') return undefined
   const o = input as Record<string, unknown>
@@ -209,7 +209,7 @@ function agentProposal(input: unknown): AgentProposal | undefined {
 const day = (v: unknown): string | undefined =>
   typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined
 
-/** renderer 傳來的時間範圍；不合法時 undefined（改從問題解析） */
+/** A time range from the renderer; undefined when invalid (parse it from the question instead) */
 function dateRange(input: unknown): DateRange | undefined {
   if (!input || typeof input !== 'object') return undefined
   const o = input as Record<string, unknown>
@@ -219,7 +219,7 @@ function dateRange(input: unknown): DateRange | undefined {
   return from <= to ? { from, to } : { from: to, to: from }
 }
 
-/** renderer 傳來的對話紀錄只取合法的訊息 */
+/** Keep only valid messages from the conversation history sent by the renderer */
 function chatHistory(input: unknown): ChatTurn[] {
   if (!Array.isArray(input)) return []
   return input.flatMap((t): ChatTurn[] => {
@@ -231,7 +231,7 @@ function chatHistory(input: unknown): ChatTurn[] {
   })
 }
 
-/** renderer 傳來的檢索選項只取合法欄位 */
+/** Keep only valid fields of the retrieval options sent by the renderer */
 function retrieveOptions(input: unknown): RetrieveOptions {
   if (!input || typeof input !== 'object') return {}
   const o = input as Record<string, unknown>

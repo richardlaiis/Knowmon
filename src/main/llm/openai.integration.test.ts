@@ -1,9 +1,9 @@
-// 與真的雲端服務連線的整合測試，預設跳過。每個服務各自開啟：
+// Integration tests against real cloud providers, skipped by default. Enable each provider separately:
 //   OPENAI_IT=1 OPENAI_API_KEY=sk-… OPENAI_MODEL=… npx vitest run src/main/llm/openai.integration.test.ts
 //   GEMINI_IT=1 GEMINI_API_KEY=… GEMINI_MODEL=… npx vitest run src/main/llm/openai.integration.test.ts
 //   CUSTOM_IT=1 CUSTOM_BASE_URL=http://127.0.0.1:11434/v1 CUSTOM_API_KEY=x CUSTOM_MODEL=qwen3:8b \
 //     npx vitest run src/main/llm/openai.integration.test.ts
-// （最後一個用 Ollama 本身的 OpenAI 相容端點，不需要雲端帳號。）
+// (The last one uses Ollama's own OpenAI-compatible endpoint and needs no cloud account.)
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -51,7 +51,7 @@ const TARGETS: Target[] = [
 const TEST_VAULT = path.resolve(__dirname, '../../../test-vault')
 
 for (const t of TARGETS) {
-  describe.skipIf(!t.enabled)(`${PROVIDER_LABELS[t.provider]}（實際連線）`, () => {
+  describe.skipIf(!t.enabled)(`${PROVIDER_LABELS[t.provider]} (real connection)`, () => {
     const client = createOpenAiCompatible({
       baseUrl: t.baseUrl,
       apiKey: t.apiKey,
@@ -60,19 +60,19 @@ for (const t of TARGETS) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'knowmon-cloud-it-'))
     afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }))
 
-    it('設定齊全', () => {
+    it('is fully configured', () => {
       expect(t.apiKey, 'API key').not.toBe('')
       expect(t.model, 'model').not.toBe('')
       expect(t.baseUrl, 'base URL').not.toBe('')
     })
 
-    it('列出模型', async () => {
+    it('lists models', async () => {
       const models = await client.models()
       console.log(`${t.provider}: ${models.length} models`, models.slice(0, 10))
       if (t.provider !== 'custom') expect(models.length).toBeGreaterThan(0)
     }, 30_000)
 
-    it('串流對話', async () => {
+    it('streams chat', async () => {
       const parts: string[] = []
       const text = await client.chat(
         t.model,
@@ -83,7 +83,7 @@ for (const t of TARGETS) {
       expect(parts.join('')).toBe(text)
     }, 60_000)
 
-    it('test-vault：agent 兩步以上的工具呼叫（Gemini 需要帶回 thought signature）', async () => {
+    it('test-vault: agent tool calls over two or more steps (Gemini needs the thought signature sent back)', async () => {
       const root = path.join(tmp, 'vault')
       fs.cpSync(TEST_VAULT, root, { recursive: true })
       const vault = await Vault.open(root)
@@ -107,7 +107,7 @@ for (const t of TARGETS) {
         await service.attach(vault)
         expect(service.status()).toMatchObject({ online: true, error: null })
         const id = service.agent({
-          task: 'First search my notes about 跑步 (running), then open one of the results with get_note, and tell me in one sentence what it says.'
+          task: 'First search my notes about running, then open one of the results with get_note, and tell me in one sentence what it says.'
         })
         const end = Date.now() + 120_000
         while (!chunks.some((c) => c.id === id && c.done)) {

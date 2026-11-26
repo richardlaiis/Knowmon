@@ -1,7 +1,7 @@
 name: Release
 
-# 推 v* tag：打包四個平台並建立草稿 Release（使用者檢查後手動 Publish）。
-# workflow_dispatch：只打包、上傳成 workflow artifacts，不建立 Release，用來在發版前試打。
+# Pushing a v* tag: packages all four platforms and creates a draft Release (the user checks it and publishes by hand).
+# workflow_dispatch: packages only and uploads workflow artifacts without creating a Release, for a trial build before releasing.
 on:
   push:
     tags: ['v*']
@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 用較舊的 Ubuntu 打包，產出的程式在舊發行版上比較不會因 glibc 太新而跑不起來
+          # Package on an older Ubuntu so the app is less likely to fail on older distributions because of too new a glibc
           - os: ubuntu-22.04
             name: linux
             args: --linux
@@ -26,7 +26,7 @@ jobs:
           - os: macos-latest
             name: mac-arm64
             args: --mac
-          # 預計 2027 年 8 月停用，見 docs/releasing.md
+          # Scheduled to be retired in August 2027; see docs/releasing.md
           - os: macos-15-intel
             name: mac-x64
             args: --mac
@@ -57,7 +57,7 @@ jobs:
       - run: npx electron-vite build
       - run: npx electron-builder ${{ matrix.args }} --publish never
         env:
-          # 不嘗試用 keychain 裡的憑證簽章；mac.identity '-' 會改做 ad-hoc 簽章
+          # Don't try to sign with a keychain certificate; mac.identity '-' gives an ad-hoc signature instead
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Show macOS code signature

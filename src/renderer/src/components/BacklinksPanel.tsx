@@ -7,9 +7,9 @@ import { Segments } from './Segments'
 
 export interface BacklinksPanelProps {
   path: string
-  /** 索引有變動時遞增，重新查詢 */
+  /** Incremented when the index changes, to query again */
   version: number
-  /** newTab：Ctrl/Cmd+點擊或中鍵 */
+  /** newTab: Ctrl/Cmd+click or middle click */
   onOpen: (path: string, newTab: boolean) => void
 }
 

@@ -1,164 +1,164 @@
-# 階段 8 任務 1：在 Linux 試打包
+# Phase 8 task 1: trial packaging on Linux
 
 ## Context
 
-階段 8 的最後一項是「產出安裝檔」，但專案到現在都只從原始碼執行，打包從沒真正跑過。打包是階段 8 風險最高的部分，所以先做：在 Linux 打出 deb 與 AppImage，確認安裝後所有功能（包括 AI 向量功能）都正常。範本留下的設定也一起清掉。設定頁與效能優化是後面的任務；最後一個任務才做正式版、三個平台打包與文件收尾。
+The last item of phase 8 is "produce installers", but so far the project has only run from source, and packaging has never really been tried. Packaging is the riskiest part of phase 8, so it comes first: build a deb and an AppImage on Linux and confirm that every feature (including the AI vector features) works after installing. Leftover template settings get cleaned up too. The settings page and performance work are later tasks; the final task does the release version, packaging for all three platforms and the documentation wrap-up.
 
-目前已知的問題：
+Known problems so far:
 
-1. **sqlite-vec 在打包版會載入失敗。** `src/main/db/index.ts` 的 `loadVectorExtension` 呼叫 `sqliteVec.load(db)`。它以 `require.resolve` 找到 `vec0.so`，打包後路徑落在 `…/resources/app.asar/node_modules/sqlite-vec-linux-x64/vec0.so`。這個路徑交給 SQLite 的 C 層 `dlopen` 時不經過 Electron 的 asar 轉址，所以載入不了。更糟的是 `electron-builder.yml` 的 `asarUnpack` 只有 `resources/**`，`.so` 根本不在磁碟上。結果是打包版的 Hybrid 搜尋、Semantic 邊、問答、Agent 全部降級。better-sqlite3 的 `.node` 經 Node 的 `require` 載入，electron-builder 的 smartUnpack 會自動處理，不受影響。
-2. **App 設定資料夾會改名。** 開發版的 userData 是 `~/.config/knowmon`（package.json 的 `name`），打包版預計會變成 `~/.config/Knowmon`（productName）。這樣上次的 vault、Ollama 設定、分頁與主題偏好（localStorage）都讀不到。使用者決定**固定用 `knowmon`**。
-3. **範本留下的設定沒改：**
-   - `package.json` 的 `description`、`author`（example.com）、`homepage`（electron-vite.org）。
-   - `electron-builder.yml`：`linux.maintainer: electronjs.org`、`publish`（指向 example.com 的自動更新；專案沒有用 electron-updater）、macOS `extendInfo` 的相機／麥克風／文件夾權限說明。
-   - `files` 沒有排除 `docs/`、`test-vault/`、`scripts/`，它們會被包進 app。
-4. **Linux 格式**（使用者決定）：deb ＋ AppImage，拿掉 snap（需要 snapcraft，這台沒有）。deb 的 after-install 腳本會設定 chrome-sandbox 與 AppArmor profile（Ubuntu 24+）。AppImage 在 Ubuntu 24+ 會被 AppArmor 擋住 sandbox（這台 `apparmor_restrict_unprivileged_userns = 1`），只記錄現象並寫進說明，不硬改。
-5. **作者資訊**（使用者決定）：`Richard Lai <richardlaiis@proton.me>`。
+1. **sqlite-vec fails to load in the packaged app.** `loadVectorExtension` in `src/main/db/index.ts` calls `sqliteVec.load(db)`. That finds `vec0.so` with `require.resolve`, which after packaging lands at `…/resources/app.asar/node_modules/sqlite-vec-linux-x64/vec0.so`. When that path is handed to SQLite's C-level `dlopen`, Electron's asar redirection doesn't apply, so it can't load. Worse, `asarUnpack` in `electron-builder.yml` only covers `resources/**`, so the `.so` isn't on disk at all. As a result, Hybrid search, Semantic edges, Q&A and the Agent all degrade in the packaged app. better-sqlite3's `.node` is loaded through Node's `require` and electron-builder's smartUnpack handles it automatically, so it's unaffected.
+2. **The app settings folder gets renamed.** The development build's userData is `~/.config/knowmon` (the `name` in package.json), while the packaged build would become `~/.config/Knowmon` (productName). The last vault, the Ollama settings, and the tab and theme preferences (localStorage) would then be lost. User decision: **always use `knowmon`**.
+3. **Template settings were never changed:**
+   - `description`, `author` (example.com) and `homepage` (electron-vite.org) in `package.json`.
+   - `electron-builder.yml`: `linux.maintainer: electronjs.org`, `publish` (auto-updates pointing to example.com; the project doesn't use electron-updater), and the camera/microphone/folder permission descriptions in macOS `extendInfo`.
+   - `files` doesn't exclude `docs/`, `test-vault/` and `scripts/`, so they get packaged into the app.
+4. **Linux formats** (user decision): deb + AppImage, dropping snap (needs snapcraft, which this machine doesn't have). The deb's after-install script sets up chrome-sandbox and an AppArmor profile (Ubuntu 24+). On Ubuntu 24+, AppArmor blocks the AppImage's sandbox (this machine has `apparmor_restrict_unprivileged_userns = 1`); just record the behavior and document it rather than forcing a fix.
+5. **Author information** (user decision): `Richard Lai <richardlaiis@proton.me>`.
 
-圖示仍是 Electron 預設圖示（`build/icon.*`、`resources/icon.png`），留到最後的正式打包任務處理，這次不動。
+The icons are still Electron's defaults (`build/icon.*`, `resources/icon.png`); they're left for the final packaging task and untouched this time.
 
-## 步驟
+## Steps
 
-### 0. 收尾與存檔
+### 0. Housekeeping and saving
 
-- 刪除記憶 `image-feature-pending-test.md` 與 `MEMORY.md` 中對應的那一行（使用者已測過圖片功能）；`electron-headless-testing.md` 的 `[[image-feature-pending-test]]` 一併拿掉。
-- 把這份計畫存成 `docs/plans/phase8-packaging.md`（依 roadmap 慣例）。之後的發現與量測結果寫在這份文件。
+- Delete the memory `image-feature-pending-test.md` and its line in `MEMORY.md` (the user has tested the image feature); also remove `[[image-feature-pending-test]]` from `electron-headless-testing.md`.
+- Save this plan as `docs/plans/phase8-packaging.md` (the roadmap convention). Later findings and measurements go in this document.
 
-### 1. sqlite-vec 從 asar 外載入
+### 1. Load sqlite-vec from outside the asar
 
-`src/main/db/index.ts`：
+`src/main/db/index.ts`:
 
-- 新增並 export 純函式 `unpackedPath(p: string): string`：把路徑中的 `app.asar` 目錄段換成 `app.asar.unpacked`，`/` 與 `\` 都要處理；已經是 `app.asar.unpacked` 或不在 asar 裡的路徑原樣回傳。
-- `loadVectorExtension` 改成 `db.loadExtension(unpackedPath(sqliteVec.getLoadablePath()))`，失敗時的 `console.warn` 與降級邏輯不變。開發與測試時路徑沒有 `app.asar`，行為完全一樣。
-- 測試加在 `src/main/db/vectors.test.ts`：Linux 路徑、Windows 反斜線路徑、已 unpacked、不在 asar、檔名剛好含 `app.asar` 字樣但不是目錄段。
+- Add and export the pure function `unpackedPath(p: string): string`: it replaces the `app.asar` directory segment of a path with `app.asar.unpacked`, handling both `/` and `\`; paths that are already `app.asar.unpacked` or not in an asar are returned unchanged.
+- `loadVectorExtension` becomes `db.loadExtension(unpackedPath(sqliteVec.getLoadablePath()))`, keeping the `console.warn` and fallback on failure. In development and tests the path has no `app.asar`, so behavior is exactly the same.
+- Tests in `src/main/db/vectors.test.ts`: a Linux path, a Windows backslash path, an already unpacked path, a path outside an asar, and a file name that happens to contain `app.asar` without it being a directory segment.
 
-`electron-builder.yml`：`asarUnpack` 加入 `node_modules/sqlite-vec-*/**`。
+`electron-builder.yml`: add `node_modules/sqlite-vec-*/**` to `asarUnpack`.
 
-### 2. 固定 userData 為 `knowmon`
+### 2. Fix userData to `knowmon`
 
-`src/main/index.ts`：在模組頂層（`app.whenReady()` 之前、`registerSchemesAsPrivileged` 旁邊）呼叫 `app.setPath('userData', join(app.getPath('appData'), 'knowmon'))`，附一行註解說明原因。這是 main process 內部行為，不動 `types.ts` 與 IPC 合約。
+`src/main/index.ts`: at the module's top level (before `app.whenReady()`, next to `registerSchemesAsPrivileged`), call `app.setPath('userData', join(app.getPath('appData'), 'knowmon'))`, with a one-line comment explaining why. This is internal main-process behavior and doesn't touch `types.ts` or the IPC contract.
 
-### 3. 清理打包設定
+### 3. Clean up the packaging configuration
 
-`package.json`：
+`package.json`:
 
-- `description`：一句話描述 Knowmon。
-- `author`：`Richard Lai <richardlaiis@proton.me>`。
-- `homepage`：`https://github.com/richardlaiis/Knowmon`。
+- `description`: one sentence describing Knowmon.
+- `author`: `Richard Lai <richardlaiis@proton.me>`.
+- `homepage`: `https://github.com/richardlaiis/Knowmon`.
 
-`electron-builder.yml`：
+`electron-builder.yml`:
 
-- `files` 增加排除：`!{docs,test-vault,scripts}/**`、`!{CLAUDE.md,vitest.config.ts}`。
-- `linux.target` 改為 `AppImage`、`deb`；`linux.maintainer` 改為作者資訊；`linux.category` 改為 `Office`。
-- 刪除 `publish` 區塊（沒有自動更新）。
-- 刪除 `mac.extendInfo` 中用不到的權限說明。
+- Add exclusions to `files`: `!{docs,test-vault,scripts}/**`, `!{CLAUDE.md,vitest.config.ts}`.
+- `linux.target` becomes `AppImage` and `deb`; `linux.maintainer` becomes the author information; `linux.category` becomes `Office`.
+- Remove the `publish` block (no auto-updates).
+- Remove the unused permission descriptions from `mac.extendInfo`.
 
-### 4. 建置並檢查內容
+### 4. Build and inspect the contents
 
-- `npm run build:linux`，產出 `dist/knowmon-1.0.0.AppImage`、`dist/knowmon_1.0.0_amd64.deb`、`dist/linux-unpacked/`。
-- 用 `npx asar list dist/linux-unpacked/resources/app.asar` 確認：
-  - 沒有 `docs`、`test-vault`、`scripts`、`src`。
-  - `app.asar.unpacked/` 裡有 `node_modules/sqlite-vec-linux-x64/vec0.so` 與 better-sqlite3 的 `.node`。
-- 記錄安裝檔大小。better-sqlite3 會帶進 8 個平台的 prebuild（約 17 MB），只記錄，不在這次優化。
+- `npm run build:linux` produces `dist/knowmon-1.0.0.AppImage`, `dist/knowmon_1.0.0_amd64.deb` and `dist/linux-unpacked/`.
+- Use `npx asar list dist/linux-unpacked/resources/app.asar` to confirm:
+  - No `docs`, `test-vault`, `scripts` or `src`.
+  - `app.asar.unpacked/` contains `node_modules/sqlite-vec-linux-x64/vec0.so` and better-sqlite3's `.node`.
+- Record the installer sizes. better-sqlite3 brings prebuilds for 8 platforms (about 17 MB); just record it, without optimizing this time.
 
-### 5. 自動驗證打包後的 asar 結構
+### 5. Automatically verify the packaged asar layout
 
-沿用記憶 `electron-headless-testing` 的做法：用 scratchpad 裡的 wrapper main.js，以 `node_modules/electron` 執行打包出的 `dist/linux-unpacked/resources/app.asar/out/main/index.js`。wrapper 要做三件事：
+Following the memory `electron-headless-testing`: use a wrapper main.js in the scratchpad that runs the packaged `dist/linux-unpacked/resources/app.asar/out/main/index.js` with `node_modules/electron`. The wrapper does three things:
 
-- 隱藏視窗。
-- stub `dialog.showOpenDialog`，回傳家目錄下 test-vault 的副本（不能放 `/tmp`）。
-- 開 `--remote-debugging-port`。
+- Hides the window.
+- Stubs `dialog.showOpenDialog` to return a copy of test-vault under the home directory (not `/tmp`).
+- Opens `--remote-debugging-port`.
 
-用 CDP 開 vault，然後確認：
+Open the vault over CDP, then confirm:
 
-- `window.api.llm.status()` 沒有 `sqlite-vec failed to load` 錯誤。
-- Ollama 在跑時，embedding 跑完後 `sqlite3 <vault>/.knowmon/index.db "select count(*) from vec_chunks"` 大於 0。
-- Hybrid 搜尋 `培養好習慣的方法` 回傳 `vector: true`，結果帶有 meaning 標籤。
-- 圖片協定 `knowmon-asset://` 能讀到 `attachments/` 裡的圖片。
-- userData 落在 `~/.config/knowmon`（wrapper 用獨立的 `--user-data-dir` 時，改成檢查 `app.getPath('appData')` 拼出的路徑邏輯）。
+- `window.api.llm.status()` has no `sqlite-vec failed to load` error.
+- With Ollama running, after embedding finishes, `sqlite3 <vault>/.knowmon/index.db "select count(*) from vec_chunks"` is greater than 0.
+- Hybrid search for `培養好習慣的方法` returns `vector: true`, with results labeled meaning.
+- The `knowmon-asset://` image protocol can read images in `attachments/`.
+- userData is at `~/.config/knowmon` (if the wrapper uses its own `--user-data-dir`, check the path logic built from `app.getPath('appData')` instead).
 
-這一步只驗證 asar／unpacked 的結構與路徑轉換；真正的安裝流程由下一步手動測試。
+This step only verifies the asar/unpacked layout and the path conversion; the real installation flow is tested manually in the next step.
 
-### 6. 使用者手動測試（需要 sudo，由使用者執行）
+### 6. Manual testing by the user (needs sudo, run by the user)
 
 1. `! sudo apt install ./dist/knowmon_1.0.0_amd64.deb`
-2. 從應用程式選單開啟 Knowmon，確認不需要 `--no-sandbox` 就能啟動。
-3. 開啟 vault 後，以下項目都要正常：
-   - 側欄出現 AI ready。
-   - Hybrid 搜尋有 meaning 結果。
-   - 圖譜的 Semantic 邊、問答、Agent。
-   - 圖片貼上與顯示。
-   - 刪除筆記會進垃圾桶。
-4. 確認上次的 vault 位置、主題與分頁都沿用開發版的設定（因為 userData 相同）。
-5. `chmod +x dist/knowmon-1.0.0.AppImage && ./dist/knowmon-1.0.0.AppImage`：記錄是否被 sandbox 擋住，再試 `--no-sandbox`。
-6. `sudo apt remove knowmon` 能乾淨移除。
+2. Open Knowmon from the application menu and confirm it starts without `--no-sandbox`.
+3. After opening a vault, all of these must work:
+   - AI ready appears in the sidebar.
+   - Hybrid search has meaning results.
+   - Semantic edges in the graph, Q&A, the Agent.
+   - Pasting and showing images.
+   - Deleting a note sends it to the trash.
+4. Confirm the last vault location, theme and tabs carry over from the development build (since userData is the same).
+5. `chmod +x dist/knowmon-1.0.0.AppImage && ./dist/knowmon-1.0.0.AppImage`: record whether the sandbox blocks it, then try `--no-sandbox`.
+6. `sudo apt remove knowmon` removes it cleanly.
 
-### 7. 文件
+### 7. Documentation
 
-- `docs/plans/phase8-packaging.md`：記錄發現、安裝檔大小、AppImage 的實際行為。
-- `docs/architecture.md` 的「開發環境注意事項」：把「打包時要確認 sqlite-vec 沒被包進 asar」改寫成目前的做法（`asarUnpack` ＋ `unpackedPath`），並補上 userData 固定為 `knowmon`。
-- 使用說明 `installation.md`（中英文）的「自行打包安裝檔」：更新為 deb 與 AppImage、拿掉 snap、拿掉「向量搜尋可能失效」的警告（Linux 已驗證；Windows 和 macOS 仍標示未驗證），並加上 AppImage 在 Ubuntu 24+ 需要 `--no-sandbox` 的說明（依第 6 步的結果）。README 的「建置安裝檔」同步更新。
-- roadmap 的「產出安裝檔」**先不勾**，等最後的正式打包任務（三個平台、圖示、版本）完成再勾。
+- `docs/plans/phase8-packaging.md`: record findings, installer sizes and the AppImage's actual behavior.
+- "Development environment notes" in `docs/architecture.md`: rewrite "when packaging, make sure sqlite-vec isn't packed into the asar" as the current approach (`asarUnpack` + `unpackedPath`), and add that userData is fixed to `knowmon`.
+- "Building installers yourself" in the user guide's `installation.md` (Chinese and English): update to deb and AppImage, drop snap, drop the "vector search may not work" warning (verified on Linux; Windows and macOS are still marked unverified), and add that the AppImage needs `--no-sandbox` on Ubuntu 24+ (depending on step 6's results). Update "Building installers" in the README to match.
+- **Don't check off** "produce installers" in the roadmap yet; wait until the final packaging task (three platforms, icons, version) is done.
 
-## 不在這次範圍
+## Out of scope this time
 
-- 正式圖示、版本號、程式碼簽章、Windows 與 macOS 打包（需要各自的作業系統或 CI），留到最後的正式打包任務。
-- 只帶目標平台的 better-sqlite3 prebuild（瘦身）。
-- 設定頁、效能優化。
+- Final icons, version number, code signing, Windows and macOS packaging (they need their own operating systems or CI), left for the final packaging task.
+- Shipping only the target platform's better-sqlite3 prebuild (slimming down).
+- The settings page and performance work.
 
-## 驗證
+## Verification
 
-- `npx vitest run`、`npm run typecheck`、`npm run lint` 全部通過（含新的 `unpackedPath` 測試，以及原本的 `vectors.test.ts`）。
-- `npm run dev` 仍正常啟動，並讀到 `~/.config/knowmon` 的設定。
-- 第 4 步的 asar 內容檢查、第 5 步的自動驗證通過。
-- 使用者完成第 6 步的手動測試清單。
+- `npx vitest run`, `npm run typecheck` and `npm run lint` all pass (including the new `unpackedPath` tests and the existing `vectors.test.ts`).
+- `npm run dev` still starts normally and reads the settings in `~/.config/knowmon`.
+- The asar content check in step 4 and the automated verification in step 5 pass.
+- The user completes the manual test checklist in step 6.
 
-## 結果（2026-10-20）
+## Results (2026-10-20)
 
-### 與計畫不同之處
+### Differences from the plan
 
-- macOS 的 `NSDocumentsFolderUsageDescription`、`NSDownloadsFolderUsageDescription` **保留**並改寫說明：vault 常放在這兩個資料夾，macOS 存取時會要求權限說明。只刪除相機與麥克風。
-- 第一次建置時 electron-builder 從 git remote 自動推得 GitHub，產生了 `app-update.yml` 與 `latest-linux.yml`，所以明確設定 `publish: null`。
-- 建置時警告沒有 `desktopName`（Wayland 下視窗無法對應到 `.desktop`，Dock 顯示通用圖示），加上 `package.json` 的 `"desktopName": "knowmon.desktop"` 與 `linux.syncDesktopName: true`。
+- macOS's `NSDocumentsFolderUsageDescription` and `NSDownloadsFolderUsageDescription` were **kept** with rewritten descriptions: vaults often live in those two folders, and macOS asks for a usage description when accessing them. Only the camera and microphone ones were removed.
+- On the first build, electron-builder inferred GitHub from the git remote and generated `app-update.yml` and `latest-linux.yml`, so `publish: null` is now set explicitly.
+- The build warned about a missing `desktopName` (under Wayland the window can't be matched to its `.desktop` file, so the dock shows a generic icon), so `"desktopName": "knowmon.desktop"` was added to `package.json` along with `linux.syncDesktopName: true`.
 
-### 建置
+### Build
 
-`npm run build:linux`（electron-builder 26.15.3、Electron 39.8.10）：
+`npm run build:linux` (electron-builder 26.15.3, Electron 39.8.10):
 
-| 檔案                           | 大小                    |
-| ------------------------------ | ----------------------- |
-| `dist/knowmon-1.0.0.AppImage`  | 131 MB                  |
-| `dist/knowmon_1.0.0_amd64.deb` | 103 MB（安裝後 328 MB） |
+| File                           | Size                           |
+| ------------------------------ | ------------------------------ |
+| `dist/knowmon-1.0.0.AppImage`  | 131 MB                         |
+| `dist/knowmon_1.0.0_amd64.deb` | 103 MB (328 MB when installed) |
 
-- asar 內沒有 `docs`、`test-vault`、`scripts`、`src`。
-- `app.asar.unpacked/` 有 `node_modules/sqlite-vec-linux-x64/vec0.so`。better-sqlite3 由 smartUnpack 整包解出，包含 8 個平台的 prebuild（17 MB）與 C 原始碼，之後可瘦身。
-- deb 的 `postinst` 會設定 chrome-sandbox，並在 Ubuntu 24+ 安裝 AppArmor profile。
-- renderer 的主要 bundle 約 3 MB（效能任務可再看）。
+- The asar contains no `docs`, `test-vault`, `scripts` or `src`.
+- `app.asar.unpacked/` contains `node_modules/sqlite-vec-linux-x64/vec0.so`. better-sqlite3 is unpacked whole by smartUnpack, including prebuilds for 8 platforms (17 MB) and its C sources; it can be slimmed down later.
+- The deb's `postinst` sets up chrome-sandbox and installs an AppArmor profile on Ubuntu 24+.
+- The renderer's main bundle is about 3 MB (worth another look in the performance task).
 
-### 自動驗證（第 5 步）
+### Automated verification (step 5)
 
-以 `node_modules/electron` 執行 wrapper，載入 `dist/linux-unpacked/resources/app.asar/out/main/index.js`（`XDG_CONFIG_HOME` 指到 scratchpad，不碰真正的設定），用 CDP 開啟 test-vault 的副本：
+Ran the wrapper with `node_modules/electron`, loading `dist/linux-unpacked/resources/app.asar/out/main/index.js` (with `XDG_CONFIG_HOME` pointing to the scratchpad so the real settings aren't touched), and opened a copy of test-vault over CDP:
 
-| 檢查                                                    | 結果                                                              |
-| ------------------------------------------------------- | ----------------------------------------------------------------- |
-| userData                                                | `<XDG_CONFIG_HOME>/knowmon` ✓                                     |
-| `llm.status()`                                          | online、沒有錯誤、9/9 篇完成 embedding ✓                          |
-| Hybrid 檢索「培養好習慣的方法」                         | `vector: true`，前三名「原子習慣」「深度工作」「歡迎」帶 vector ✓ |
-| 圖譜 Semantic 邊                                        | 9 條 ✓                                                            |
-| `<img src="knowmon-asset://vault/attachments/pic.png">` | 載入 512×512 ✓                                                    |
+| Check                                                   | Result                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| userData                                                | `<XDG_CONFIG_HOME>/knowmon` ✓                                             |
+| `llm.status()`                                          | online, no errors, 9/9 notes embedded ✓                                   |
+| Hybrid retrieval for 「培養好習慣的方法」               | `vector: true`; the top three, 原子習慣, 深度工作 and 歡迎, have vector ✓ |
+| Semantic edges in the graph                             | 9 ✓                                                                       |
+| `<img src="knowmon-asset://vault/attachments/pic.png">` | Loads at 512×512 ✓                                                        |
 
-（renderer 以 `fetch` 讀 `knowmon-asset:` 會被 CSP 擋下，這是預期行為：CSP 只在 `img-src` 開放這個協定。）
+(Reading `knowmon-asset:` with `fetch` in the renderer is blocked by the CSP, which is expected: the CSP only allows this protocol in `img-src`.)
 
-### AppImage 與 FUSE
+### AppImage and FUSE
 
-使用者執行 AppImage 時出現 `dlopen(): error loading libfuse.so.2 … AppImages require FUSE to run`：electron-builder 預設的舊 AppImage runtime 需要 FUSE 2，而 Ubuntu 22.04 之後預設只有 FUSE 3（這台 Ubuntu 26.04 也是）。
+Running the AppImage, the user got `dlopen(): error loading libfuse.so.2 … AppImages require FUSE to run`: electron-builder's default old AppImage runtime needs FUSE 2, while Ubuntu ships only FUSE 3 by default after 22.04 (as does this machine's Ubuntu 26.04).
 
-- 改用 `toolsets.appimage: '1.0.3'`（static runtime 20251108，electron-builder 26 的 beta 選項），不需要 libfuse2。AppImage 變成 122 MB（zstd 壓縮）。
-- 新 runtime 的 AppRun 以 `unshare -Ur true` 檢查 user namespace，失敗時自動加 `--no-sandbox`。這台 `unshare` 失敗（`apparmor_restrict_unprivileged_userns = 1`），所以 AppImage 在 Ubuntu 24+ 是以沒有 sandbox 的方式執行；舊 runtime 則是一律加 `--no-sandbox`。deb 不受影響（postinst 安裝 AppArmor profile），因此 Debian／Ubuntu 建議用 deb。
-- 實測：`timeout 12 ./dist/knowmon-1.0.0.AppImage` 執行到逾時（exit 124），只有無害的 libva 警告。
+- Switched to `toolsets.appimage: '1.0.3'` (static runtime 20251108, a beta option in electron-builder 26), which doesn't need libfuse2. The AppImage became 122 MB (zstd compression).
+- The new runtime's AppRun checks user namespaces with `unshare -Ur true` and adds `--no-sandbox` automatically when that fails. `unshare` fails on this machine (`apparmor_restrict_unprivileged_userns = 1`), so on Ubuntu 24+ the AppImage runs without a sandbox; the old runtime always added `--no-sandbox`. The deb is unaffected (its postinst installs an AppArmor profile), so the deb is recommended on Debian/Ubuntu.
+- Tested: `timeout 12 ./dist/knowmon-1.0.0.AppImage` ran until the timeout (exit 124), with only a harmless libva warning.
 
-### 手動測試（第 6 步，使用者 2026-10-20）
+### Manual testing (step 6, by the user, 2026-10-20)
 
-- deb：`sudo apt install` 後從應用程式選單開啟，不需要 `--no-sandbox`；AI、Hybrid 搜尋、Semantic 邊、問答、Agent、圖片、垃圾桶、沿用開發版設定都正常。
-- AppImage（static runtime）：不需要 libfuse2，可以直接開啟。
-- `sudo apt remove knowmon` 正常移除，但會停頓一下。postrm 只移除 `/usr/bin/knowmon` 連結並以 `apparmor_parser --remove` 卸載 profile，停頓推測主要來自刪除約 330 MB 的檔案與 apt 的觸發程序（桌面選單、圖示快取），屬於 Electron App 的正常現象，不處理。
+- deb: after `sudo apt install`, it opens from the application menu without `--no-sandbox`; AI, Hybrid search, Semantic edges, Q&A, the Agent, images, the trash and carrying over the development settings all work.
+- AppImage (static runtime): doesn't need libfuse2 and opens directly.
+- `sudo apt remove knowmon` removes it, with a short pause. postrm only removes the `/usr/bin/knowmon` link and unloads the profile with `apparmor_parser --remove`; the pause is probably mostly from deleting about 330 MB of files and apt's triggers (desktop menu, icon cache). That's normal for an Electron app and not worth addressing.

@@ -10,7 +10,7 @@ function memoryStore(): Pick<Storage, 'getItem' | 'setItem'> {
 }
 
 describe('theme', () => {
-  it('預設淺色，記住切換後的選擇', () => {
+  it('defaults to light and remembers the chosen theme', () => {
     const store = memoryStore()
     expect(loadTheme(store)).toBe('light')
     saveTheme(store, 'dark')
@@ -18,7 +18,7 @@ describe('theme', () => {
     expect(loadTheme(store)).toBe('dark')
   })
 
-  it('無法存取儲存空間或值無效時回到淺色', () => {
+  it('falls back to light when storage is unavailable or the value is invalid', () => {
     const broken = {
       getItem: () => {
         throw new Error('blocked')
@@ -35,7 +35,7 @@ describe('theme', () => {
     expect(loadTheme(store)).toBe('light')
   })
 
-  it('applyTheme 設定 data-theme，otherTheme 互換', () => {
+  it('applyTheme sets data-theme, and otherTheme swaps', () => {
     const root = { dataset: {} as DOMStringMap }
     applyTheme(root, 'dark')
     expect(root.dataset.theme).toBe('dark')

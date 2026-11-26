@@ -1,4 +1,4 @@
-// 檔案樹的路徑工具（純函式，路徑一律為相對 vault 的 posix 路徑）
+// Path helpers for the file tree (pure functions; paths are always posix paths relative to the vault)
 import type { TreeNode } from '../../../shared/types'
 
 export function parentOf(path: string): string {
@@ -21,13 +21,13 @@ export function findNode(root: TreeNode, path: string): TreeNode | null {
   return null
 }
 
-/** 檔案樹中正在輸入名稱、尚未建立的筆記或資料夾 */
+/** A note or folder in the file tree whose name is being entered and that doesn't exist yet */
 export interface NewItem {
   folder: string
   kind: TreeNode['kind']
 }
 
-/** 檢查使用者輸入的名稱；檔案會自動補上 .md */
+/** Checks a name entered by the user; files get .md appended automatically */
 function entryName(kind: TreeNode['kind'], input: string): string {
   const name = input.trim()
   if (!name || name.includes('/') || name.includes('\\') || name.startsWith('.')) {
@@ -36,12 +36,12 @@ function entryName(kind: TreeNode['kind'], input: string): string {
   return kind === 'file' && !name.toLowerCase().endsWith('.md') ? `${name}.md` : name
 }
 
-/** 使用者輸入新名稱後的完整路徑；檔案會自動補上 .md */
+/** The full path after the user enters a new name; files get .md appended automatically */
 export function renamedPath(node: Pick<TreeNode, 'path' | 'kind'>, newName: string): string {
   return joinPath(parentOf(node.path), entryName(node.kind, newName))
 }
 
-/** 以使用者輸入的名稱新增項目的路徑；資料夾中已有同名項目（不分大小寫）時丟出錯誤 */
+/** The path for a new item with the user's name; throws if the folder already has an item with that name (case-insensitive) */
 export function newItemPath(root: TreeNode, item: NewItem, input: string): string {
   const name = entryName(item.kind, input)
   const siblings = findNode(root, item.folder)?.children ?? []
@@ -51,20 +51,20 @@ export function newItemPath(root: TreeNode, item: NewItem, input: string): strin
   return joinPath(item.folder, name)
 }
 
-/** 筆記或其所在資料夾被搬移後，原本開著的路徑變成什麼；不受影響則回傳原路徑 */
+/** What an open path becomes after a note or its folder is moved; returns the original path when unaffected */
 export function remapPath(path: string, from: string, to: string): string {
   if (path === from) return to
   if (path.startsWith(from + '/')) return to + path.slice(from.length)
   return path
 }
 
-/** 拖曳 from 到 folder 後的新路徑；拖到自己裡面或位置沒變時回傳 null */
+/** The new path after dragging from into folder; null when dragged into itself or the position is unchanged */
 export function movedInto(from: string, folder: string): string | null {
   if (parentOf(from) === folder || isWithin(folder, from)) return null
   return joinPath(folder, from.slice(from.lastIndexOf('/') + 1))
 }
 
-/** path 是否等於 target 或位於 target 資料夾底下 */
+/** Whether path equals target or is inside the target folder */
 export function isWithin(path: string, target: string): boolean {
   return path === target || path.startsWith(target + '/')
 }
@@ -73,7 +73,7 @@ export function displayName(node: TreeNode): string {
   return node.kind === 'file' ? node.name.replace(/\.md$/i, '') : node.name
 }
 
-/** IPC 錯誤訊息會帶上 "Error invoking remote method 'x': Error: " 前綴，顯示前拿掉 */
+/** IPC error messages carry an "Error invoking remote method 'x': Error: " prefix, removed before display */
 export function errorMessage(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
   return msg.replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, '')

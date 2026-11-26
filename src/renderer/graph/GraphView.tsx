@@ -1,4 +1,4 @@
-// 圖譜視圖：Cytoscape 繪製與互動，版面配置在 Web Worker（layout.worker.ts）計算
+// Graph view: Cytoscape draws and handles interaction, and layout is computed in a Web Worker (layout.worker.ts)
 import { useEffect, useRef } from 'react'
 import cytoscape, { type Core, type ElementDefinition, type NodeSingular } from 'cytoscape'
 import type { GraphData } from '../../shared/types'
@@ -17,39 +17,39 @@ import { graphStyle, readColors } from './style'
 
 export interface GraphViewProps {
   data: GraphData
-  /** 目前開著的筆記，以強調色標示 */
+  /** The currently open note, shown in the accent color */
   current: string | null
-  /** newTab：Ctrl/Cmd+點擊 */
+  /** newTab: Ctrl/Cmd+click */
   onOpen: (path: string, newTab: boolean) => void
-  /** 節點座標快取，由呼叫者保存（同一個 vault 重開圖譜時不重排） */
+  /** Node position cache, kept by the caller (reopening the graph for the same vault doesn't redo the layout) */
   positions: Map<string, Point>
   labels: boolean
-  /** 主題改變時改變，重新套用顏色 */
+  /** Changes when the theme changes, to reapply colors */
   theme: string
-  /** 遞增時清掉座標重新排列 */
+  /** Incremented to clear positions and lay out again */
   relayoutKey: number
-  /** 遞增時縮放到整張圖 */
+  /** Incremented to zoom to fit the whole graph */
   fitKey: number
-  /** 節點有增減時，排版收斂後自動縮放到整張圖（局部圖切換筆記時用） */
+  /** When nodes are added or removed, zoom to fit once the layout converges (used when the local graph switches notes) */
   autoFit?: boolean
-  /** 大型圖譜排版中的進度（0–1），完成時為 null */
+  /** Layout progress (0–1) for large graphs; null when done */
   onProgress?: (progress: number | null) => void
-  /** 隱藏的節點（時間篩選）：只是不顯示，仍參與版面配置，所以篩選時節點不會移動 */
+  /** Hidden nodes (time filter): only not shown, still part of the layout, so nodes don't move when filtering */
   hidden?: ReadonlySet<string>
 }
 
-/** 新增/刪除的節點少於這個比例時只輕度加熱，不重排整張圖 */
+/** When fewer than this fraction of nodes are added/removed, only reheat gently instead of redoing the whole layout */
 const SMALL_CHANGE = 0.2
 const FIT_PADDING = 40
-/** 縮放到整張圖時的最大倍率，避免筆記很少時被放得很大 */
+/** Maximum zoom when fitting the whole graph, so a few notes aren't blown up */
 const MAX_FIT_ZOOM = 1.2
 /**
- * 超過這個節點數視為大型圖譜（實測 1000 篇時 Cytoscape 每次整張重畫約 25–110ms）：
- * 排版收斂後才一次套用座標，hover 只高亮鄰居、不淡化其他元素。
+ * Above this many nodes the graph counts as large (measured at 1000 notes, each full Cytoscape redraw takes about 25–110ms):
+ * positions are applied once after the layout converges, and hover only highlights neighbors without fading other elements.
  */
 export const LARGE_GRAPH = 500
 
-/** 縮放到整張圖；容器還沒有大小（例如被隱藏）時回傳 false */
+/** Zooms to fit the whole graph; returns false when the container has no size yet (for example while hidden) */
 function fitView(cy: Core): boolean {
   const visible = cy.nodes(':visible')
   if (visible.empty()) return true
@@ -67,22 +67,22 @@ function fitView(cy: Core): boolean {
 interface ViewState {
   data: GraphData
   adj: Map<string, Set<string>>
-  /** 目前 Worker 版面的節點順序（對應回傳的座標陣列） */
+  /** Node order of the current Worker layout (matching the returned position array) */
   ids: string[]
   generation: number
   pending: Float32Array | null
   frame: number
-  /** 這次排版收斂後縮放到整張圖 */
+  /** Zoom to fit once this layout converges */
   fitWhenDone: boolean
-  /** 隱藏時無法縮放，等容器有大小時再做 */
+  /** Can't zoom while hidden, so do it once the container has a size */
   fitWhenVisible: boolean
-  /** 套用隱藏節點的 requestAnimationFrame（拖動時間滑桿時每幀最多一次） */
+  /** requestAnimationFrame for applying hidden nodes (at most once per frame while dragging the time slider) */
   hideFrame: number
 }
 
 const EMPTY: GraphData = { nodes: [], edges: [] }
 
-/** 把 Cytoscape 的元素更新成 data，必要時重新啟動 Worker 的版面配置 */
+/** Updates the Cytoscape elements to data, restarting the Worker layout when needed */
 function sync(
   cy: Core,
   worker: Worker,
@@ -116,7 +116,7 @@ function sync(
     cy.add(add)
     for (const path of diff.updateNodes) cy.getElementById(path).data('title', titles.get(path))
     for (const e of diff.updateEdges) cy.getElementById(edgeId(e)).data('weight', e.weight)
-    // 連結數改變會影響節點大小
+    // A change in link count affects node size
     cy.nodes().forEach((n) => {
       const size = sizeOf(n.id())
       if (n.data('size') !== size) n.data('size', size)
@@ -134,7 +134,7 @@ function sync(
   if (structural === 0) return
   if (autoFit) s.fitWhenDone = true
 
-  // 大部分座標都有快取（重開圖譜、少量變動）時只微調，否則重新排列
+  // When most positions are cached (reopening the graph, small changes), only fine-tune; otherwise lay out again
   const alpha = fresh
     ? cached >= data.nodes.length * (1 - SMALL_CHANGE)
       ? 0.3
@@ -144,7 +144,7 @@ function sync(
       : 0.3
   const nodes = data.nodes.map((n) => {
     const p = cy.getElementById(n.path).position()
-    // 標籤關閉時也保留標籤的位置，切換標籤時版面不會跳動
+    // Label space is kept even when labels are off, so the layout doesn't jump when toggling them
     return {
       id: n.path,
       x: p.x,
@@ -182,13 +182,13 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     hideFrame: 0
   })
   const { data, current, positions, labels, theme, relayoutKey, fitKey, hidden } = props
-  // 事件處理器透過 ref 取得最新的 props，Cytoscape 只建立一次
+  // Event handlers get the latest props through a ref, so Cytoscape is created only once
   const latest = useRef(props)
   useEffect(() => {
     latest.current = props
   })
 
-  // ---- 建立 Cytoscape 與 Worker ----
+  // ---- Creating Cytoscape and the Worker ----
   useEffect(() => {
     const s = state.current
     const cy = cytoscape({
@@ -200,7 +200,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
       wheelSensitivity: 0.3,
       boxSelectionEnabled: false,
       autounselectify: true,
-      // 平移、縮放時以點陣圖代替重畫，大型圖譜仍然流暢
+      // While panning and zooming, use a bitmap instead of redrawing, so large graphs stay smooth
       textureOnViewport: true
     })
     cyRef.current = cy
@@ -233,7 +233,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
       }
       if (msg.done) latest.current.onProgress?.(null)
       s.pending = msg.positions
-      // 同一幀只套用最後一次收到的座標
+      // Apply only the last positions received within a frame
       if (!s.frame) s.frame = requestAnimationFrame(applyPositions)
       if (msg.done && s.fitWhenDone) {
         s.fitWhenDone = false
@@ -243,7 +243,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
       }
     }
 
-    // hover：高亮自己與鄰居；小型圖譜同時淡化其他元素（大型圖譜整張重新套樣式太貴）
+    // hover: highlight itself and its neighbors; small graphs also fade other elements (restyling a whole large graph is too expensive)
     cy.on('mouseover', 'node', (e) => {
       const node = e.target as NodeSingular
       const keep = neighborhood(s.adj, node.id())
@@ -264,7 +264,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
       const oe = e.originalEvent as MouseEvent | undefined
       latest.current.onOpen(e.target.id(), !!oe && (oe.ctrlKey || oe.metaKey))
     })
-    // 拖曳節點：固定在游標位置，其他節點跟著調整
+    // Dragging a node: pin it at the cursor while the other nodes adjust
     cy.on('drag', 'node', (e) => {
       const { x, y } = (e.target as NodeSingular).position()
       send({ type: 'pin', id: e.target.id(), x, y })
@@ -290,14 +290,14 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     }
   }, [])
 
-  // ---- 資料更新：增量修改 Cytoscape，必要時重新排列 ----
+  // ---- Data updates: modify Cytoscape incrementally, laying out again when needed ----
   useEffect(() => {
     if (cyRef.current && workerRef.current) {
       sync(cyRef.current, workerRef.current, state.current, data, positions, latest.current.autoFit)
     }
   }, [data, positions])
 
-  // ---- 重新排列：清掉座標快取與畫面，再以相同資料重建 ----
+  // ---- Re-layout: clear the position cache and the view, then rebuild with the same data ----
   useEffect(() => {
     const cy = cyRef.current
     const worker = workerRef.current
@@ -308,11 +308,11 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     cy.elements().remove()
     s.data = EMPTY
     sync(cy, worker, s, data, positions)
-    // 只在 relayoutKey 改變時執行
+    // Runs only when relayoutKey changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relayoutKey])
 
-  // ---- 時間篩選：切換節點的 hidden class（相連的邊跟著隱藏），不重新排版 ----
+  // ---- Time filter: toggle nodes' hidden class (connected edges hide with them), without re-running layout ----
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
@@ -329,7 +329,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     })
   }, [hidden, data, relayoutKey])
 
-  // ---- 目前的筆記 ----
+  // ---- The current note ----
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
@@ -339,7 +339,7 @@ export function GraphView(props: GraphViewProps): React.JSX.Element {
     })
   }, [current, data, relayoutKey])
 
-  // ---- 樣式（主題、標籤） ----
+  // ---- Styles (theme, labels) ----
   useEffect(() => {
     cyRef.current?.style(graphStyle(readColors(), labels))
   }, [labels, theme])

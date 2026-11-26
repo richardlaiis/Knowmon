@@ -1,6 +1,6 @@
 import type { TextSegment } from '../../../shared/types'
 
-/** 顯示搜尋摘要或連結上下文，命中的部分以 <mark> 標示 */
+/** Shows a search snippet or link context, marking matches with <mark> */
 export function Segments({ segments }: { segments: TextSegment[] }): React.JSX.Element {
   return (
     <>

@@ -10,58 +10,59 @@ const note = (path: string, modifiedAt = 0): NoteSummary => ({
 })
 
 describe('fuzzyScore', () => {
-  it('不符合時回傳 null，空 query 為 0', () => {
+  it('returns null when there is no match, and 0 for an empty query', () => {
+    // CJK on purpose: no word separators, so only order and contiguity affect the score
     expect(fuzzyScore('xyz', '原子習慣')).toBeNull()
     expect(fuzzyScore('慣習', '原子習慣')).toBeNull()
     expect(fuzzyScore('', '任何')).toBe(0)
   })
 
-  it('連續命中 > 零散命中，開頭命中 > 中間命中', () => {
+  it('consecutive matches > scattered matches, matches at the start > in the middle', () => {
     const contiguous = fuzzyScore('習慣', '原子習慣')!
     const scattered = fuzzyScore('原慣', '原子習慣')!
     expect(contiguous).toBeGreaterThan(scattered)
     expect(fuzzyScore('原子', '原子習慣')!).toBeGreaterThan(contiguous)
   })
 
-  it('不分大小寫，忽略 query 中的空白', () => {
+  it('is case-insensitive and ignores spaces in the query', () => {
     expect(fuzzyScore('DW', 'deep work')).not.toBeNull()
     expect(fuzzyScore('deep work', 'DeepWork')).not.toBeNull()
   })
 
-  it('分隔符號後的字首命中加分', () => {
+  it('gives a bonus for word starts after separators', () => {
     expect(fuzzyScore('dw', 'deep-work')!).toBeGreaterThan(fuzzyScore('dw', 'deepswork')!)
   })
 })
 
 describe('rankNotes', () => {
   const notes = [
-    note('讀書筆記/原子習慣.md', 3),
-    note('讀書筆記/深度工作.md', 1),
-    note('日記/2026-10-06.md', 5),
-    note('習慣/清單.md', 2)
+    note('Books/Atomic Habits.md', 3),
+    note('Books/Deep Work.md', 1),
+    note('Journal/2026-10-06.md', 5),
+    note('Habits/Checklist.md', 2)
   ]
 
-  it('空 query：最近開啟的在前，其餘依修改時間', () => {
-    expect(rankNotes(notes, '', ['讀書筆記/深度工作.md']).map((n) => n.path)).toEqual([
-      '讀書筆記/深度工作.md',
-      '日記/2026-10-06.md',
-      '讀書筆記/原子習慣.md',
-      '習慣/清單.md'
+  it('empty query: recently opened first, then by modification time', () => {
+    expect(rankNotes(notes, '', ['Books/Deep Work.md']).map((n) => n.path)).toEqual([
+      'Books/Deep Work.md',
+      'Journal/2026-10-06.md',
+      'Books/Atomic Habits.md',
+      'Habits/Checklist.md'
     ])
   })
 
-  it('標題命中優先於只有路徑命中', () => {
-    expect(rankNotes(notes, '習慣').map((n) => n.path)).toEqual([
-      '讀書筆記/原子習慣.md',
-      '習慣/清單.md'
+  it('title matches beat path-only matches', () => {
+    expect(rankNotes(notes, 'habits').map((n) => n.path)).toEqual([
+      'Books/Atomic Habits.md',
+      'Habits/Checklist.md'
     ])
   })
 
-  it('可比對資料夾路徑', () => {
-    expect(rankNotes(notes, '日記 10').map((n) => n.path)).toEqual(['日記/2026-10-06.md'])
+  it('can match folder paths', () => {
+    expect(rankNotes(notes, 'Journal 10').map((n) => n.path)).toEqual(['Journal/2026-10-06.md'])
   })
 
-  it('limit 有效', () => {
+  it('limit works', () => {
     expect(rankNotes(notes, '', [], 2)).toHaveLength(2)
   })
 })

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { GraphData } from '../../shared/types'
 
-/** 取得圖譜資料；version 改變（索引可能變動）時重新取得 */
+/** Fetches the graph data, refetching when version changes (the index may have changed) */
 export function useGraphData(version: number, onError: (e: unknown) => void): GraphData | null {
   const [data, setData] = useState<GraphData | null>(null)
   useEffect(() => {

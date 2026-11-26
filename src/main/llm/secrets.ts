@@ -1,38 +1,38 @@
-// 雲端服務的 API key：以 Electron safeStorage（OS keyring）加密後存在 settings.json 的 llmKeys。
-// key 只在 main process 使用，不寫入 log、錯誤訊息或 LlmStatus。
+// Cloud provider API keys: encrypted with Electron safeStorage (the OS keyring) and stored in llmKeys in settings.json.
+// Keys are used only in the main process and never written to logs, error messages or LlmStatus.
 import { CLOUD_PROVIDERS, isCloudProvider } from '../../shared/llm'
 import type { CloudProvider } from '../../shared/types'
 
-/** Electron safeStorage 用到的部分（測試時注入假的） */
+/** The parts of Electron safeStorage that are used (a fake is injected in tests) */
 export interface SafeStorageLike {
   isEncryptionAvailable(): boolean
   encryptString(plain: string): Buffer
   decryptString(encrypted: Buffer): string
-  /** 只有 Linux 有；'basic_text' 表示沒有 keyring，只是用固定密碼混淆 */
+  /** Linux only; 'basic_text' means there's no keyring and keys are only obfuscated with a fixed password */
   getSelectedStorageBackend?(): string
 }
 
 export interface KeyStore {
   get(provider: CloudProvider): string | null
-  /** null 或空字串 = 刪除 */
+  /** null or an empty string = delete */
   set(provider: CloudProvider, key: string | null): void
-  /** 是否為真正的加密（有 OS keyring） */
+  /** Whether this is real encryption (an OS keyring is available) */
   encrypted(): boolean
 }
 
-/** 去掉空白後最長幾個字（防止誤貼整份文件） */
+/** Maximum length after trimming (guards against pasting a whole document by mistake) */
 export const API_KEY_MAX = 500
 
 export interface KeyStoreOptions {
   safeStorage: SafeStorageLike
-  /** 讀取 settings.json 的 llmKeys（base64 的加密內容） */
+  /** Reads llmKeys from settings.json (base64 encrypted content) */
   load: () => unknown
   save: (keys: Partial<Record<CloudProvider, string>>) => void
 }
 
 /**
- * safeStorage 要在 app ready 之後才能用，所以第一次讀寫時才載入。
- * 完全無法加密時 key 只保留在記憶體中（App 關閉後要重新輸入），不以明文存檔。
+ * safeStorage is only usable after app ready, so it's loaded on the first read or write.
+ * When encryption isn't available at all, keys are kept only in memory (re-entered after the app closes), never saved in plain text.
  */
 export function createKeyStore(o: KeyStoreOptions): KeyStore {
   let cache: Map<CloudProvider, string> | null = null
@@ -55,7 +55,7 @@ export function createKeyStore(o: KeyStoreOptions): KeyStore {
         const key = o.safeStorage.decryptString(Buffer.from(v, 'base64'))
         if (key) cache.set(p, key)
       } catch {
-        // 換了機器或 keyring 被重設：當作沒有 key，請使用者重新輸入
+        // A different machine or a reset keyring: treat it as no key and ask the user to enter it again
       }
     }
     return cache
@@ -87,7 +87,7 @@ export function createKeyStore(o: KeyStoreOptions): KeyStore {
   }
 }
 
-/** 只存在記憶體（測試、或沒有注入 KeyStore 時） */
+/** In memory only (for tests, or when no KeyStore is injected) */
 export function memoryKeyStore(initial: Partial<Record<CloudProvider, string>> = {}): KeyStore {
   const map = new Map(Object.entries(initial) as [CloudProvider, string][])
   return {

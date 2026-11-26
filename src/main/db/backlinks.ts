@@ -1,4 +1,4 @@
-// 反向連結：哪些筆記連到這篇，以及連結所在的那一行
+// Backlinks: which notes link to this one, and the line each link is on
 import { linkKey } from '../../shared/links'
 import type { Backlink } from '../../shared/types'
 import { extractWikilinks } from '../indexer'

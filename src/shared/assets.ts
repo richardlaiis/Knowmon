@@ -1,13 +1,13 @@
-// 筆記中的圖片（純函式，main 與 renderer 共用）。
-// vault 內的圖片經自訂協定 knowmon-asset:// 提供給 renderer；筆記裡只支援相對於筆記的路徑。
+// Images in notes (pure functions, shared by main and renderer).
+// Images in the vault are served to the renderer through the custom protocol knowmon-asset://; notes only support paths relative to the note.
 
 export const ASSET_SCHEME = 'knowmon-asset'
 const ASSET_ORIGIN = `${ASSET_SCHEME}://vault/`
 
-/** 貼上的圖片存放的資料夾（vault 根目錄） */
+/** Folder for pasted images (at the vault root) */
 export const ATTACHMENTS_DIR = 'attachments'
 
-/** 貼上的單一圖片大小上限 */
+/** Size limit for a single pasted image */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -26,17 +26,17 @@ function extensionOf(name: string): string {
   return m ? m[1].toLowerCase() : ''
 }
 
-/** 依副檔名取得圖片的 MIME type，不是支援的圖片時回傳 null */
+/** The MIME type for a file extension, or null when it isn't a supported image */
 export function imageMime(path: string): string | null {
   return IMAGE_TYPES[extensionOf(path)] ?? null
 }
 
-/** vault 相對路徑 → renderer 用的網址 */
+/** Vault-relative path → URL for the renderer */
 export function assetUrl(rel: string): string {
   return ASSET_ORIGIN + rel.split('/').map(encodeURIComponent).join('/')
 }
 
-/** 網址 → vault 相對路徑；不是 knowmon-asset 網址時回傳 null（main 仍要再檢查路徑） */
+/** URL → vault-relative path; null when it isn't a knowmon-asset URL (main must still check the path) */
 export function assetPathFromUrl(url: string): string | null {
   if (!url.startsWith(ASSET_ORIGIN)) return null
   try {
@@ -51,7 +51,7 @@ export function assetPathFromUrl(url: string): string | null {
   }
 }
 
-/** 正規化 posix 路徑；跳出 vault 根目錄時回傳 null */
+/** Normalizes a posix path; null when it escapes the vault root */
 function normalize(path: string): string | null {
   const out: string[] = []
   for (const part of path.split('/')) {
@@ -70,8 +70,8 @@ function folderOf(path: string): string {
 }
 
 /**
- * 筆記中圖片語法的網址 → vault 相對路徑。只接受相對於筆記的路徑：
- * 網址、絕對路徑、跳出 vault、隱藏檔、不是圖片時回傳 null。`<a b.png>` 與 `%20` 都認得。
+ * The URL in a note's image syntax → vault-relative path. Only paths relative to the note are accepted:
+ * URLs, absolute paths, paths escaping the vault, hidden files and non-images return null. Both `<a b.png>` and `%20` are recognized.
  */
 export function resolveImageSrc(notePath: string, src: string): string | null {
   let s = src.trim()
@@ -80,7 +80,7 @@ export function resolveImageSrc(notePath: string, src: string): string | null {
   try {
     s = decodeURIComponent(s)
   } catch {
-    // 不是合法的百分比編碼時照原文使用
+    // Not valid percent-encoding, so use the text as is
   }
   const folder = folderOf(notePath)
   const rel = normalize(folder ? `${folder}/${s}` : s)
@@ -88,7 +88,7 @@ export function resolveImageSrc(notePath: string, src: string): string | null {
   return imageMime(rel) ? rel : null
 }
 
-/** 從筆記所在資料夾到 target 的相對路徑 */
+/** Relative path from the note's folder to target */
 export function relativeToNote(notePath: string, target: string): string {
   const from = folderOf(notePath).split('/').filter(Boolean)
   const to = target.split('/')
@@ -97,7 +97,7 @@ export function relativeToNote(notePath: string, target: string): string {
   return [...from.slice(i).map(() => '..'), ...to.slice(i)].join('/')
 }
 
-/** 插入筆記的圖片語法；路徑有空白或括號時用 <> 包起來 */
+/** Image syntax to insert into a note; the path is wrapped in <> when it contains spaces or parentheses */
 export function imageMarkdown(notePath: string, target: string): string {
   const rel = relativeToNote(notePath, target)
   return /[\s()<>]/.test(rel) ? `![](<${rel}>)` : `![](${rel})`
@@ -114,8 +114,8 @@ const MIME_EXTENSIONS: Record<string, string> = {
 }
 
 /**
- * 貼上或拖進來的圖片要存的檔名。剪貼簿的截圖沒有名稱（Chromium 一律叫 image.png），
- * 改用「Pasted image 時間」；副檔名不是圖片時依 MIME type 補上。
+ * The file name for a pasted or dropped image. Clipboard screenshots have no name (Chromium always calls them image.png),
+ * so they become "Pasted image <time>"; when the extension isn't an image, one is added from the MIME type.
  */
 export function pastedImageName(name: string, mime: string, date: Date): string {
   const ext = MIME_EXTENSIONS[mime] ?? 'png'
@@ -130,8 +130,8 @@ export function pastedImageName(name: string, mime: string, date: Date): string 
 }
 
 /**
- * 存檔前清理檔名：去掉路徑、檔案系統不允許的字元，以及會破壞 Markdown 網址的 % 與 #。
- * 不是支援的圖片格式時丟出錯誤。
+ * Cleans a file name before saving: strips the path, characters the file system doesn't allow, and % and #, which break Markdown URLs.
+ * Throws for unsupported image formats.
  */
 export function attachmentFileName(name: string): string {
   const base = name.split(/[/\\]/).pop() ?? ''

@@ -4,27 +4,27 @@ import { displayName, movedInto, parentOf, type NewItem } from '../lib/tree'
 import { ChevronIcon, FolderIcon, FolderOpenIcon, NoteIcon } from './icons'
 import { wantsNewTab } from '../workspace/tabs'
 
-/** 檔案樹內部拖曳用的 MIME type，和外部拖進來的檔案區分 */
+/** MIME type for drags inside the file tree, distinct from files dragged in from outside */
 const DRAG_TYPE = 'application/x-knowmon-path'
-/** 拖曳時停在收合的資料夾上多久會自動展開 */
+/** How long hovering over a collapsed folder while dragging takes to expand it */
 const EXPAND_DELAY_MS = 600
 
 export interface FileTreeProps {
   root: TreeNode
   selected: string | null
-  /** 正在改名的節點路徑 */
+  /** Path of the node being renamed */
   renaming: string | null
-  /** 正在輸入名稱的新項目；送出名稱後才建立 */
+  /** The new item whose name is being entered; created only once the name is submitted */
   creating: NewItem | null
-  /** newTab：Ctrl/Cmd+點擊或中鍵 */
+  /** newTab: Ctrl/Cmd+click or middle click */
   onOpen: (path: string, newTab: boolean) => void
-  /** 顯示新項目的名稱輸入框；null 為取消 */
+  /** Shows the name field for a new item; null cancels */
   onStartCreate: (item: NewItem | null) => void
   onCreate: (item: NewItem, name: string) => void
   onStartRename: (path: string | null) => void
   onRename: (node: TreeNode, newName: string) => void
   onRemove: (node: TreeNode) => void
-  /** 把 from 移進 folder（'' 為 vault 根目錄） */
+  /** Moves from into folder ('' is the vault root) */
   onMove: (from: string, folder: string) => void
 }
 
@@ -49,7 +49,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
     }
   }, [menu])
 
-  // 拖曳中的路徑，以及目前會放進去的資料夾（'' 為根目錄）
+  // The path being dragged, and the folder it would drop into ('' is the root)
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [hoverFolder, setHoverFolder] = useState<string | null>(null)
@@ -72,7 +72,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
     setHoverFolder(null)
   }
 
-  /** 拖到 target 資料夾上時：可以放就標示並允許 drop */
+  /** When dragging over the target folder: mark it and allow the drop if possible */
   const dragOverFolder = (e: React.DragEvent, target: string, hovered: string | null): void => {
     if (!dragging) return
     e.stopPropagation()
@@ -94,7 +94,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
     if (from && movedInto(from, target) !== null) props.onMove(from, target)
   }
 
-  // 名稱輸入框在收合的資料夾裡時，展開它的上層，讓輸入框看得到
+  // When the name field is inside a collapsed folder, expand its parents so the field is visible
   const editing = props.creating?.folder ?? props.renaming
   const [shownEditing, setShownEditing] = useState<string | null>(null)
   if (editing !== shownEditing) {
@@ -108,7 +108,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
     }
   }
 
-  /** 新項目的名稱輸入列，放在資料夾內容的最前面 */
+  /** The name field row for a new item, placed first in the folder's contents */
   const renderCreating = (folder: string, depth: number): React.JSX.Element | null => {
     const item = props.creating
     if (!item || item.folder !== folder) return null
@@ -166,7 +166,7 @@ export function FileTree(props: FileTreeProps): React.JSX.Element {
           style={{ paddingLeft: 8 + depth * 14 }}
           onClick={(e) => (isFolder ? toggle(node.path) : props.onOpen(node.path, wantsNewTab(e)))}
           onMouseDown={(e) => {
-            // 中鍵不要觸發自動捲動
+            // Don't let middle click trigger autoscroll
             if (e.button === 1) e.preventDefault()
           }}
           onAuxClick={(e) => {
@@ -263,7 +263,7 @@ function RenameInput({
   onDone: (name: string | null) => void
 }): React.JSX.Element {
   const [value, setValue] = useState(initial)
-  // Enter 之後 input 消失會再觸發 blur，只送出一次
+  // The input disappears after Enter and fires blur again, so submit only once
   const done = useRef(false)
   const finish = (name: string | null): void => {
     if (done.current) return
@@ -280,7 +280,7 @@ function RenameInput({
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
-        // 輸入法選字時的 Enter 不送出
+        // Enter during IME composition doesn't submit
         if (e.nativeEvent.isComposing) return
         if (e.key === 'Enter') finish(value)
         if (e.key === 'Escape') finish(null)
@@ -290,7 +290,7 @@ function RenameInput({
   )
 }
 
-/** 資料夾：可旋轉的 chevron + 資料夾圖示；筆記：留出 chevron 寬度 + 筆記圖示 */
+/** Folder: a rotatable chevron + folder icon; note: space for the chevron + note icon */
 function TreeIcon({ folder, open }: { folder: boolean; open: boolean }): React.JSX.Element {
   return (
     <span className="tree-icon">

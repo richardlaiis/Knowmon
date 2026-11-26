@@ -1,27 +1,27 @@
-// 筆記解析：frontmatter、日期、[[連結]]。純函式，不碰檔案系統與 DB。
+// Note parsing: frontmatter, dates, [[links]]. Pure functions, no file system or DB access.
 import matter from 'gray-matter'
 import { linkKey, wikilinkTarget } from '../../shared/links'
 
 export interface WikilinkRef {
-  /** 連結目標（已去掉 |顯示文字、#標題、.md） */
+  /** Link target (with |label, #heading and .md removed) */
   target: string
-  /** 1-based 行號 */
+  /** 1-based line number */
   line: number
-  /** 整個 [[...]]（含 ![[ 的 !）在該行的位置，UTF-16 index */
+  /** Position of the whole [[...]] (including the ! of ![[) in the line, as a UTF-16 index */
   from: number
   to: number
 }
 
 export interface ParsedNote {
-  /** 內容講的事何時發生（YYYY-MM-DD）：frontmatter date: 優先，其次是日記檔名 */
+  /** When the events in the content happened (YYYY-MM-DD): frontmatter date: first, then a journal file name */
   eventDate: string | null
   frontmatter: Record<string, unknown>
-  /** 全文搜尋用的內文：frontmatter 換成等量的空行，讓行號與原檔一致 */
+  /** Body for full-text search: frontmatter replaced by the same number of blank lines so line numbers match the file */
   body: string
   links: WikilinkRef[]
 }
 
-/** 一篇筆記連到某個目標的次數（同一目標不分大小寫只算一組） */
+/** How many times a note links to a target (the same target counts once, case-insensitively) */
 export interface LinkCount {
   target: string
   count: number
@@ -43,7 +43,7 @@ export function parseNote(path: string, content: string): ParsedNote {
   }
 }
 
-/** 找出所有 wikilink，略過程式碼區塊與行內程式碼 */
+/** Finds every wikilink, skipping code blocks and inline code */
 export function extractWikilinks(text: string): WikilinkRef[] {
   const out: WikilinkRef[] = []
   let fence: string | null = null
@@ -74,7 +74,7 @@ export function extractWikilinks(text: string): WikilinkRef[] {
   return out
 }
 
-/** 依目標彙總連結次數（目標保留第一次出現的寫法） */
+/** Totals link counts by target (keeping the first spelling of the target) */
 export function countLinks(links: readonly WikilinkRef[]): LinkCount[] {
   const byKey = new Map<string, LinkCount>()
   for (const l of links) {
@@ -86,7 +86,7 @@ export function countLinks(links: readonly WikilinkRef[]): LinkCount[] {
   return [...byKey.values()]
 }
 
-/** 把行內程式碼（`...`、``...``）換成等長空白，保留其他字元的位置 */
+/** Replaces inline code (`...`, ``...``) with spaces of the same length, keeping other characters' positions */
 function maskInlineCode(line: string): string {
   if (!line.includes('`')) return line
   return line.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m) => ' '.repeat(m.length))
@@ -94,11 +94,11 @@ function maskInlineCode(line: string): string {
 
 function parseYaml(content: string): Record<string, unknown> {
   try {
-    // 傳入 options 讓 gray-matter 不快取（它預設以內容為 key 永久快取）
+    // Pass options so gray-matter doesn't cache (by default it caches forever, keyed by content)
     const data = matter(content, {}).data
     return data && typeof data === 'object' ? data : {}
   } catch {
-    return {} // YAML 損毀時當作沒有 frontmatter
+    return {} // Corrupt YAML counts as no frontmatter
   }
 }
 
@@ -117,7 +117,7 @@ export function dateFromFrontmatter(value: unknown): string | null {
   return m ? validDate(m[1], m[2], m[3]) : null
 }
 
-/** 日記檔名：檔名以 YYYY-MM-DD 開頭（2026-10-06.md、2026-10-06 會議.md） */
+/** Journal file names: the file name starts with YYYY-MM-DD (2026-10-06.md, 2026-10-06 會議.md) */
 export function dateFromFilename(path: string): string | null {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const m = /^(\d{4})-(\d{2})-(\d{2})(?!\d)/.exec(name)

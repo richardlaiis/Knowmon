@@ -1,15 +1,22 @@
 import { useState } from 'react'
-import { CLOUD_PROVIDERS, PROVIDER_LABELS, isCloudProvider, sameModel } from '../../shared/llm'
+import {
+  CHAT_LIMITS,
+  CLOUD_PROVIDERS,
+  PROVIDER_LABELS,
+  isCloudProvider,
+  sameModel
+} from '../../shared/llm'
 import type { ChatProvider, CloudProvider, LlmSettings, LlmStatus } from '../../shared/types'
+import { draftToLimits, limitsToDraft, type ChatLimitsDraft } from './chatLimits'
 
-/** 要儲存的 API key 變更：字串 = 新的 key，null = 刪除 */
+/** API key changes to save: a string = a new key, null = delete */
 export type ApiKeyChanges = Partial<Record<CloudProvider, string | null>>
 
 export interface LlmSettingsDialogProps {
   status: LlmStatus
   /**
-   * 回傳的 Promise 完成後，keepOpen 為 false 時由呼叫者關閉；失敗時由呼叫者顯示錯誤。
-   * keepOpen：剛輸入雲端服務的 key、還沒選模型，存檔後留在對話框裡從模型清單挑選
+   * Once the returned Promise resolves, the caller closes the dialog when keepOpen is false; on failure the caller shows the error.
+   * keepOpen: a cloud provider key was just entered without choosing a model, so the dialog stays open after saving to pick from the model list
    */
   onSave: (next: LlmSettings, keys: ApiKeyChanges, keepOpen: boolean) => Promise<void>
   onClose: () => void
@@ -24,12 +31,21 @@ const PROVIDER_OPTIONS: Record<ChatProvider, string> = {
   custom: 'Custom (OpenAI-compatible)'
 }
 
-/** 已下載的模型加上目前設定的模型（可能尚未下載） */
+type LimitsKey = 'ollamaLimits' | 'cloudLimits'
+
+const LIMIT_HELP: Record<LimitsKey, string> = {
+  ollamaLimits:
+    'Memory Ollama sets aside for each chat; changing it reloads the model once. Also scales how much note text is sent: 32768 sends about 4× more sources and tool results than 8192, and is slower on a CPU.',
+  cloudLimits:
+    "Your model's context window. Scales how much note text is sent: 32768 sends about 4× more sources and tool results than 8192, which costs more."
+}
+
+/** Downloaded models plus the configured model (which may not be downloaded yet) */
 function options(models: string[], current: string): string[] {
   return models.some((m) => sameModel(m, current)) ? models : [current, ...models]
 }
 
-/** 對話服務、Ollama 位址與模型，存在 App 的設定（所有 vault 共用） */
+/** Chat provider, Ollama address and models, stored in the app's settings (shared by all vaults) */
 export function LlmSettingsDialog({
   status,
   onSave,
@@ -37,6 +53,10 @@ export function LlmSettingsDialog({
 }: LlmSettingsDialogProps): React.JSX.Element {
   const [draft, setDraft] = useState<LlmSettings>(status.settings)
   const [keys, setKeys] = useState<ApiKeyChanges>({})
+  const [limits, setLimits] = useState<Record<LimitsKey, ChatLimitsDraft>>(() => ({
+    ollamaLimits: limitsToDraft(status.settings.ollamaLimits),
+    cloudLimits: limitsToDraft(status.settings.cloudLimits)
+  }))
   const [consent, setConsent] = useState(false)
   const [saving, setSaving] = useState(false)
   const set = (change: Partial<LlmSettings>): void => setDraft((d) => ({ ...d, ...change }))
@@ -46,14 +66,14 @@ export function LlmSettingsDialog({
   const cloud = isCloudProvider(provider) ? provider : null
   const label = PROVIDER_LABELS[provider]
   const keyChange = cloud ? keys[cloud] : undefined
-  // 空字串 = 沒有變更（輸入後又清掉）
+  // An empty string = no change (typed and then cleared)
   const hasKey = cloud
     ? keyChange === undefined || keyChange === ''
       ? status.apiKeys[cloud]
       : keyChange !== null
     : false
   const model = cloud ? (draft.cloudModels[cloud] ?? '') : draft.chatModel
-  // 模型清單屬於已儲存的服務
+  // The model list belongs to the saved provider
   const cloudModels = cloud && cloud === status.settings.provider ? status.cloudModels : []
   const needsConsent = !!cloud && cloud !== status.settings.provider
   const missingAddress = cloud === 'custom' && !draft.customBaseUrl.trim()
@@ -63,13 +83,77 @@ export function LlmSettingsDialog({
     if (needsConsent && !consent) return
     setSaving(true)
     const keepOpen = !!cloud && !model && hasKey
-    // 只送出有內容的 key 與刪除
+    // Send only keys with content, and deletions
     const changes = Object.fromEntries(
       Object.entries(keys).filter(([, v]) => v === null || (typeof v === 'string' && v.trim()))
     ) as ApiKeyChanges
-    onSave(draft, changes, keepOpen)
+    const next: LlmSettings = {
+      ...draft,
+      ollamaLimits: draftToLimits(limits.ollamaLimits, draft.ollamaLimits),
+      cloudLimits: draftToLimits(limits.cloudLimits, draft.cloudLimits)
+    }
+    onSave(next, changes, keepOpen)
       .then(() => setKeys({}))
       .finally(() => setSaving(false))
+  }
+
+  /** Context length and output limit; the browser blocks submitting out-of-range values (min/max) */
+  const renderLimits = (key: LimitsKey): React.JSX.Element => {
+    const d = limits[key]
+    const edit = (change: Partial<ChatLimitsDraft>): void =>
+      setLimits((l) => ({ ...l, [key]: { ...l[key], ...change } }))
+    const [ctxMin, ctxMax] = CHAT_LIMITS.contextTokens
+    const [outMin, outMax] = CHAT_LIMITS.maxOutputTokens
+    // Ollama's output also uses context
+    const context = Number(d.contextTokens)
+    const outLimit =
+      key === 'ollamaLimits' && Number.isFinite(context) && context >= outMin
+        ? Math.min(outMax, context)
+        : outMax
+    return (
+      <>
+        <label className="field">
+          <span className="field-label">Context length</span>
+          <span className="field-input">
+            <input
+              type="number"
+              required
+              min={ctxMin}
+              max={ctxMax}
+              step={1}
+              value={d.contextTokens}
+              onChange={(e) => edit({ contextTokens: e.target.value })}
+            />
+            tokens
+          </span>
+          <span className="field-help">
+            {LIMIT_HELP[key]} ({ctxMin}–{ctxMax}; default 8192)
+          </span>
+        </label>
+        <label className="field">
+          <span className="field-label">Max output</span>
+          <span className="field-input">
+            <input
+              type="number"
+              min={outMin}
+              max={outLimit}
+              step={1}
+              placeholder="Model default"
+              value={d.maxOutputTokens}
+              onChange={(e) => edit({ maxOutputTokens: e.target.value })}
+            />
+            tokens
+          </span>
+          <span className="field-help">
+            Longest reply the model may write; blank = the model&apos;s default. Replies that hit it
+            end with a note.
+            {key === 'cloudLimits' &&
+              ' For reasoning models this includes thinking, so a small limit can leave the answer empty.'}{' '}
+            ({outMin}–{outLimit})
+          </span>
+        </label>
+      </>
+    )
   }
 
   return (
@@ -180,6 +264,8 @@ export function LlmSettingsDialog({
           </label>
         )}
 
+        {cloud && renderLimits('cloudLimits')}
+
         {needsConsent && (
           <label className="consent">
             <input
@@ -229,6 +315,7 @@ export function LlmSettingsDialog({
             <span className="field-help">Used for summaries, chat and the agent.</span>
           </label>
         )}
+        {!cloud && renderLimits('ollamaLimits')}
         <label className="field wide">
           <span className="field-label">Embedding model</span>
           <span className="field-input">

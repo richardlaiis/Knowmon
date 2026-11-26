@@ -19,7 +19,7 @@ const base: LlmStatus = {
 }
 
 describe('describeStatus', () => {
-  it('依離線、錯誤、進行中、完成顯示', () => {
+  it('shows offline, error, in progress and done', () => {
     expect(describeStatus(null).tone).toBe('off')
     expect(describeStatus({ ...base, online: false, error: 'x' })).toEqual({
       tone: 'off',
@@ -33,7 +33,7 @@ describe('describeStatus', () => {
     expect(describeStatus(base)).toEqual({ tone: 'ok', label: 'AI ready' })
   })
 
-  it('雲端模式：顯示服務名稱；Ollama 離線時不顯示 Indexing', () => {
+  it('cloud mode: shows the provider name; no Indexing while Ollama is offline', () => {
     const cloud: LlmStatus = {
       ...base,
       ollamaOnline: false,

@@ -39,7 +39,7 @@ const chunk = (text: string, line = 1): { line: number; text: string; heading: s
   heading: ''
 })
 
-/** 把 pending chunk 依 vectors 表（文字 → 向量）寫入 */
+/** Writes pending chunks using the vectors table (text → vector) */
 function embedAll(db: DB, vectors: Record<string, number[]>): number[] {
   return storeEmbeddings(
     db,
@@ -48,11 +48,11 @@ function embedAll(db: DB, vectors: Record<string, number[]>): number[] {
 }
 
 describe('vectors', () => {
-  it('sqlite-vec 已載入', () => {
+  it('sqlite-vec is loaded', () => {
     expect(vecAvailable(openDb(':memory:'))).toBe(true)
   })
 
-  it('打包後的擴充路徑換到 app.asar.unpacked', () => {
+  it('the packaged extension path moves to app.asar.unpacked', () => {
     expect(
       unpackedPath('/opt/Knowmon/resources/app.asar/node_modules/sqlite-vec-linux-x64/vec0.so')
     ).toBe('/opt/Knowmon/resources/app.asar.unpacked/node_modules/sqlite-vec-linux-x64/vec0.so')
@@ -63,12 +63,12 @@ describe('vectors', () => {
     expect(unpackedPath(unpacked)).toBe(unpacked)
     const dev = '/home/me/Knowmon/node_modules/sqlite-vec-linux-x64/vec0.so'
     expect(unpackedPath(dev)).toBe(dev)
-    // 只換目錄段，檔名或其他名稱含 app.asar 時不動
+    // Only the directory segment changes; file names or other names containing app.asar are left alone
     expect(unpackedPath('/home/me/my-app.asar/vec0.so')).toBe('/home/me/my-app.asar/vec0.so')
     expect(unpackedPath('/home/me/app.asar.bak/vec0.so')).toBe('/home/me/app.asar.bak/vec0.so')
   })
 
-  it('chunk 寫入後待 embedding；全部完成才算該篇完成，並建立整篇向量', () => {
+  it('written chunks wait for embedding; a note is done only when all are, and then gets a note vector', () => {
     const db = openDb(':memory:')
     const a = note(db, 'a.md')
     const b = note(db, 'b.md')
@@ -89,7 +89,7 @@ describe('vectors', () => {
     expect(embedAll(db, { a2: [0, 1, 0], b1: [1, 0.1, 0] })).toEqual([a, b])
     expect(embedProgress(db)).toEqual({ embedded: 2, total: 2 })
 
-    // a 的整篇向量是兩塊的平均 → (1,1,0)/√2
+    // a's note vector is the average of its two chunks → (1,1,0)/√2
     const near = nearestNotes(db, [1, 1, 0], 2)
     expect(near[0].noteId).toBe(a)
     expect(near[0].distance).toBeCloseTo(0, 5)
@@ -101,31 +101,31 @@ describe('vectors', () => {
     ])
   })
 
-  it('筆記重新切塊後舊向量作廢；途中回來的舊 chunk 向量不會寫入', () => {
+  it('re-chunking a note invalidates old vectors; vectors for old chunks returning mid-way are not written', () => {
     const db = openDb(':memory:')
     const a = note(db, 'a.md')
-    setChunks(db, a, [chunk('舊')])
+    setChunks(db, a, [chunk('old')])
     ensureVectorTables(db, 'm', 2)
     const stale = pendingChunks(db, 10)
-    // embedding 途中筆記被修改
-    setChunks(db, a, [chunk('新')])
+    // The note is modified mid-embedding
+    setChunks(db, a, [chunk('new')])
     expect(
       storeEmbeddings(
         db,
         stale.map((c) => ({ id: c.id, vector: [1, 0] }))
       )
     ).toEqual([])
-    expect(listChunks(db, a).map((c) => [c.text, c.embedded])).toEqual([['新', false]])
+    expect(listChunks(db, a).map((c) => [c.text, c.embedded])).toEqual([['new', false]])
     expect(nearestChunks(db, [1, 0], 5)).toEqual([])
 
-    embedAll(db, { 新: [0, 1] })
+    embedAll(db, { new: [0, 1] })
     expect(nearestNotes(db, [0, 1], 5).map((n) => n.noteId)).toEqual([a])
-    setChunks(db, a, [chunk('更新')])
+    setChunks(db, a, [chunk('updated')])
     expect(nearestNotes(db, [0, 1], 5)).toEqual([])
     expect(nearestChunks(db, [0, 1], 5)).toEqual([])
   })
 
-  it('刪除筆記時 chunk 與向量一起刪除', () => {
+  it('deleting a note deletes its chunks and vectors', () => {
     const db = openDb(':memory:')
     const a = note(db, 'a.md')
     setChunks(db, a, [chunk('a')])
@@ -138,7 +138,7 @@ describe('vectors', () => {
     expect(embedProgress(db)).toEqual({ embedded: 0, total: 0 })
   })
 
-  it('換模型或維度時丟掉向量重算', () => {
+  it('changing the model or dimension drops the vectors for recomputation', () => {
     const db = openDb(':memory:')
     const a = note(db, 'a.md')
     setChunks(db, a, [chunk('a')])
@@ -154,7 +154,7 @@ describe('vectors', () => {
     expect(nearestChunks(db, [1, 0, 0], 5)).toEqual([])
   })
 
-  it('舊版 schema 的 DB 會被重建', () => {
+  it('a DB with an old schema is rebuilt', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowmon-db-'))
     const file = path.join(dir, 'index.db')
     const old = new Database(file)
@@ -174,9 +174,9 @@ describe('rebuildSemanticLinks', () => {
     const db = openDb(':memory:')
     const vectors: Record<string, number[]> = {
       a: [1, 0, 0],
-      b: [0.95, 0.31, 0], // 與 a 相似度約 0.95
-      c: [0.8, 0.6, 0], // 與 a 0.8、與 b 約 0.95
-      d: [0, 0, 1] // 與其他都不相似
+      b: [0.95, 0.31, 0], // similarity to a about 0.95
+      c: [0.8, 0.6, 0], // 0.8 to a, about 0.95 to b
+      d: [0, 0, 1] // not similar to the others
     }
     const ids: Record<string, number> = {}
     for (const k of Object.keys(vectors)) {
@@ -192,7 +192,7 @@ describe('rebuildSemanticLinks', () => {
       .edges.filter((e) => e.type === 'semantic')
       .map((e) => `${e.source}–${e.target} ${e.weight.toFixed(2)}`)
 
-  it('相似度高於門檻才相連，無方向、不重複，權重為相似度', async () => {
+  it('links only above the threshold, undirected and without duplicates, weighted by similarity', async () => {
     const { db } = setup()
     await rebuildSemanticLinks(db, DEFAULT_SEMANTIC_SETTINGS)
     expect(edges(db)).toEqual(['a.md–b.md 0.95', 'a.md–c.md 0.80', 'b.md–c.md 0.95'])
@@ -200,28 +200,28 @@ describe('rebuildSemanticLinks', () => {
     expect(edges(db)).toEqual(['a.md–b.md 0.95', 'b.md–c.md 0.95'])
   })
 
-  it('每篇只取最相似的幾篇；重算時保留其他類型的邊', async () => {
+  it('takes only the most similar notes per note; recomputing keeps edges of other types', async () => {
     const { db, ids } = setup()
     db.prepare("INSERT INTO links (src, dst, type, weight) VALUES (?, ?, 'wikilink', 1)").run(
       ids.a,
       ids.d
     )
     await rebuildSemanticLinks(db, { semanticThreshold: 0.5, semanticMaxPerNote: 1 })
-    // a → b、b → a 或 c（同分）、c → b
+    // a → b, b → a or c (tied), c → b
     expect(edges(db)).toContain('a.md–b.md 0.95')
     expect(edges(db)).toContain('b.md–c.md 0.95')
     expect(edges(db)).not.toContain('a.md–c.md 0.80')
     expect(listLinks(db, 'wikilink')).toHaveLength(1)
   })
 
-  it('刪除的筆記不再有 semantic 邊', async () => {
+  it('deleted notes no longer have semantic edges', async () => {
     const { db } = setup()
     deleteNote(db, 'b.md')
     await rebuildSemanticLinks(db, DEFAULT_SEMANTIC_SETTINGS)
     expect(edges(db)).toEqual(['a.md–c.md 0.80'])
   })
 
-  it('1000 篇筆記（1024 維）在 1.5 秒內重算完成，且每段不超過 100ms', async () => {
+  it('recomputes 1000 notes (1024 dimensions) within 1.5 seconds, with no segment over 100ms', async () => {
     const db = openDb(':memory:')
     const dim = 1024
     let seed = 1

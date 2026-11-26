@@ -1,4 +1,4 @@
-// Cytoscape 樣式。顏色取自 main.css 的 CSS 變數，切換主題時重新產生。
+// Cytoscape styles. Colors come from CSS variables in main.css and are regenerated when the theme changes.
 import type { StylesheetJson } from 'cytoscape'
 import { LABEL_FONT_SIZE, LABEL_GAP } from './labelCollide'
 
@@ -46,23 +46,23 @@ export function graphStyle(c: GraphColors, labels: boolean): StylesheetJson {
         'text-margin-y': LABEL_GAP,
         'text-outline-color': c.bg,
         'text-outline-width': 2,
-        // 縮小到字太小時不畫標籤（大型圖譜的主要效能來源之一）
+        // Don't draw labels once zoomed out so far that the text is tiny (one of the main performance factors for large graphs)
         'min-zoomed-font-size': 9
       }
     },
     {
       selector: 'edge',
       style: {
-        // haystack 是 Cytoscape 最快的邊（直線、無箭頭）
+        // haystack is Cytoscape's fastest edge (straight, no arrows)
         'curve-style': 'haystack',
         'haystack-radius': 0,
         width: 'mapData(weight, 1, 5, 1, 2.5)',
-        // --border 在縮小時太淡，改用 --muted 加透明度
+        // --border is too faint when zoomed out, so use --muted with transparency
         'line-color': c.muted,
         opacity: 0.35
       }
     },
-    // 時間邊：顏色與線型區分類型（haystack 不支援箭頭，sequence 的方向不畫出來）
+    // Time edges: colors and line styles distinguish the types (haystack doesn't support arrows, so sequence's direction isn't drawn)
     {
       selector: 'edge[type = "same_session"]',
       style: {
@@ -82,7 +82,7 @@ export function graphStyle(c: GraphColors, labels: boolean): StylesheetJson {
       }
     },
     { selector: 'edge[type = "sequence"]', style: { 'line-color': c.sequence, opacity: 0.5 } },
-    // semantic 的權重是相似度（0–1），不套用 wikilink 次數的粗細
+    // Semantic weights are similarities (0–1), so wikilink count widths don't apply
     {
       selector: 'edge[type = "semantic"]',
       style: { 'line-color': c.semantic, width: 1.5, opacity: 0.45 }

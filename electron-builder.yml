@@ -13,7 +13,7 @@ files:
   - '!{CLAUDE.md,vitest.config.ts}'
 asarUnpack:
   - resources/**
-  # SQLite 以 dlopen 載入擴充，不能放在 asar 裡（路徑轉換見 src/main/db/index.ts 的 unpackedPath）
+  # SQLite loads extensions with dlopen, so they can't be inside the asar (for the path conversion see unpackedPath in src/main/db/index.ts)
   - node_modules/sqlite-vec-*/**
 win:
   executableName: knowmon
@@ -23,10 +23,10 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
-  # 只產 dmg，不另外產 zip
+  # dmg only, no separate zip
   target: dmg
-  # 沒有 Apple Developer 憑證：用 ad-hoc 簽章（Apple Silicon 沒有有效簽章的 App 不能執行）。
-  # hardened runtime 只有公證時需要；ad-hoc 簽章加上 library validation 會擋掉 sqlite-vec 的 dylib，所以關掉
+  # No Apple Developer certificate: use an ad-hoc signature (Apple Silicon won't run apps without a valid signature).
+  # The hardened runtime is only needed for notarization; ad-hoc signing with library validation blocks sqlite-vec's dylib, so it's off
   identity: '-'
   hardenedRuntime: false
   entitlementsInherit: build/entitlements.mac.plist
@@ -35,13 +35,13 @@ mac:
     - NSDownloadsFolderUsageDescription: Knowmon reads and writes notes in vaults stored in your Downloads folder.
   notarize: false
 dmg:
-  # 檔名帶 arch，arm64 與 x64 兩個 dmg 才不會在 Release 裡同名覆蓋
+  # Include the arch in the file name, so the arm64 and x64 dmgs don't overwrite each other in the Release
   artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
     - deb
-    # deb 與 rpm 共用 electron-builder 預設的 after-install 腳本，會設定 chrome-sandbox 的 SUID
+    # deb and rpm share electron-builder's default after-install script, which sets chrome-sandbox's SUID bit
     - rpm
   maintainer: Richard Lai <richardlaiis@proton.me>
   category: Office
@@ -49,8 +49,8 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-# AppImage 改用 static runtime（beta）：舊的 runtime 需要 libfuse2，Ubuntu 22.04 之後預設沒有安裝
+# The AppImage uses the static runtime (beta): the old runtime needs libfuse2, which Ubuntu no longer installs by default after 22.04
 toolsets:
   appimage: '1.0.3'
-# 沒有自動更新；不寫的話 electron-builder 會依 git remote 自動產生 GitHub 的更新設定
+# No auto-updates; without this, electron-builder generates GitHub update settings from the git remote
 publish: null

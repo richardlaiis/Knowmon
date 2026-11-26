@@ -1,18 +1,19 @@
-// 總結筆記或選取文字。過長的內容先分段各自摘要，再合併成一份（map-reduce）。
+// Summarizes a note or the selected text. Overlong content is summarized in parts first, then combined (map-reduce).
 import { linkKey, wikilinkTarget } from '../../shared/links'
 import { chunkMarkdown } from '../indexer/chunk'
 import { extractWikilinks } from '../indexer/parse'
 import type { SummaryLanguage } from '../../shared/types'
+import type { ChatBudget } from './budget'
 import type { ChatMessage } from './ollama'
 
-/** 超過這個字數就分段摘要（qwen3:8b 的預設 context 約 4K–8K tokens） */
+/** Content longer than this is summarized in parts (the value at context 8192 tokens; scaled per settings, see budget.ts) */
 export const SUMMARY_DIRECT_MAX = 12_000
-/** 分段摘要時每段的字數上限 */
+/** Character limit per part when summarizing in parts */
 export const SUMMARY_PART_MAX = 6_000
 
 export type Chat = (messages: ChatMessage[], onDelta?: (text: string) => void) => Promise<string>
 
-// 提示詞裡不寫出 [[...]] 的範例：小模型會把範例原樣抄進總結
+// The prompt contains no [[...]] examples: small models copy them verbatim into the summary
 const SYSTEM: Record<SummaryLanguage, string> = {
   'zh-TW': [
     '你是筆記助理，負責總結使用者的筆記。',
@@ -32,7 +33,7 @@ const SYSTEM: Record<SummaryLanguage, string> = {
   ].join('\n')
 }
 
-/** 使用者訊息的文字，依語言 */
+/** Text of the user message, by language */
 const ASK = {
   'zh-TW': {
     note: (title: string) => `請總結這篇筆記「${title}」：`,
@@ -56,14 +57,14 @@ const ASK = {
       `These are the key points of each part of the note "${title}". Combine them into one English summary of the whole note:`,
     links: (list: string) => `Available links: ${list || 'none'}`,
     separator: ', ',
-    // 內容是中文時模型容易跟著用中文，在內容後面再提醒一次
+    // With Chinese content the model tends to answer in Chinese, so repeat the instruction after the content
     reminder: 'Write in English. Copy available links exactly; do not create other links.'
   }
 } satisfies Record<SummaryLanguage, unknown>
 
 export type SummaryKind = 'note' | 'selection'
 
-/** 原文中的連結目標（去重，保留第一次出現的寫法） */
+/** Link targets in the original (deduped, keeping the first spelling) */
 export function linkTargets(text: string): string[] {
   const seen = new Map<string, string>()
   for (const l of extractWikilinks(text)) {
@@ -72,7 +73,7 @@ export function linkTargets(text: string): string[] {
   return [...seen.values()]
 }
 
-/** 內容放在 <<< >>> 之間，後面附上可用連結清單 */
+/** The content goes between <<< >>>, followed by the list of available links */
 function wrap(text: string, links: readonly string[], language: SummaryLanguage): string {
   const ask = ASK[language]
   const list = ask.links(links.map((t) => `[[${t}]]`).join(ask.separator))
@@ -122,8 +123,8 @@ function combineMessages(
 }
 
 /**
- * 串流過濾：原文沒有的 [[連結]] 改成純文字（顯示文字或目標）。
- * 可能是連結開頭的部分先暫存，等到 ]] 或換行才輸出。
+ * Filters while streaming: [[links]] not in the original become plain text (the label or the target).
+ * Text that may be the start of a link is held until ]] or a line break.
  */
 export function createLinkFilter(allowed: readonly string[]): {
   push(delta: string): string
@@ -136,7 +137,7 @@ export function createLinkFilter(allowed: readonly string[]): {
     for (;;) {
       const i = pending.indexOf('[[')
       if (i < 0) {
-        // 結尾的單一個 [ 可能是下一個連結的開頭
+        // A single [ at the end may start the next link
         const keep = !final && pending.endsWith('[') ? 1 : 0
         out += pending.slice(0, pending.length - keep)
         pending = pending.slice(pending.length - keep)
@@ -150,15 +151,15 @@ export function createLinkFilter(allowed: readonly string[]): {
         const target = wikilinkTarget(inner)
         const label = inner.includes('|') ? inner.slice(inner.indexOf('|') + 1) : target || inner
         if (!target || !keys.has(linkKey(target))) out += label
-        // 模型把路徑寫成顯示文字（[[標題 | 資料夾/標題.md]]）或寫了多餘的空白：只留標題
+        // The model wrote a path as the label ([[title | folder/title.md]]) or added extra spaces: keep only the title
         else if (inner.includes('|') && isPathLabel(label, target)) out += `[[${target}]]`
         else out += m[0]
         pending = pending.slice(m[0].length)
         continue
       }
-      // 還沒收到 ]]：可能是連結的一部分，等下一個片段
+      // No ]] yet: this may be part of a link, so wait for the next chunk
       if (!final && /^\[\[[^[\]\n]*\]?$/.test(pending)) return out
-      // 不是連結（換行、多餘的 [ 等）：輸出一個字元後繼續找
+      // Not a link (a line break, an extra [ and so on): output one character and keep looking
       out += pending[0]
       pending = pending.slice(1)
     }
@@ -179,7 +180,7 @@ function isPathLabel(label: string, target: string): boolean {
   return /\.md$/i.test(l) || l.includes('/') || linkKey(l) === linkKey(target)
 }
 
-/** 把過長的文字依章節與段落分成每段不超過 max 字 */
+/** Splits overlong text by section and paragraph into parts of at most max characters */
 export function splitForSummary(text: string, max = SUMMARY_PART_MAX): string[] {
   const parts: string[] = []
   let buf = ''
@@ -195,8 +196,8 @@ export function splitForSummary(text: string, max = SUMMARY_PART_MAX): string[] 
 }
 
 /**
- * 串流總結；只有最後的結果經過 onDelta（分段摘要不會出現在畫面上）。
- * 原文沒有的 [[連結]] 會被改成純文字，回傳值與 onDelta 都是過濾後的內容。
+ * Streams a summary; only the final result goes through onDelta (part summaries never appear on screen).
+ * [[links]] not in the original become plain text; the return value and onDelta both carry the filtered content.
  */
 export async function summarize(
   chat: Chat,
@@ -204,7 +205,11 @@ export async function summarize(
   title: string,
   text: string,
   onDelta: (text: string) => void,
-  language: SummaryLanguage = 'zh-TW'
+  language: SummaryLanguage = 'zh-TW',
+  budget: Pick<ChatBudget, 'summaryDirect' | 'summaryPart'> = {
+    summaryDirect: SUMMARY_DIRECT_MAX,
+    summaryPart: SUMMARY_PART_MAX
+  }
 ): Promise<string> {
   const body = text.trim()
   if (!body) throw new Error(kind === 'note' ? 'This note is empty.' : 'Nothing is selected.')
@@ -219,11 +224,11 @@ export async function summarize(
   const final = (messages: ChatMessage[]): Promise<void> =>
     chat(messages, (d) => emit(filter.push(d))).then(() => emit(filter.flush()))
 
-  if (body.length <= SUMMARY_DIRECT_MAX) {
+  if (body.length <= budget.summaryDirect) {
     await final(summaryMessages(kind, title, body, language, links))
     return out
   }
-  const parts = splitForSummary(body)
+  const parts = splitForSummary(body, budget.summaryPart)
   const notes: string[] = []
   for (let i = 0; i < parts.length; i++) {
     notes.push(await chat(partMessages(title, parts[i], i + 1, parts.length, language)))

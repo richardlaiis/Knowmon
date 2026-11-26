@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createKeyStore, memoryKeyStore, type SafeStorageLike } from './secrets'
 
-/** 假的 safeStorage：「加密」= 反轉字串加上前綴 */
+/** A fake safeStorage: "encryption" = the reversed string with a prefix */
 function fakeSafeStorage(opts: { available?: boolean; backend?: string } = {}): SafeStorageLike {
   return {
     isEncryptionAvailable: () => opts.available ?? true,
@@ -16,7 +16,7 @@ function fakeSafeStorage(opts: { available?: boolean; backend?: string } = {}): 
 }
 
 describe('createKeyStore', () => {
-  it('加密後存檔，重新載入可解密；檔案中沒有明文', () => {
+  it('saves encrypted and decrypts after reloading; no plain text in the file', () => {
     let saved: unknown = undefined
     const make = (): ReturnType<typeof createKeyStore> =>
       createKeyStore({
@@ -40,7 +40,7 @@ describe('createKeyStore', () => {
     expect(make().get('openai')).toBeNull()
   })
 
-  it('解密失敗或格式不對時視為沒有 key；不認得的服務忽略', () => {
+  it('a failed decryption or bad format counts as no key; unknown providers are ignored', () => {
     const store = createKeyStore({
       safeStorage: fakeSafeStorage(),
       load: () => ({
@@ -54,7 +54,7 @@ describe('createKeyStore', () => {
     expect(store.get('gemini')).toBeNull()
   })
 
-  it('Linux 沒有 keyring（basic_text）：仍可存，但標示不是真加密', () => {
+  it('Linux without a keyring (basic_text): still saved, but marked as not truly encrypted', () => {
     let saved: unknown
     const store = createKeyStore({
       safeStorage: fakeSafeStorage({ backend: 'basic_text' }),
@@ -66,7 +66,7 @@ describe('createKeyStore', () => {
     expect(store.encrypted()).toBe(false)
   })
 
-  it('完全無法加密：key 只留在記憶體，不存檔', () => {
+  it('no encryption at all: keys stay in memory only and are not saved', () => {
     let saves = 0
     const store = createKeyStore({
       safeStorage: fakeSafeStorage({ available: false }),
@@ -82,7 +82,7 @@ describe('createKeyStore', () => {
 })
 
 describe('memoryKeyStore', () => {
-  it('去空白、空字串刪除', () => {
+  it('trims whitespace; an empty string deletes', () => {
     const s = memoryKeyStore({ openai: 'a' })
     expect(s.get('openai')).toBe('a')
     s.set('gemini', ' b ')

@@ -13,7 +13,7 @@ interface NoteSpec {
   modifiedAt?: number
 }
 
-/** 建立索引（含 chunk 與假向量），像 Vault.indexFile 一樣 */
+/** Builds the index (with chunks and fake vectors), like Vault.indexFile */
 function vaultDb(specs: NoteSpec[], withVectors = true): DB {
   const db = openDb(':memory:')
   for (const s of specs) {
@@ -45,7 +45,7 @@ function vaultDb(specs: NoteSpec[], withVectors = true): DB {
 const paths = (r: ReturnType<typeof retrieve>): string[] => r.hits.map((h) => h.path)
 
 describe('reciprocalRankFusion', () => {
-  it('兩份排名都靠前的分數最高', () => {
+  it('scores highest when near the top of both rankings', () => {
     const s = reciprocalRankFusion([
       [1, 2, 3],
       [2, 4]
@@ -64,11 +64,11 @@ describe('retrieve', () => {
     { path: '索引.md', body: '相關：[[料理]]' }
   ]
 
-  it('空查詢沒有結果', () => {
+  it('an empty query has no results', () => {
     expect(retrieve(vaultDb(notes), '  ', fakeVector('x'))).toEqual({ hits: [], vector: false })
   })
 
-  it('沒有查詢向量時只用全文，並標示來源與命中的行', () => {
+  it('uses only full text without a query vector, marking the source and the matching line', () => {
     const r = retrieve(vaultDb(notes), '跑步', null, { expand: false })
     expect(r.vector).toBe(false)
     expect(paths(r)).toEqual(['跑步紀錄.md', '習慣.md'])
@@ -77,9 +77,9 @@ describe('retrieve', () => {
     expect(r.hits[1].snippet.some((s) => s.match && s.text === '跑步')).toBe(true)
   })
 
-  it('向量找到沒有關鍵字的相關筆記，兩種來源都命中的排前面', () => {
+  it('vectors find related notes without the keywords; notes hit by both sources rank first', () => {
     const db = vaultDb(notes)
-    // 查詢詞不在任何筆記中，只有向量能找到（字元重疊最多的是料理）
+    // The query terms appear in no note, so only vectors can find it (cooking has the most overlapping characters)
     const semantic = retrieve(db, '番茄蛋', fakeVector('番茄蛋'), { expand: false })
     expect(semantic.vector).toBe(true)
     expect(semantic.hits[0]).toMatchObject({ path: '料理.md', via: ['vector'] })
@@ -89,7 +89,7 @@ describe('retrieve', () => {
     expect(both.hits.every((h, i) => i === 0 || h.score <= both.hits[i - 1].score)).toBe(true)
   })
 
-  it('前幾名的圖譜鄰居會被加進來', () => {
+  it('adds graph neighbors of the top results', () => {
     const db = vaultDb(notes)
     const r = retrieve(db, '番茄', null)
     expect(paths(r)).toEqual(['料理.md', '索引.md'])
@@ -98,7 +98,7 @@ describe('retrieve', () => {
     expect(retrieve(db, '番茄', null, { expand: false }).hits).toHaveLength(1)
   })
 
-  it('依 event_date 篩選，沒有日期的用最後修改日', () => {
+  it('filters by event_date, using the last modified date for undated notes', () => {
     const db = vaultDb([
       { path: '日記/2026-09-01.md', body: '讀書會' },
       { path: '日記/2026-10-05.md', body: '讀書會' },
@@ -111,18 +111,18 @@ describe('retrieve', () => {
     expect(r('2026-10-06', '2026-10-31')).toEqual(['雜記.md'])
   })
 
-  it('有 keywords 時全文改為 OR，命中越多個關鍵字的排越前面', () => {
+  it('with keywords, full text uses OR, ranking notes that match more keywords higher', () => {
     const db = vaultDb(notes)
-    // AND 時沒有任何一篇同時包含三個詞
+    // With AND, no note contains all three terms
     expect(retrieve(db, '跑步 心率 番茄', null, { expand: false }).hits).toEqual([])
     const r = retrieve(db, '問句', null, { expand: false }, ['跑步', '心率', '番茄'])
-    // 跑步紀錄命中兩個詞；其餘各命中一個，依該詞的名次（料理是「番茄」的第 1 名）
+    // The running log matches two terms; the rest match one each, ordered by their rank for that term (cooking is #1 for 「番茄」)
     expect(paths(r)).toEqual(['跑步紀錄.md', '料理.md', '習慣.md'])
     expect(r.hits[0]).toMatchObject({ via: ['fulltext'], line: 1 })
     expect(r.hits[1].snippet.some((x) => x.match && x.text === '番茄')).toBe(true)
   })
 
-  it('keywords 為空但有查詢向量時只用向量', () => {
+  it('uses only vectors when keywords is empty but there is a query vector', () => {
     const db = vaultDb(notes)
     const r = retrieve(db, '番茄蛋', fakeVector('番茄蛋'), { expand: false }, [])
     expect(r.vector).toBe(true)
@@ -130,7 +130,7 @@ describe('retrieve', () => {
     expect(retrieve(db, '番茄蛋', null, {}, []).hits).toEqual([])
   })
 
-  it('limit 限制筆數', () => {
+  it('limit caps the number of results', () => {
     const many = Array.from({ length: 30 }, (_, i) => ({ path: `n${i}.md`, body: '共同詞彙' }))
     const db = vaultDb(many)
     expect(retrieve(db, '共同詞彙', null).hits).toHaveLength(20)
@@ -139,7 +139,7 @@ describe('retrieve', () => {
 })
 
 describe('firstMatchLine', () => {
-  it('第一個含有任一詞的行，沒有時為 1', () => {
+  it('the first line containing any term, or 1 when none does', () => {
     expect(firstMatchLine('a\nb Foo\nfoo', ['foo'])).toBe(2)
     expect(firstMatchLine('a\nb', ['x'])).toBe(1)
   })

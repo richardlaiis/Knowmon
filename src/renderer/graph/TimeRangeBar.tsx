@@ -2,13 +2,13 @@ import { dayString } from '../../shared/time'
 import { moveRange, type TimeAxis, type TimeFilter } from './timeFilter'
 
 export interface TimeRangeBarProps {
-  /** 所有日期的範圍（dayNumber）；沒有任何日期時為 null */
+  /** The range of all dates (dayNumber); null when there are none */
   domain: [number, number] | null
   filter: TimeFilter
   onChange: (f: TimeFilter) => void
 }
 
-/** 圖譜的時間篩選列：時間軸、雙把手滑桿、是否顯示未標日期的筆記 */
+/** The graph's time filter bar: the timeline, a two-handle slider, and whether to show undated notes */
 export function TimeRangeBar({ domain, filter, onChange }: TimeRangeBarProps): React.JSX.Element {
   const range = filter.range ?? domain
   const span = domain ? domain[1] - domain[0] : 0
@@ -45,7 +45,7 @@ export function TimeRangeBar({ domain, filter, onChange }: TimeRangeBarProps): R
             <input
               type="range"
               aria-label="From"
-              // 兩端重疊在右半邊時讓「起點」在上面，否則拖不動
+              // When both handles overlap on the right half, put "start" on top, otherwise it can't be dragged
               className={fromOnTop ? 'on-top' : undefined}
               min={domain[0]}
               max={domain[1]}

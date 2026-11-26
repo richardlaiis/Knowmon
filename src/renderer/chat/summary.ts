@@ -1,16 +1,16 @@
-// 總結的狀態（純函式）：開始、取得 request id、套用 main 推送的片段。
+// Summary state (pure functions): starting, getting the request id, applying chunks pushed by main.
 import type { SummaryChunk, SummaryLanguage } from '../../shared/types'
 
 export interface SummaryState {
-  /** main 回傳的 request id；拿到之前為 null */
+  /** The request id returned by main; null until it arrives */
   id: string | null
   path: string
-  /** 總結的是選取文字 */
+  /** The summary is of the selected text */
   selection: boolean
   text: string
   status: 'running' | 'done' | 'stopped' | 'error'
   error: string | null
-  /** 拿到 id 之前先收到的片段（理論上不會發生，保險起見先存著） */
+  /** Chunks received before the id arrived (shouldn't happen in theory, kept just in case) */
   early: SummaryChunk[]
 }
 
@@ -18,7 +18,7 @@ export function startSummary(path: string, selection: boolean): SummaryState {
   return { id: null, path, selection, text: '', status: 'running', error: null, early: [] }
 }
 
-/** 取得 request id，套用之前先收到的片段 */
+/** Takes the request id and applies chunks received before it */
 export function withId(s: SummaryState, id: string): SummaryState {
   const early = s.early.filter((c) => c.id === id)
   return early.reduce(applyChunk, { ...s, id, early: [] })
@@ -33,7 +33,7 @@ export function applyChunk(s: SummaryState, c: SummaryChunk): SummaryState {
   return { ...s, text, status: 'done' }
 }
 
-/** 使用者按下停止：之後到達的片段都忽略 */
+/** The user clicked Stop: ignore every chunk that arrives afterwards */
 export function stopSummary(s: SummaryState): SummaryState {
   return s.status === 'running' ? { ...s, status: 'stopped' } : s
 }
@@ -44,7 +44,7 @@ export function failSummary(s: SummaryState, error: string): SummaryState {
 
 const LANGUAGE_KEY = 'knowmon.summary.language'
 
-/** 總結語言偏好（所有 vault 共用），預設繁體中文 */
+/** Summary language preference (shared by all vaults), Traditional Chinese by default */
 export function loadSummaryLanguage(): SummaryLanguage {
   try {
     return localStorage.getItem(LANGUAGE_KEY) === 'en' ? 'en' : 'zh-TW'
@@ -57,6 +57,6 @@ export function saveSummaryLanguage(language: SummaryLanguage): void {
   try {
     localStorage.setItem(LANGUAGE_KEY, language)
   } catch {
-    // 無法儲存時只影響下次啟動
+    // If it can't be saved, only the next launch is affected
   }
 }

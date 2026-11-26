@@ -3,18 +3,18 @@ import { chunkMarkdown, embeddingText } from './chunk'
 import { parseNote } from './parse'
 
 describe('chunkMarkdown', () => {
-  it('空白筆記沒有 chunk', () => {
+  it('an empty note has no chunks', () => {
     expect(chunkMarkdown('')).toEqual([])
     expect(chunkMarkdown('\n\n  \n')).toEqual([])
   })
 
-  it('短筆記是一塊，行號從第一個非空行開始', () => {
+  it('a short note is one chunk, starting at the first non-blank line', () => {
     expect(chunkMarkdown('\n\n今天天氣很好。\n去了圖書館。\n')).toEqual([
       { line: 3, text: '今天天氣很好。\n去了圖書館。', heading: '' }
     ])
   })
 
-  it('標題開始新的 chunk，並記下標題路徑', () => {
+  it('a heading starts a new chunk and records the heading path', () => {
     const body = [
       '# 專案',
       '簡介',
@@ -36,7 +36,7 @@ describe('chunkMarkdown', () => {
     ])
   })
 
-  it('同一章節的段落累積到上限才切開', () => {
+  it('paragraphs in the same section accumulate up to the limit before splitting', () => {
     const para = (c: string): string => c.repeat(30)
     const body = [para('甲'), '', para('乙'), '', para('丙')].join('\n')
     const chunks = chunkMarkdown(body, 70)
@@ -46,14 +46,14 @@ describe('chunkMarkdown', () => {
     ])
   })
 
-  it('過長的段落依句子切開，行號跟著句子', () => {
-    const sentence = '這是一個句子。'.repeat(3) // 21 字
+  it('an overlong paragraph is split by sentence, with line numbers following the sentences', () => {
+    const sentence = '這是一個句子。'.repeat(3) // 21 characters
     const body = ['前言', '', sentence + '\n' + sentence + '\n' + sentence].join('\n')
     const chunks = chunkMarkdown(body, 30)
     expect(chunks[0]).toEqual({ line: 1, text: '前言', heading: '' })
     expect(chunks.slice(1).map((c) => c.line)).toEqual([3, 4, 5])
     expect(chunks.slice(1).every((c) => c.text.length <= 30)).toBe(true)
-    // 句子依序裝滿每一塊，不遺漏任何字
+    // Sentences fill each chunk in order, without losing any characters
     const joined = chunks
       .slice(1)
       .map((c) => c.text.replace(/\n/g, ''))
@@ -61,7 +61,7 @@ describe('chunkMarkdown', () => {
     expect(joined).toBe(sentence.repeat(3))
   })
 
-  it('英文句子也能切開；沒有標點的超長文字硬切', () => {
+  it('English sentences split too; overlong text without punctuation is cut hard', () => {
     const en = 'First sentence here. Second one is here. Third.'
     expect(chunkMarkdown(en, 25).map((c) => c.text)).toEqual([
       'First sentence here.',
@@ -71,7 +71,7 @@ describe('chunkMarkdown', () => {
     expect(chunkMarkdown('x'.repeat(25), 10).map((c) => c.text.length)).toEqual([10, 10, 5])
   })
 
-  it('圍欄程式碼不從中間切開，裡面的 # 不是標題', () => {
+  it('fenced code is not split in the middle, and a # inside it is not a heading', () => {
     const body = ['說明', '```py', '# 註解', '', 'print(1)', '```', '結尾'].join('\n')
     expect(chunkMarkdown(body)).toEqual([
       { line: 1, text: '說明\n\n```py\n# 註解\n\nprint(1)\n```\n\n結尾', heading: '' }
@@ -81,14 +81,14 @@ describe('chunkMarkdown', () => {
     expect(chunks[1].text).toBe('```py\n# 註解\n\nprint(1)\n```')
   })
 
-  it('配合 parseNote：frontmatter 不進 chunk，行號與原檔一致', () => {
+  it('with parseNote: frontmatter stays out of chunks and line numbers match the file', () => {
     const { body } = parseNote('a.md', '---\ndate: 2026-10-01\ntags: [x]\n---\n# 標題\n內文')
     expect(chunkMarkdown(body)).toEqual([{ line: 5, text: '# 標題\n\n內文', heading: '標題' }])
   })
 })
 
 describe('embeddingText', () => {
-  it('加上筆記標題與章節', () => {
+  it('adds the note title and section', () => {
     expect(embeddingText('筆記', { heading: '背景', text: '內容' })).toBe('筆記 › 背景\n\n內容')
     expect(embeddingText('筆記', { heading: '', text: '內容' })).toBe('筆記\n\n內容')
   })

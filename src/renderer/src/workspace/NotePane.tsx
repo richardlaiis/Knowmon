@@ -1,4 +1,4 @@
-// 一個筆記分頁：自己的編輯器、外部修改提示。第一次切到這個分頁時才讀檔，之後保持掛載（隱藏）。
+// One note tab: its own editor and the external-change notice. The file is read the first time the tab is shown, after which it stays mounted (hidden).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { NoteSummary, VaultChange } from '../../../shared/types'
 import { Editor, type Autosave } from '../../editor'
@@ -8,22 +8,22 @@ export interface NotePaneProps {
   active: boolean
   preview: boolean
   autosave: Autosave
-  /** App 內的新增/改名/刪除進行中，忽略 watcher 的回音 */
+  /** While an in-app create/rename/delete is in progress, ignore the watcher's echo */
   isLocalOp: () => boolean
   getNotes: () => Promise<NoteSummary[]>
   onTogglePreview: () => void
   onOpenLink: (target: string, newTab: boolean) => void
   onError: (e: unknown) => void
-  /** 總結這篇（有選取時只總結選取的部分） */
+  /** Summarizes this note (only the selection when there is one) */
   onSummarize: () => void
   onSelectionChange: (path: string, text: string) => void
-  /** 捲到這一行（搜尋結果），n 改變時再跳一次 */
+  /** Scrolls to this line (search results); jumps again when n changes */
   reveal: { line: number; n: number } | null
 }
 
 interface Loaded {
   doc: string
-  /** 每次從磁碟載入都換一個 key，讓編輯器重設內容 */
+  /** A new key on every load from disk, so the editor resets its content */
   key: number
 }
 
@@ -31,9 +31,9 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
   const { path, active, preview, autosave, isLocalOp, onError } = props
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [externalChange, setExternalChange] = useState(false)
-  // 編輯器目前的內容（不放 state，避免每次打字都 re-render）
+  // The editor's current content (not in state, to avoid re-rendering on every keystroke)
   const currentDoc = useRef('')
-  // 改名時 path 會變，但分頁與編輯器不重建
+  // On rename the path changes, but the tab and editor aren't rebuilt
   const pathRef = useRef(path)
   useEffect(() => {
     pathRef.current = path
@@ -50,7 +50,7 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
     [apply]
   )
 
-  // 第一次切到這個分頁時讀檔
+  // Read the file the first time this tab is shown
   const wanted = active && !loaded
   useEffect(() => {
     if (!wanted) return
@@ -64,7 +64,7 @@ export function NotePane(props: NotePaneProps): React.JSX.Element {
     }
   }, [wanted, apply, onError])
 
-  // 外部修改這篇筆記：沒有未儲存內容就重新載入，否則顯示提示列
+  // External change to this note: reload if there's no unsaved content, otherwise show the notice bar
   const isLoaded = loaded !== null
   useEffect(() => {
     if (!isLoaded) return

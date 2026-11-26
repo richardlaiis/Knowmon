@@ -1,15 +1,15 @@
-// wikilink 目標 → 筆記路徑的解析規則。main（建立 links 表）與 renderer（點擊連結、自動補全）共用，
-// 確保兩邊對同一個 [[目標]] 得到同一篇筆記。
-// 規則：不分大小寫；目標含 / 時比對路徑結尾，否則比對檔名；多篇符合時取路徑最短者，再依字典序。
+// Rules for resolving a wikilink target to a note path. Shared by main (building the links table) and the renderer (clicking links, autocompletion),
+// so both sides resolve the same [[target]] to the same note.
+// Rules: case-insensitive; a target containing / matches the end of a path, otherwise the file name; with several matches, the shortest path wins, then lexicographic order.
 
-/** 比對用的鍵：去掉 .md、統一 Unicode 正規化（macOS 檔名是 NFD）與大小寫 */
+/** The key used for matching: strip .md and normalize Unicode (macOS file names are NFD) and case */
 export function linkKey(target: string): string {
   return target.trim().replace(/\.md$/i, '').normalize('NFC').toLowerCase()
 }
 
 /**
- * [[目標#標題|顯示]] 括號內的文字 → 目標；只有 #標題（連到自己）時回傳空字串。
- * 表格裡的 | 是欄位分隔，所以要寫 [[目標\|顯示]]，\| 也當成分隔。
+ * The text inside [[target#heading|label]] → the target; returns an empty string when it's only #heading (a link to itself).
+ * In tables a | separates columns, so links are written [[target\|label]], and \| also counts as the separator.
  */
 export function wikilinkTarget(inner: string): string {
   return inner.split(/\\?\|/)[0].split('#')[0].trim().replace(/\.md$/i, '').trim()
@@ -25,7 +25,7 @@ function byPreference(a: string, b: string): number {
 
 export type LinkResolver = (target: string) => string | null
 
-/** 依目前所有筆記路徑建立解析器（筆記多時比逐次呼叫 resolveLink 快） */
+/** Builds a resolver from all current note paths (faster than calling resolveLink repeatedly when there are many notes) */
 export function createLinkResolver(paths: readonly string[]): LinkResolver {
   const byName = new Map<string, { path: string; key: string }[]>()
   for (const path of [...paths].sort(byPreference)) {
@@ -50,7 +50,7 @@ export function resolveLink(target: string, paths: readonly string[]): string | 
   return createLinkResolver(paths)(target)
 }
 
-/** 連到 path 時要寫的最短目標：通常就是檔名，同名時逐層加上資料夾直到能唯一解析 */
+/** The shortest target to write when linking to path: usually just the file name, adding folders level by level on a clash until it resolves uniquely */
 export function linkTextFor(path: string, resolve: LinkResolver): string {
   const parts = path.replace(/\.md$/i, '').split('/')
   for (let i = parts.length - 1; i > 0; i--) {

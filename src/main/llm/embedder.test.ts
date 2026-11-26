@@ -42,40 +42,40 @@ function setup(model = 'bge-m3'): {
 }
 
 describe('Embedder', () => {
-  it('分批處理所有 chunk，送出的文字帶有標題', async () => {
+  it('processes every chunk in batches, sending text with the heading', async () => {
     const { db, ollama, embedder, embedded } = setup()
-    const a = note(db, 'a.md', ['一', '二', '三'])
-    const b = note(db, 'b.md', ['四'])
+    const a = note(db, 'a.md', ['one', 'two', 'three'])
+    const b = note(db, 'b.md', ['four'])
     embedder.wake()
-    embedder.wake() // 執行中再喚醒不會重複啟動
+    embedder.wake() // waking it while running doesn't start it twice
     await embedder.idle()
     expect(ollama.embedCalls).toEqual([
-      ['a\n\n一', 'a\n\n二'],
-      ['a\n\n三', 'b\n\n四']
+      ['a\n\none', 'a\n\ntwo'],
+      ['a\n\nthree', 'b\n\nfour']
     ])
     expect(embedded).toEqual([a, b])
     expect(embedProgress(db)).toEqual({ embedded: 2, total: 2 })
     expect(vectorModel(db)).toEqual({ model: 'bge-m3', dim: 32 })
     expect(embedder.busy).toBe(false)
-    expect(nearestChunks(db, fakeVector('b\n\n四'), 1)[0].noteId).toBe(b)
+    expect(nearestChunks(db, fakeVector('b\n\nfour'), 1)[0].noteId).toBe(b)
   })
 
-  it('embedding 途中筆記被修改：舊的向量不寫入，新的 chunk 下一批處理', async () => {
+  it('a note modified mid-embedding: old vectors are not written, and new chunks go in the next batch', async () => {
     const { db, ollama, embedder } = setup()
-    const a = note(db, 'a.md', ['舊'])
+    const a = note(db, 'a.md', ['old'])
     ollama.hold()
     embedder.wake()
     await Promise.resolve()
-    setChunks(db, a, [{ line: 1, text: '新', heading: '' }])
+    setChunks(db, a, [{ line: 1, text: 'new', heading: '' }])
     ollama.release()
     await embedder.idle()
-    expect(ollama.embedCalls).toEqual([['a\n\n舊'], ['a\n\n新']])
-    expect(listChunks(db, a).map((c) => [c.text, c.embedded])).toEqual([['新', true]])
+    expect(ollama.embedCalls).toEqual([['a\n\nold'], ['a\n\nnew']])
+    expect(listChunks(db, a).map((c) => [c.text, c.embedded])).toEqual([['new', true]])
   })
 
-  it('離線時停下並記錄錯誤，恢復後再喚醒會繼續', async () => {
+  it('stops and records the error when offline, and continues when woken after recovering', async () => {
     const { db, ollama, embedder } = setup()
-    note(db, 'a.md', ['一'])
+    note(db, 'a.md', ['one'])
     ollama.online = false
     embedder.wake()
     await embedder.idle()
@@ -89,9 +89,9 @@ describe('Embedder', () => {
     expect(embedProgress(db).embedded).toBe(1)
   })
 
-  it('換 embedding 模型時舊向量作廢、全部重算', async () => {
+  it('changing the embedding model invalidates old vectors and recomputes everything', async () => {
     const first = setup('m1')
-    note(first.db, 'a.md', ['一'])
+    note(first.db, 'a.md', ['one'])
     first.embedder.wake()
     await first.embedder.idle()
     expect(vectorModel(first.db)?.model).toBe('m1')
@@ -109,9 +109,9 @@ describe('Embedder', () => {
     expect(embedProgress(first.db).embedded).toBe(1)
   })
 
-  it('stop 會中止進行中的請求，之後不再寫入', async () => {
+  it('stop aborts the request in progress and writes nothing afterwards', async () => {
     const { db, ollama, embedder } = setup()
-    note(db, 'a.md', ['一'])
+    note(db, 'a.md', ['one'])
     ollama.hold()
     embedder.wake()
     const stopped = embedder.stop()

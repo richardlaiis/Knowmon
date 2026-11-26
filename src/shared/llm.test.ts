@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_CHAT_LIMITS,
   DEFAULT_LLM_SETTINGS,
   DEFAULT_SEMANTIC_SETTINGS,
+  activeChatLimits,
+  cleanChatLimits,
   cleanLlmSettings,
   clampSemanticSettings,
   activeChatModel,
@@ -11,7 +14,7 @@ import {
 } from './llm'
 
 describe('clampSemanticSettings', () => {
-  it('非物件或非數字時用預設值；超出範圍取邊界；門檻取到小數第二位', () => {
+  it('uses defaults for non-objects and non-numbers; clamps out-of-range values; rounds the threshold to two decimals', () => {
     expect(clampSemanticSettings(null)).toEqual(DEFAULT_SEMANTIC_SETTINGS)
     expect(clampSemanticSettings({ semanticThreshold: 'x', semanticMaxPerNote: NaN })).toEqual(
       DEFAULT_SEMANTIC_SETTINGS
@@ -28,7 +31,7 @@ describe('clampSemanticSettings', () => {
 })
 
 describe('cleanLlmSettings', () => {
-  it('只接受非空字串與 http(s) 位址', () => {
+  it('accepts only non-empty strings and http(s) addresses', () => {
     expect(cleanLlmSettings(undefined)).toEqual(DEFAULT_LLM_SETTINGS)
     expect(
       cleanLlmSettings({ baseUrl: 'http://gpu-box:11434/', chatModel: ' llama3 ', embedModel: '' })
@@ -44,8 +47,8 @@ describe('cleanLlmSettings', () => {
   })
 })
 
-describe('雲端服務設定', () => {
-  it('provider 只接受已知的服務；模型去空白、空字串刪除；不修改 base', () => {
+describe('cloud provider settings', () => {
+  it('accepts only known providers; trims models and deletes empty ones; leaves base unchanged', () => {
     const base = cleanLlmSettings({ provider: 'openai', cloudModels: { openai: ' gpt-x ' } })
     expect(base.provider).toBe('openai')
     expect(base.cloudModels).toEqual({ openai: 'gpt-x' })
@@ -53,7 +56,7 @@ describe('雲端服務設定', () => {
     const next = cleanLlmSettings({ cloudModels: { openai: '', gemini: 'g', other: 'x' } }, base)
     expect(next.cloudModels).toEqual({ gemini: 'g' })
     expect(base.cloudModels).toEqual({ openai: 'gpt-x' })
-    // 舊的 settings.json 沒有新欄位
+    // Old settings.json files don't have the new fields
     expect(cleanLlmSettings({ baseUrl: 'http://a:1' })).toMatchObject({
       provider: 'ollama',
       cloudModels: {},
@@ -61,7 +64,7 @@ describe('雲端服務設定', () => {
     })
   })
 
-  it('自訂 API 位址：https，或 loopback 的 http；不合法時保留原值，空字串清除', () => {
+  it('custom API address: https, or loopback http; invalid values keep the old one, an empty string clears it', () => {
     expect(cleanCustomBaseUrl('https://openrouter.ai/api/v1/ ')).toBe(
       'https://openrouter.ai/api/v1'
     )
@@ -80,7 +83,7 @@ describe('雲端服務設定', () => {
     expect(cleanLlmSettings({ customBaseUrl: ' ' }, s).customBaseUrl).toBe('')
   })
 
-  it('目前的對話模型與 API 位址', () => {
+  it('current chat model and API address', () => {
     expect(activeChatModel(DEFAULT_LLM_SETTINGS)).toBe('qwen3:8b')
     const s = cleanLlmSettings({
       provider: 'gemini',
@@ -97,8 +100,62 @@ describe('雲端服務設定', () => {
   })
 })
 
+describe('context length and max output', () => {
+  it("uses the defaults when an old settings.json doesn't have the two pairs", () => {
+    const s = cleanLlmSettings({ baseUrl: 'http://a:1' })
+    expect(s.ollamaLimits).toEqual(DEFAULT_CHAT_LIMITS)
+    expect(s.cloudLimits).toEqual({ contextTokens: 8192, maxOutputTokens: null })
+  })
+
+  it('rounds to integers and clamps; null or an empty string = model default; invalid values keep the old one', () => {
+    expect(cleanChatLimits({ contextTokens: 100, maxOutputTokens: 10 })).toEqual({
+      contextTokens: 2048,
+      maxOutputTokens: 256
+    })
+    expect(cleanChatLimits({ contextTokens: 5e9, maxOutputTokens: 1e9 })).toEqual({
+      contextTokens: 1_048_576,
+      maxOutputTokens: 131_072
+    })
+    expect(cleanChatLimits({ contextTokens: 16383.6, maxOutputTokens: 999.4 })).toEqual({
+      contextTokens: 16384,
+      maxOutputTokens: 999
+    })
+    const base = { contextTokens: 4096, maxOutputTokens: 512 }
+    expect(cleanChatLimits({ contextTokens: 'x', maxOutputTokens: NaN }, base)).toEqual(base)
+    expect(cleanChatLimits({ maxOutputTokens: null }, base)).toEqual({
+      contextTokens: 4096,
+      maxOutputTokens: null
+    })
+    expect(cleanChatLimits({ maxOutputTokens: '' }, base).maxOutputTokens).toBeNull()
+    expect(cleanChatLimits('nope', base)).toEqual(base)
+  })
+
+  it("Ollama's output limit can't exceed the context; the cloud has no such limit", () => {
+    const s = cleanLlmSettings({
+      ollamaLimits: { contextTokens: 4096, maxOutputTokens: 8000 },
+      cloudLimits: { contextTokens: 4096, maxOutputTokens: 8000 }
+    })
+    expect(s.ollamaLimits).toEqual({ contextTokens: 4096, maxOutputTokens: 4096 })
+    expect(s.cloudLimits).toEqual({ contextTokens: 4096, maxOutputTokens: 8000 })
+    // Also applied when only the context changes
+    expect(cleanLlmSettings({ ollamaLimits: { contextTokens: 2048 } }, s).ollamaLimits).toEqual({
+      contextTokens: 2048,
+      maxOutputTokens: 2048
+    })
+  })
+
+  it('picks the pair for the provider', () => {
+    const s = cleanLlmSettings({
+      ollamaLimits: { contextTokens: 4096 },
+      cloudLimits: { contextTokens: 131072 }
+    })
+    expect(activeChatLimits(s).contextTokens).toBe(4096)
+    expect(activeChatLimits({ ...s, provider: 'gemini' }).contextTokens).toBe(131072)
+  })
+})
+
 describe('sameModel', () => {
-  it('沒寫 tag 等於 :latest', () => {
+  it('no tag means :latest', () => {
     expect(sameModel('bge-m3', 'bge-m3:latest')).toBe(true)
     expect(sameModel('qwen3:8b', 'qwen3')).toBe(false)
   })

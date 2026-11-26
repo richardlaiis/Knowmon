@@ -1,5 +1,5 @@
-// vault 層級的設定，存在 <vault>/.knowmon/settings.json（跟著 vault 走）。
-// 不存在或損毀時用預設值；寫入時保留檔案中其他欄位。
+// Vault-level settings, stored in <vault>/.knowmon/settings.json (they travel with the vault).
+// Defaults are used when it's missing or corrupt; writes keep the file's other fields.
 import fs from 'node:fs'
 import { clampSemanticSettings } from '../../shared/llm'
 import { clampTimeSettings } from '../../shared/time'

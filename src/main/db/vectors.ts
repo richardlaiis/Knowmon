@@ -1,9 +1,9 @@
-// chunk 與向量（sqlite-vec）。都只是索引：可從筆記重新切塊、重新 embedding。
+// Chunks and vectors (sqlite-vec). Both are only an index: notes can be re-chunked and re-embedded.
 //
-// - chunks：筆記重新解析時整篇重寫（embedded = 0），由背景的 Embedder 補上向量。
-// - vec_chunks（rowid = chunks.id）：每塊的向量。
-// - vec_notes（rowid = notes.id）：整篇的向量 = 各塊向量正規化後的平均，semantic 邊用。
-// 兩張向量表在第一次拿到 embedding 時才建立（維度取決於模型）；換模型時丟掉重算。
+// - chunks: rewritten whole when a note is re-parsed (embedded = 0), with vectors filled in by the background Embedder.
+// - vec_chunks (rowid = chunks.id): one vector per chunk.
+// - vec_notes (rowid = notes.id): the note's vector = the average of its normalized chunk vectors, used for semantic edges.
+// Both vector tables are created when the first embedding arrives (the dimension depends on the model) and dropped for recomputation when the model changes.
 import type { Chunk } from '../indexer/chunk'
 import type { DB } from '.'
 
@@ -30,7 +30,7 @@ export interface VectorModel {
   dim: number
 }
 
-/** sqlite-vec 是否已載入 */
+/** Whether sqlite-vec is loaded */
 export function vecAvailable(db: DB): boolean {
   try {
     db.prepare('SELECT vec_version()').get()
@@ -55,7 +55,7 @@ export function setMeta(db: DB, key: string, value: string | null): void {
   else db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value)
 }
 
-/** 目前向量表所用的模型與維度；尚未建立時為 null */
+/** The model and dimension of the current vector tables; null when not created yet */
 export function vectorModel(db: DB): VectorModel | null {
   const model = getMeta(db, 'embed_model')
   const dim = Number(getMeta(db, 'embed_dim'))
@@ -63,7 +63,7 @@ export function vectorModel(db: DB): VectorModel | null {
   return { model, dim }
 }
 
-/** 丟掉所有向量，所有 chunk 標回未 embedding */
+/** Drops all vectors and marks every chunk as not embedded */
 export function resetVectors(db: DB): void {
   db.transaction(() => {
     db.exec(`
@@ -78,7 +78,7 @@ export function resetVectors(db: DB): void {
   })()
 }
 
-/** 確保向量表以這個模型與維度建立；模型或維度不同時先丟掉舊的。回傳是否重建了。 */
+/** Makes sure the vector tables exist for this model and dimension, dropping the old ones if they differ. Returns whether they were rebuilt. */
 export function ensureVectorTables(db: DB, model: string, dim: number): boolean {
   const current = vectorModel(db)
   if (current && current.model === model && current.dim === dim) return false
@@ -102,8 +102,8 @@ export function ensureVectorTables(db: DB, model: string, dim: number): boolean 
 }
 
 /**
- * 以新的切塊取代某篇筆記原有的全部 chunk（舊的向量由 trigger 刪除，整篇向量也作廢）。
- * 與原本完全相同時（例如只是改名）保留原有的向量，回傳 false。
+ * Replaces all of a note's chunks with new ones (old vectors are deleted by triggers, and the note vector is invalidated).
+ * When they are exactly the same (for example just a rename), the existing vectors are kept and false is returned.
  */
 export function setChunks(db: DB, noteId: number, chunks: readonly Chunk[]): boolean {
   const old = listChunks(db, noteId)
@@ -144,7 +144,7 @@ export function listChunks(
   ).map((r) => ({ ...r, embedded: r.embedded === 1 }))
 }
 
-/** 還沒有向量的 chunk，依筆記與順序 */
+/** Chunks without vectors yet, by note and order */
 export function pendingChunks(db: DB, limit: number): PendingChunk[] {
   return db
     .prepare(
@@ -158,8 +158,8 @@ export function pendingChunks(db: DB, limit: number): PendingChunk[] {
 }
 
 /**
- * 寫入 chunk 向量。已不存在（筆記在 embedding 途中被修改或刪除）或已有向量的 chunk 略過。
- * 筆記的全部 chunk 都有向量時更新整篇向量。回傳整篇向量有更新的筆記 id。
+ * Writes chunk vectors. Chunks that no longer exist (the note was modified or deleted mid-embedding) or already have vectors are skipped.
+ * When all of a note's chunks have vectors, its note vector is updated. Returns the ids of notes whose note vectors were updated.
  */
 export function storeEmbeddings(
   db: DB,
@@ -188,7 +188,7 @@ export function storeEmbeddings(
   })()
 }
 
-/** 整篇向量 = 各塊向量正規化後的平均（再正規化） */
+/** Note vector = the average of the normalized chunk vectors (normalized again) */
 function updateNoteVector(db: DB, noteId: number): void {
   const rows = db
     .prepare(
@@ -210,7 +210,7 @@ function updateNoteVector(db: DB, noteId: number): void {
   )
 }
 
-/** embedding 進度：有內容的筆記數，與其中全部 chunk 都有向量的筆記數 */
+/** Embedding progress: the number of notes with content, and how many of them have vectors for every chunk */
 export function embedProgress(db: DB): { embedded: number; total: number } {
   const total = (
     db.prepare('SELECT COUNT(DISTINCT note_id) AS n FROM chunks').get() as { n: number }
@@ -223,7 +223,7 @@ export function embedProgress(db: DB): { embedded: number; total: number } {
   return { embedded: total - pending, total }
 }
 
-/** 與 vector 最接近的 k 個 chunk（cosine distance 由小到大） */
+/** The k chunks closest to vector (cosine distance ascending) */
 export function nearestChunks(db: DB, vector: ArrayLike<number>, k: number): ChunkHit[] {
   if (!vectorModel(db)) return []
   return db
@@ -237,7 +237,7 @@ export function nearestChunks(db: DB, vector: ArrayLike<number>, k: number): Chu
     .all(toBlob(vector), Math.min(MAX_KNN, Math.max(1, k))) as ChunkHit[]
 }
 
-/** 有整篇向量的筆記 */
+/** Notes that have a note vector */
 export function listNoteVectors(db: DB): { noteId: number; vector: Float32Array }[] {
   if (!vectorModel(db)) return []
   return (
@@ -248,7 +248,7 @@ export function listNoteVectors(db: DB): { noteId: number; vector: Float32Array 
   ).map((r) => ({ noteId: r.noteId, vector: fromBlob(r.embedding) }))
 }
 
-/** 與 vector 最接近的 k 篇筆記 */
+/** The k notes closest to vector */
 export function nearestNotes(
   db: DB,
   vector: ArrayLike<number>,
@@ -272,7 +272,7 @@ function toBlob(v: ArrayLike<number>): Buffer {
 }
 
 function fromBlob(b: Buffer): Float32Array {
-  // 複製一份：Buffer 的 byteOffset 不一定是 4 的倍數
+  // Copy it: a Buffer's byteOffset isn't necessarily a multiple of 4
   const copy = new Uint8Array(b.byteLength)
   copy.set(b)
   return new Float32Array(copy.buffer)

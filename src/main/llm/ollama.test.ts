@@ -46,13 +46,13 @@ async function rejection(p: Promise<unknown>): Promise<OllamaError> {
 }
 
 describe('readNdjson', () => {
-  it('跨片段的行與最後沒有換行的一行都能解析', async () => {
+  it('parses lines split across chunks and a final line without a newline', async () => {
     const out: unknown[] = []
     await readNdjson(stream(['{"a":', '1}\n{"b":2}\n\n{"c', '":"中文"}']), (o) => out.push(o))
     expect(out).toEqual([{ a: 1 }, { b: 2 }, { c: '中文' }])
   })
 
-  it('多位元組字元被切在兩個片段之間', async () => {
+  it('handles a multi-byte character split between two chunks', async () => {
     const bytes = new TextEncoder().encode('{"t":"總結"}\n')
     const out: unknown[] = []
     const s = new ReadableStream<Uint8Array>({
@@ -68,7 +68,7 @@ describe('readNdjson', () => {
 })
 
 describe('createOllama', () => {
-  it('version 與已下載的模型', async () => {
+  it('version and downloaded models', async () => {
     const { fetch } = fakeFetch((url) =>
       url.endsWith('/api/version')
         ? json({ version: '0.35.1' })
@@ -79,7 +79,7 @@ describe('createOllama', () => {
     expect(await o.models()).toEqual(['bge-m3:latest', 'qwen3:8b'])
   })
 
-  it('embed 批次送出', async () => {
+  it('embed sends a batch', async () => {
     const { fetch, calls } = fakeFetch(() =>
       json({
         embeddings: [
@@ -101,7 +101,7 @@ describe('createOllama', () => {
     expect(calls).toHaveLength(1)
   })
 
-  it('連不上時是 offline 錯誤', async () => {
+  it('unreachable means an offline error', async () => {
     const { fetch } = fakeFetch(() => {
       throw new TypeError('fetch failed')
     })
@@ -109,23 +109,23 @@ describe('createOllama', () => {
     expect(e.kind).toBe('offline')
   })
 
-  it('模型未下載時提示 ollama pull', async () => {
+  it('suggests ollama pull when the model is not downloaded', async () => {
     const { fetch } = fakeFetch(() => json({ error: "model 'bge-m3' not found" }, 404))
     const e = await rejection(createOllama('http://host', fetch).embed('bge-m3', ['x']))
     expect(e.kind).toBe('model')
     expect(e.message).toContain('ollama pull bge-m3')
   })
 
-  it('其他 HTTP 錯誤帶上 Ollama 的訊息', async () => {
+  it("other HTTP errors carry Ollama's message", async () => {
     const { fetch } = fakeFetch(() => json({ error: 'boom' }, 500))
     const e = await rejection(createOllama('http://host', fetch).models())
     expect(e).toMatchObject({ kind: 'http', message: 'Ollama error 500: boom' })
   })
 
-  it('chat 串流片段並回傳全文，關閉思考', async () => {
+  it('chat streams chunks and returns the full text, with thinking off', async () => {
     const lines = [
-      { message: { role: 'assistant', content: '重' } },
-      { message: { role: 'assistant', content: '點' } },
+      { message: { role: 'assistant', content: 'Key' } },
+      { message: { role: 'assistant', content: ' points' } },
       { message: { role: 'assistant', content: '' }, done: true }
     ]
     const { fetch, calls } = fakeFetch(
@@ -134,15 +134,15 @@ describe('createOllama', () => {
     const deltas: string[] = []
     const out = await createOllama('http://host', fetch).chat(
       'qwen3:8b',
-      [{ role: 'user', content: '總結' }],
+      [{ role: 'user', content: 'Summarize' }],
       { onDelta: (d) => deltas.push(d) }
     )
-    expect(out).toBe('重點')
-    expect(deltas).toEqual(['重', '點'])
+    expect(out).toBe('Key points')
+    expect(deltas).toEqual(['Key', ' points'])
     expect(calls[0].body).toMatchObject({ model: 'qwen3:8b', stream: true, think: false })
   })
 
-  it('模型不支援 think 參數時不帶參數重送', async () => {
+  it('resends without think when the model does not support it', async () => {
     const { fetch, calls } = fakeFetch((_url, init) => {
       const body = JSON.parse(String(init.body))
       if ('think' in body) return json({ error: '"llama3" does not support thinking' }, 400)
@@ -153,7 +153,7 @@ describe('createOllama', () => {
     expect(calls).toHaveLength(2)
   })
 
-  it('串流中的錯誤與取消', async () => {
+  it('errors and cancellation mid-stream', async () => {
     const { fetch } = fakeFetch(
       () => new Response(stream([JSON.stringify({ error: 'out of memory' }) + '\n']))
     )
@@ -174,17 +174,17 @@ describe('createOllama', () => {
     expect((await rejection(p)).kind).toBe('aborted')
   })
 
-  it('chatTools 送出工具定義與 num_ctx，回傳文字與工具呼叫', async () => {
+  it('chatTools sends tool definitions and num_ctx, returning text and tool calls', async () => {
     const lines = [
-      { message: { role: 'assistant', content: '我先搜尋' } },
+      { message: { role: 'assistant', content: 'Let me search' } },
       {
         message: {
           role: 'assistant',
           content: '',
           tool_calls: [
-            { function: { index: 0, name: 'search_notes', arguments: { query: '習慣' } } },
-            // 有些模型的 arguments 是 JSON 字串
-            { function: { name: 'get_note', arguments: '{"path":"原子習慣"}' } },
+            { function: { index: 0, name: 'search_notes', arguments: { query: 'habits' } } },
+            // Some models send arguments as a JSON string
+            { function: { name: 'get_note', arguments: '{"path":"Atomic Habits"}' } },
             { function: { name: 'broken', arguments: 'not json' } },
             { nothing: true }
           ]
@@ -208,19 +208,19 @@ describe('createOllama', () => {
     const deltas: string[] = []
     const out = await createOllama('http://host', fetch).chatTools(
       'qwen3:8b',
-      [{ role: 'user', content: '找' }],
+      [{ role: 'user', content: 'Find' }],
       tools,
       { onDelta: (d) => deltas.push(d), numCtx: 16384, temperature: 0.2 }
     )
     expect(out).toEqual({
-      content: '我先搜尋',
+      content: 'Let me search',
       toolCalls: [
-        { name: 'search_notes', arguments: { query: '習慣' } },
-        { name: 'get_note', arguments: { path: '原子習慣' } },
+        { name: 'search_notes', arguments: { query: 'habits' } },
+        { name: 'get_note', arguments: { path: 'Atomic Habits' } },
         { name: 'broken', arguments: {} }
       ]
     })
-    expect(deltas).toEqual(['我先搜尋'])
+    expect(deltas).toEqual(['Let me search'])
     expect(calls[0].body).toMatchObject({
       tools,
       think: false,
@@ -228,7 +228,42 @@ describe('createOllama', () => {
     })
   })
 
-  it('送出前去掉雲端 API 才有的工具呼叫 id、extra 與 tool_call_id', async () => {
+  it('sends the output limit as num_predict (not when unset); done_reason length reports truncation', async () => {
+    const { fetch, calls } = fakeFetch(
+      () =>
+        new Response(
+          stream([
+            JSON.stringify({ message: { content: 'Half' } }) + '\n',
+            JSON.stringify({ message: { content: '' }, done: true, done_reason: 'length' }) + '\n'
+          ])
+        )
+    )
+    let truncated = 0
+    const text = await createOllama('http://host', fetch).chat(
+      'qwen3:8b',
+      [{ role: 'user', content: 'q' }],
+      { numCtx: 4096, maxTokens: 256, onTruncated: () => truncated++ }
+    )
+    expect(text).toBe('Half')
+    expect(truncated).toBe(1)
+    expect(calls[0].body).toMatchObject({ options: { num_ctx: 4096, num_predict: 256 } })
+
+    const { fetch: done, calls: doneCalls } = fakeFetch(
+      () =>
+        new Response(
+          stream([JSON.stringify({ message: { content: 'ok' }, done: true, done_reason: 'stop' })])
+        )
+    )
+    await createOllama('http://host', done).chat('qwen3:8b', [{ role: 'user', content: 'q' }], {
+      numCtx: 4096,
+      onTruncated: () => truncated++
+    })
+    expect(truncated).toBe(1)
+    expect(doneCalls[0].body).toMatchObject({ options: { num_ctx: 4096 } })
+    expect((doneCalls[0].body as { options: object }).options).not.toHaveProperty('num_predict')
+  })
+
+  it('strips tool call id, extra and tool_call_id, which only cloud APIs use, before sending', async () => {
     const { fetch, calls } = fakeFetch(
       () => new Response(stream([JSON.stringify({ message: { content: 'ok' }, done: true })]))
     )
@@ -250,7 +285,7 @@ describe('createOllama', () => {
     ])
   })
 
-  it('沒有工具時不送 tools 參數；模型不支援工具時可辨識', async () => {
+  it('sends no tools parameter without tools; recognizes models that do not support tools', async () => {
     const { fetch, calls } = fakeFetch(
       () => new Response(stream([JSON.stringify({ message: { content: 'ok' } }) + '\n']))
     )

@@ -28,45 +28,45 @@ const chunk = (c: Partial<AgentChunk>): AgentChunk => ({ id: 'r1', delta: '', do
 function run(chunks: Partial<AgentChunk>[], s: AgentSession = emptySession()): AgentSession {
   return chunks.reduce(
     (acc, c) => applyAgentChunk(acc, chunk(c)),
-    withTaskId(startTask(s, '任務'), 'r1')
+    withTaskId(startTask(s, 'task'), 'r1')
   )
 }
 
 describe('agentRun', () => {
-  it('文字與步驟依到達順序排列，同 index 的步驟取代', () => {
+  it('orders text and steps by arrival, replacing steps with the same index', () => {
     const s = run([
-      { delta: '我先' },
-      { delta: '搜尋。' },
+      { delta: 'Let me ' },
+      { delta: 'search.' },
       { step: step(0, 'running') },
-      { step: step(0, 'done', '找到 3 篇') },
-      { delta: '結論' },
-      { delta: '是…' }
+      { step: step(0, 'done', 'Found 3 notes') },
+      { delta: 'The answer ' },
+      { delta: 'is…' }
     ])
     expect(lastTask(s)!.items).toEqual([
-      { kind: 'text', text: '我先搜尋。' },
-      { kind: 'step', step: step(0, 'done', '找到 3 篇') },
-      { kind: 'text', text: '結論是…' }
+      { kind: 'text', text: 'Let me search.' },
+      { kind: 'step', step: step(0, 'done', 'Found 3 notes') },
+      { kind: 'text', text: 'The answer is…' }
     ])
-    expect(finalText(lastTask(s)!)).toBe('結論是…')
+    expect(finalText(lastTask(s)!)).toBe('The answer is…')
     expect(isTaskRunning(s)).toBe(true)
   })
 
-  it('done 與錯誤', () => {
+  it('done and errors', () => {
     expect(lastTask(run([{ delta: 'a', done: true }]))!.status).toBe('done')
     const failed = lastTask(run([{ done: true, error: 'Cannot connect' }]))!
     expect(failed).toMatchObject({ status: 'error', error: 'Cannot connect' })
   })
 
-  it('拿到 id 之前的片段先存著；其他任務的片段忽略', () => {
-    let s = startTask(emptySession(), '任務')
-    s = applyAgentChunk(s, chunk({ delta: '早到的' }))
-    s = applyAgentChunk(s, chunk({ id: 'other', delta: '別人的' }))
+  it('keeps chunks that arrive before the id; ignores chunks for other tasks', () => {
+    let s = startTask(emptySession(), 'task')
+    s = applyAgentChunk(s, chunk({ delta: 'early' }))
+    s = applyAgentChunk(s, chunk({ id: 'other', delta: 'other' }))
     s = withTaskId(s, 'r1')
-    s = applyAgentChunk(s, chunk({ id: 'other', delta: '別人的' }))
-    expect(finalText(lastTask(s)!)).toBe('早到的')
+    s = applyAgentChunk(s, chunk({ id: 'other', delta: 'other' }))
+    expect(finalText(lastTask(s)!)).toBe('early')
   })
 
-  it('等待確認的步驟；停止後不再算等待，之後的片段忽略', () => {
+  it('a step waiting for confirmation; after stopping it no longer counts as waiting, and later chunks are ignored', () => {
     const s = run([{ step: step(0, 'done') }, { step: step(1, 'confirm') }])
     expect(pendingConfirm(s)?.index).toBe(1)
     const stopped = stopTask(s)
@@ -75,14 +75,19 @@ describe('agentRun', () => {
     expect(lastTask(stopped)!.status).toBe('stopped')
   })
 
-  it('history 只取完成的任務與最終回答', () => {
-    let s = run([{ delta: '說明' }, { step: step(0, 'done') }, { delta: '答案' }, { done: true }])
-    s = failTask(startTask(s, '失敗的'), 'boom')
-    s = run([{ step: step(0, 'done') }, { done: true }], s) // 沒有最終回答
-    s = startTask(s, '進行中')
+  it('history takes only finished tasks and final answers', () => {
+    let s = run([
+      { delta: 'explanation' },
+      { step: step(0, 'done') },
+      { delta: 'answer' },
+      { done: true }
+    ])
+    s = failTask(startTask(s, 'failed'), 'boom')
+    s = run([{ step: step(0, 'done') }, { done: true }], s) // no final answer
+    s = startTask(s, 'running')
     expect(agentHistory(s)).toEqual([
-      { role: 'user', content: '任務' },
-      { role: 'assistant', content: '答案' }
+      { role: 'user', content: 'task' },
+      { role: 'assistant', content: 'answer' }
     ])
   })
 })

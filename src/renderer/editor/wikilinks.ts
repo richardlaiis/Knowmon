@@ -1,4 +1,4 @@
-// 編輯器裡的 wikilink：輸入 [[ 時自動補全筆記名稱、Ctrl/Cmd+點擊開啟連結
+// wikilinks in the editor: autocompleting note names after [[, and Ctrl/Cmd+click to open links
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete'
 import { syntaxTree } from '@codemirror/language'
 import { EditorState, type Extension } from '@codemirror/state'
@@ -11,13 +11,13 @@ import { rankNotes } from '../src/lib/fuzzy'
 const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText'])
 const WIKILINK = /\[\[([^[\]\n]+?)\]\]/g
 
-/** 游標前是否正在輸入 [[...（尚未輸入 | 或 #），回傳已輸入的文字 */
+/** Whether [[... is being typed before the cursor (no | or # yet); returns the text typed so far */
 export function openWikilinkQuery(textBefore: string): string | null {
   const m = /\[\[([^[\]|#\n]*)$/.exec(textBefore)
   return m ? m[1] : null
 }
 
-/** 該行 col 位置所在的 wikilink 目標（col 為行內 index） */
+/** The wikilink target at col on the line (col is an index within the line) */
 export function wikilinkAt(line: string, col: number): string | null {
   for (const m of line.matchAll(WIKILINK)) {
     if (col >= m.index && col <= m.index + m[0].length) return wikilinkTarget(m[1]) || null
@@ -25,7 +25,7 @@ export function wikilinkAt(line: string, col: number): string | null {
   return null
 }
 
-/** 自動補全的選項：插入能唯一解析的最短目標，選了之後游標移到 ]] 後面 */
+/** Autocompletion option: inserts the shortest target that resolves uniquely, moving the cursor after ]] once chosen */
 export function wikilinkOptions(
   notes: readonly NoteSummary[],
   query: string,
@@ -47,7 +47,7 @@ function inCode(state: EditorState, pos: number): boolean {
 
 export interface WikilinkOptions {
   getNotes: () => Promise<NoteSummary[]>
-  /** newTab：Ctrl/Cmd+Shift+點擊 */
+  /** newTab: Ctrl/Cmd+Shift+click */
   onOpen: (target: string, newTab: boolean) => void
 }
 
@@ -62,9 +62,9 @@ export function wikilinks({ getNotes, onOpen }: WikilinkOptions): Extension {
     const options: Completion[] = wikilinkOptions(notes, query).map((o, i) => ({
       label: o.label,
       detail: o.detail,
-      boost: -i, // 保留 rankNotes 的順序
+      boost: -i, // keep rankNotes' order
       apply: (view, _c, a, b) => {
-        // closeBrackets 通常已經補上 ]]，有的話一起取代
+        // closeBrackets has usually added ]] already; if so, replace it too
         const end = view.state.sliceDoc(b, b + 2) === ']]' ? b + 2 : b
         const insert = o.text + ']]'
         view.dispatch({
@@ -82,7 +82,7 @@ export function wikilinks({ getNotes, onOpen }: WikilinkOptions): Extension {
     EditorView.domEventHandlers({
       mousedown(e, view) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false
-        // 渲染後的表格（tables.ts）沒有對應的原文位置，直接讀 data-target
+        // A rendered table (tables.ts) has no matching source position, so read data-target directly
         const inTable = (e.target as HTMLElement).closest?.<HTMLElement>(
           '.cm-lp-table [data-target]'
         )

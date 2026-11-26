@@ -1,198 +1,213 @@
-# 測試
+# Testing
 
-開發者用：自動測試、手動測試清單與幾個除錯指令。安裝與執行見 [README](../README.md)。
+For developers: automated tests, the manual test checklist and a few debugging commands. For installing and running, see the [README](../README.md).
 
-## 自動測試
+## Automated tests
 
 ```bash
-npx vitest run       # 單元與整合測試
-npm run typecheck    # 型別檢查（main/preload 與 renderer 兩個專案）
-npm run lint         # ESLint + Prettier 檢查
+npx vitest run       # unit and integration tests
+npm run typecheck    # type check (two projects: main/preload and renderer)
+npm run lint         # ESLint + Prettier checks
 ```
 
-注意：`npx tsc --noEmit` 在根目錄不會檢查任何檔案（根 tsconfig 只有 project references），請用 `npm run typecheck`。
+Note: `npx tsc --noEmit` at the repository root checks no files (the root tsconfig only has project references). Use `npm run typecheck`.
 
-測試檔放在被測檔案旁邊（`*.test.ts`），主要的有：
+Test files sit next to the files they test (`*.test.ts`). The main ones:
 
-- `src/main/vault/vault.test.ts`：建立、改名、刪除、外部修改（reconcile）、事件節流、刪掉 DB 後從 `events.jsonl` 重建、chokidar 監聽
-- `src/main/db/*.test.ts`：schema、查詢、日誌重播
-- `src/main/vault/paths.test.ts`、`tree.test.ts`：路徑安全檢查、檔案樹
-- `src/renderer/editor/livePreview.test.ts`：Markdown 即時渲染（哪些標記被隱藏、游標附近顯示原始語法、frontmatter、待辦切換）
-- `src/renderer/editor/tables.test.ts`：表格渲染（對齊、欄數、`\|`、格子內的行內樣式與 wikilink、游標進入時展開、只渲染頂層表格）
+- `src/main/vault/vault.test.ts`: create, rename, delete, external changes (reconcile), event throttling, rebuilding from `events.jsonl` after the DB is deleted, chokidar watching
+- `src/main/db/*.test.ts`: schema, queries, log replay
+- `src/main/vault/paths.test.ts`, `tree.test.ts`: path safety checks, the file tree
+- `src/renderer/editor/livePreview.test.ts`: live Markdown rendering (which marks are hidden, raw syntax shown near the cursor, frontmatter, task toggling)
+- `src/renderer/editor/tables.test.ts`: table rendering (alignment, column count, `\|`, inline styles and wikilinks in cells, expanding when the cursor enters, rendering only top-level tables)
 - `src/renderer/editor/mathSyntax.test.ts`, `math.test.ts`: math syntax (currency, escapes, code precedence, blocks in quotes/lists, unclosed blocks) and its decorations (inline widgets, block widgets, preview while editing, nested blocks)
-- `src/renderer/src/lib/theme.test.ts`：主題切換與記憶
-- `src/renderer/editor/autosave.test.ts`、`src/renderer/src/lib/tree.test.ts`：自動儲存、檔案樹路徑工具（含拖曳）
-- `src/main/indexer/timeLinks.test.ts`、`src/main/db/time.test.ts`、`src/main/vault/time.test.ts`：時間邊（same_session、same_day、sequence）的推導、何時重算、時間參數的讀寫、DB 重建
-- `src/shared/time.test.ts`、`src/renderer/graph/timeFilter.test.ts`、`src/renderer/timeline/model.test.ts`：session 切分、圖譜時間篩選、時間軸分組
-- `src/shared/timeRange.test.ts`、`src/renderer/chat/conversation.test.ts`：從問題解析時間範圍（「上個月」「最近 7 天」「last week」）、對話狀態
-- `src/main/indexer/chunk.test.ts`、`src/main/db/vectors.test.ts`：切塊、向量表（sqlite-vec）、semantic 邊與 1000 篇的效能
-- `src/main/llm/*.test.ts`：Ollama client（假的 fetch）、背景 embedding、混合檢索、總結、問答（關鍵字、context 組裝、引用過濾）；`service.test.ts` 用真的 Vault 加假的 Ollama 測離線、模型未下載、換模型，以及雲端模式（沒有 key、key 錯誤不重試、Ollama 離線時對話照常）；`openai.test.ts`：OpenAI 相容 client（SSE、工具呼叫參數分段、id 與 thought signature、錯誤分類）；`secrets.test.ts`：API key 加密儲存
+- `src/renderer/src/lib/theme.test.ts`: theme switching and persistence
+- `src/renderer/editor/autosave.test.ts`, `src/renderer/src/lib/tree.test.ts`: autosave, file tree path helpers (including drag and drop)
+- `src/main/indexer/timeLinks.test.ts`, `src/main/db/time.test.ts`, `src/main/vault/time.test.ts`: deriving time edges (same_session, same_day, sequence), when they are recomputed, reading and writing the time settings, DB rebuilds
+- `src/shared/time.test.ts`, `src/renderer/graph/timeFilter.test.ts`, `src/renderer/timeline/model.test.ts`: session splitting, graph time filtering, timeline grouping
+- `src/shared/timeRange.test.ts`, `src/renderer/chat/conversation.test.ts`: parsing time ranges from questions (「上個月」 "last month", 「最近 7 天」 "last 7 days", "last week"), conversation state
+- `src/main/indexer/chunk.test.ts`, `src/main/db/vectors.test.ts`: chunking, the vector tables (sqlite-vec), semantic edges and performance at 1000 notes
+- `src/main/llm/*.test.ts`: Ollama client (fake fetch), background embedding, hybrid retrieval, summaries, Q&A (keywords, context assembly, citation filtering). `service.test.ts` uses a real Vault with a fake Ollama to test going offline, missing models, switching models, and cloud mode (no key, no retry on a bad key, chat still working while Ollama is offline). `openai.test.ts`: the OpenAI-compatible client (SSE, tool call arguments split across chunks, ids and thought signatures, error classification, output limit parameter names and resending). `secrets.test.ts`: encrypted API key storage. `budget.test.ts`: character budgets scaled by the context length (equal to the original constants at 8192)
 
-與真的 Ollama 連線的整合測試預設跳過，需要時執行：
+Integration tests against a real Ollama are skipped by default. Run them when needed:
 
 ```bash
 OLLAMA_IT=1 npx vitest run src/main/llm/ollama.integration.test.ts
+# With a chat model other than qwen3:8b:
+OLLAMA_IT=1 OLLAMA_CHAT_MODEL=qwen3.5:2b npx vitest run src/main/llm/ollama.integration.test.ts
 ```
 
-雲端服務的整合測試（每個服務各自開啟，需要自己的 API key）：
+Integration tests for cloud providers (each enabled separately; you need your own API key):
 
 ```bash
-OPENAI_IT=1 OPENAI_API_KEY=sk-… OPENAI_MODEL=<模型> npx vitest run src/main/llm/openai.integration.test.ts
-GEMINI_IT=1 GEMINI_API_KEY=… GEMINI_MODEL=<模型> npx vitest run src/main/llm/openai.integration.test.ts
-# 不需要帳號：用 Ollama 本身的 OpenAI 相容端點當作 custom
+OPENAI_IT=1 OPENAI_API_KEY=sk-… OPENAI_MODEL=<model> npx vitest run src/main/llm/openai.integration.test.ts
+GEMINI_IT=1 GEMINI_API_KEY=… GEMINI_MODEL=<model> npx vitest run src/main/llm/openai.integration.test.ts
+# No account needed: use Ollama's own OpenAI-compatible endpoint as the custom provider
 CUSTOM_IT=1 CUSTOM_BASE_URL=http://127.0.0.1:11434/v1 CUSTOM_API_KEY=x CUSTOM_MODEL=qwen3:8b \
   npx vitest run src/main/llm/openai.integration.test.ts
 ```
 
-Agent 那一項會跑兩步以上的工具呼叫：Gemini 3 若沒有帶回 thought signature 會在第二步回 400。
+The Agent test runs two or more tool-call steps: Gemini 3 returns 400 on the second step if the thought signature isn't sent back.
 
-效能測試（1000 篇筆記的時間邊、圖譜、semantic 邊）的時間上限以 `perfBudget`（`src/main/db/test-utils.ts`）包起來：本機照設計目標檢查，CI（環境變數 `CI` 有值）放寬 10 倍，因為 GitHub Actions 的共用機器慢而且不穩定。單一測試的逾時（`vitest.config.ts` 的 `testTimeout`）在 CI 也從 5 秒放寬到 60 秒。本機想模擬 CI 可以 `CI=1 npx vitest run`。
+Time limits in the performance tests (time edges, the graph and semantic edges at 1000 notes) are wrapped in `perfBudget` (`src/main/db/test-utils.ts`): locally they check the design targets, and on CI (when the `CI` environment variable is set) they are relaxed 10×, because GitHub Actions' shared machines are slow and inconsistent. The per-test timeout (`testTimeout` in `vitest.config.ts`) is also raised from 5 to 60 seconds on CI. To simulate CI locally, run `CI=1 npx vitest run`.
 
-新功能必須附測試，完成前要確認上面三個指令都通過。
+New features must come with tests, and all three commands above must pass before finishing.
 
-## 手動測試
+## Manual tests
 
-先複製一份測試 vault。**請放在家目錄底下，不要放在 `/tmp`**：`/tmp` 不支援系統垃圾桶，在那裡刪除筆記會失敗。
+First copy the test vault. **Put it under your home directory, not in `/tmp`**: `/tmp` has no system trash, so deleting notes there fails.
 
 ```bash
 cp -r test-vault ~/knowmon-test-vault
 npm run dev
 ```
 
-| #   | 操作                                                                                                                                               | 預期結果                                                                                                                                                                                                                                                                     |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | 按「Open folder」，選 `~/knowmon-test-vault`                                                                                                       | 左側出現檔案樹，資料夾排在前面                                                                                                                                                                                                                                               |
-| 2   | 點「歡迎」，打幾個字，等約 1 秒                                                                                                                    | `cat ~/knowmon-test-vault/歡迎.md` 看得到新內容                                                                                                                                                                                                                              |
-| 3   | 按 `Ctrl+S`                                                                                                                                        | 立即存檔                                                                                                                                                                                                                                                                     |
-| 4   | 按側邊欄上方的新增筆記 / 新增資料夾圖示，或在檔案樹按右鍵                                                                                          | 檔案樹中出現名稱輸入框，輸入名稱後按 Enter 才建立（筆記開在新分頁）；Esc 或空白名稱取消，不會留下檔案                                                                                                                                                                        |
-| 5   | 右鍵 →「Rename」                                                                                                                                   | 磁碟上的檔案跟著改名；開著的筆記不會被關掉                                                                                                                                                                                                                                   |
-| 6   | 把筆記或資料夾拖到另一個資料夾、筆記上，或檔案樹空白處                                                                                             | 移進目標資料夾（拖到空白處就移到根目錄）；停在收合的資料夾上約 0.6 秒會自動展開                                                                                                                                                                                              |
-| 7   | 右鍵 →「Delete」                                                                                                                                   | 跳出確認視窗，檔案移到系統垃圾桶                                                                                                                                                                                                                                             |
-| 8   | 開著「歡迎」，在終端機執行 `echo '# 外部改的' > ~/knowmon-test-vault/歡迎.md`                                                                      | 編輯器自動換成新內容                                                                                                                                                                                                                                                         |
-| 9   | 打字後 0.5 秒內馬上做第 8 項                                                                                                                       | 出現提示列，可以選「Load external version」或「Keep my version」                                                                                                                                                                                                             |
-| 10  | 在終端機新增、`rm`、`mv` 筆記                                                                                                                      | 檔案樹自動更新                                                                                                                                                                                                                                                               |
-| 11  | 開一篇有標題、粗體、連結、清單、`- [ ]` 的筆記                                                                                                     | 標記符號隱藏、顯示渲染結果；游標移進粗體或連結時顯示原始語法；點核取方塊會切換並存檔；`Ctrl+E` 切換原始碼模式                                                                                                                                                                |
-| 12  | 按側邊欄上方（或歡迎畫面右上角）的月亮／太陽圖示                                                                                                   | 在米白淺色與深色主題間切換，程式碼顏色跟著換；重新開啟 App 後維持上次的選擇                                                                                                                                                                                                  |
-| 13  | 按 `Ctrl+Shift+F`，依序搜尋 `習慣`、`原子習慣`、`中英混合 search`                                                                                  | 2 字與 3 字以上的中文、中英混合都找得到；標題命中的排前面，摘要標示命中的字                                                                                                                                                                                                  |
-| 14  | 開「深度工作」，看右側 Backlinks 面板                                                                                                              | 列出「2026-10-04」「歡迎」「原子習慣」與連結所在那一行；標題列的「Backlinks」按鈕可收合                                                                                                                                                                                      |
-| 15  | 在編輯器輸入 `[[原子`                                                                                                                              | 跳出補全選單（顯示所在資料夾），按 Enter 插入 `[[原子習慣]]`，不會多出 `]]`                                                                                                                                                                                                  |
-| 16  | `Ctrl+點擊` `[[原子習慣]]`；再 `Ctrl+點擊` 深度工作裡的 `[[尚未建立的筆記]]`                                                                       | 前者開啟該筆記；後者在 vault 根目錄建立新筆記，它的 Backlinks 列出「深度工作」                                                                                                                                                                                               |
-| 17  | 按 `Ctrl+O`，輸入 `深度`，按 Enter                                                                                                                 | 開啟「深度工作」；沒輸入時最近開過的筆記排在最前面                                                                                                                                                                                                                           |
-| 18  | 按 `Ctrl+G`（或側欄的「Graph」）                                                                                                                   | 主區域顯示全域圖譜；滾輪縮放、拖曳背景平移、拖曳節點；hover 時高亮該筆記與相連的筆記；點節點切回編輯器並開啟該筆記                                                                                                                                                           |
-| 19  | 右側面板切到「Local graph」，切換 Depth 1–3                                                                                                        | 只顯示目前筆記與相連的筆記，目前的筆記以強調色標示；換筆記時跟著更新                                                                                                                                                                                                         |
-| 20  | 切換深色模式                                                                                                                                       | 圖譜顏色跟著換                                                                                                                                                                                                                                                               |
-| 21  | 截圖後在筆記裡 `Ctrl+V`；或從檔案管理員把圖片拖進編輯器                                                                                            | 圖片存到 `<vault>/attachments/`（截圖命名為 `Pasted image 時間.png`，拖進來的保留原檔名，同名加編號），插入 `![](相對路徑)` 並顯示圖片；游標移到該行時顯示原始語法                                                                                                           |
-| 22  | 手動寫 `![](不存在.png)`、`![](https://…/a.png)`                                                                                                   | 前者顯示紅色的「Image not found」；網址與絕對路徑不渲染（只支援相對於筆記的路徑）                                                                                                                                                                                            |
-| 23  | 寫一張含對齊、粗體、`code`、`[[wikilink]]`、`\|` 的表格與一張很寬的表格                                                                            | 游標在外時顯示成表格（對齊正確、寬表格可左右捲動，拖捲軸不會展開）；點某格時整張變回原始碼、游標在那一格；`Ctrl+點擊` 格子裡的 wikilink／連結會開啟；`Ctrl+E` 時不渲染                                                                                                       |
-| 23a | Write `$E=mc^2$`, `It costs $5 and $10`, a `$$ … $$` block (also one with an error such as `\frac{1}`), one in a `>` quote and one in a table cell | Formulas render when the cursor is elsewhere; the prices stay text; inside a block the source shows with a preview below; the error shows the red TeX with the message on hover; `Ctrl+E` shows source; dark theme readable. Ask the AI for a formula: `\[ … \]` renders too |
+The test vault is about seven weeks of one person's notes: `Welcome`, a `Journal/` folder (2026-10-05 to 2026-11-25), `Books/` (Atomic Habits, Deep Work and two more), `Projects/` (Knowmon and a half marathon), `Meetings/`, `Cooking/`, `Inbox/`, `Reference/Markdown showcase` (every syntax the editor renders) and a small Chinese folder, `中文/`, for the Chinese features. Chinese inputs in the tables below are meant to be typed as written.
 
-### 分頁與面板
+| #   | Action                                                                                                                                             | Expected result                                                                                                                                                                                                                                                                                                            |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Click "Open folder" and choose `~/knowmon-test-vault`                                                                                              | The file tree appears on the left, with folders first                                                                                                                                                                                                                                                                      |
+| 2   | Click "Welcome", type a few characters, wait about 1 second                                                                                        | `cat ~/knowmon-test-vault/Welcome.md` shows the new content                                                                                                                                                                                                                                                                |
+| 3   | Press `Ctrl+S`                                                                                                                                     | Saves immediately                                                                                                                                                                                                                                                                                                          |
+| 4   | Click the new note / new folder icons at the top of the sidebar, or right-click in the file tree                                                   | A name field appears in the file tree; the item is created only after typing a name and pressing Enter (notes open in a new tab); Esc or an empty name cancels and leaves no file                                                                                                                                          |
+| 5   | Right-click → "Rename"                                                                                                                             | The file on disk is renamed too; an open note isn't closed                                                                                                                                                                                                                                                                 |
+| 6   | Drag a note or folder onto another folder, onto a note, or onto empty space in the file tree                                                       | It moves into the target folder (empty space moves it to the root); hovering over a collapsed folder for about 0.6 seconds expands it                                                                                                                                                                                      |
+| 7   | Right-click → "Delete"                                                                                                                             | A confirmation dialog appears and the file goes to the system trash                                                                                                                                                                                                                                                        |
+| 8   | With "Welcome" open, run `echo '# Changed outside' > ~/knowmon-test-vault/Welcome.md` in a terminal                                                | The editor switches to the new content automatically                                                                                                                                                                                                                                                                       |
+| 9   | Do step 8 within 0.5 seconds of typing                                                                                                             | A bar appears offering "Load external version" or "Keep my version"                                                                                                                                                                                                                                                        |
+| 10  | Create, `rm` and `mv` notes in a terminal                                                                                                          | The file tree updates automatically                                                                                                                                                                                                                                                                                        |
+| 11  | Open `Reference/Markdown showcase` (headings, bold, links, lists, `- [ ]` tasks)                                                                   | Marks are hidden and the rendered result is shown; moving the cursor into bold text or a link shows the raw syntax; clicking a checkbox toggles it and saves; `Ctrl+E` toggles source mode                                                                                                                                 |
+| 12  | Click the moon/sun icon at the top of the sidebar (or the top right of the welcome screen)                                                         | Switches between the off-white light theme and the dark theme, code colors included; the choice is kept after restarting the app                                                                                                                                                                                           |
+| 13  | Press `Ctrl+Shift+F` and search for `deep work`, `習慣`, `專注` and `中英混合 Hybrid` in turn                                                      | English is case-insensitive; two-character Chinese words and mixed Chinese/English match the notes in `中文/`; title matches rank first, and snippets highlight the matched text                                                                                                                                           |
+| 14  | Open "Deep Work" and look at the Backlinks panel on the right                                                                                      | Lists "2026-10-05", "Atomic Habits", "Markdown showcase", "Thinking in Systems" and "Welcome" with the line containing each link; the "Backlinks" button in the title bar collapses it                                                                                                                                     |
+| 15  | Type `[[Atom` in the editor; then type `[[Ideas`                                                                                                   | A completion menu appears (showing each note's folder); Enter inserts `[[Atomic Habits]]` without an extra `]]`. For `Ideas` both notes are listed; choosing the Half marathon one inserts `[[Half marathon/Ideas]]`                                                                                                       |
+| 16  | `Ctrl+click` `[[Atomic Habits]]` in Deep Work; then `Ctrl+click` `[[A note that doesn't exist yet]]` in `Inbox/Questions to explore`               | The first opens that note; the second creates a new note at the vault root, whose Backlinks list "Questions to explore"                                                                                                                                                                                                    |
+| 17  | Press `Ctrl+O`, type `deep` and press Enter                                                                                                        | Opens "Deep Work"; with no input, recently opened notes come first                                                                                                                                                                                                                                                         |
+| 18  | Press `Ctrl+G` (or "Graph" in the sidebar)                                                                                                         | The main area shows the global graph; the wheel zooms, dragging the background pans, nodes can be dragged; hovering highlights the note and its neighbors; clicking a node switches back to the editor and opens it                                                                                                        |
+| 19  | Switch the right panel to "Local graph" and change Depth between 1 and 3                                                                           | Only the current note and its neighbors are shown, with the current note in the accent color; it updates when you switch notes                                                                                                                                                                                             |
+| 20  | Toggle dark mode                                                                                                                                   | Graph colors change too                                                                                                                                                                                                                                                                                                    |
+| 21  | Take a screenshot and press `Ctrl+V` in a note; or drag an image from the file manager into the editor                                             | The image is saved to `<vault>/attachments/` (screenshots are named `Pasted image <time>.png`, dragged files keep their names, with a number added on a clash), `![](relative path)` is inserted and the image is shown; moving the cursor onto that line shows the raw syntax                                             |
+| 22  | Write `![](missing.png)` and `![](https://…/a.png)` by hand                                                                                        | The first shows a red "Image not found"; URLs and absolute paths aren't rendered (only paths relative to the note are supported). The logo in `Reference/Markdown showcase` renders                                                                                                                                        |
+| 23  | Write a table with alignment, bold, `code`, a `[[wikilink]]` and `\|`, plus a very wide table                                                      | With the cursor outside, it renders as a table (correct alignment; the wide table scrolls horizontally, and dragging the scrollbar doesn't expand it); clicking a cell turns the whole table back into source with the cursor in that cell; `Ctrl+click` on a wikilink/link in a cell opens it; not rendered with `Ctrl+E` |
+| 23a | Write `$E=mc^2$`, `It costs $5 and $10`, a `$$ … $$` block (also one with an error such as `\frac{1}`), one in a `>` quote and one in a table cell | Formulas render when the cursor is elsewhere; the prices stay text; inside a block the source shows with a preview below; the error shows the red TeX with the message on hover; `Ctrl+E` shows source; dark theme readable. Ask the AI for a formula: `\[ … \]` renders too                                               |
 
-| #   | 操作                                                         | 預期結果                                                                                |
-| --- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| 24  | 點檔案樹的筆記，再點另一篇                                   | 第二篇取代目前的分頁                                                                    |
-| 25  | `Ctrl+點擊`（或中鍵）另一篇筆記                              | 開在新分頁；再點已開著的筆記會切過去，不重複開                                          |
-| 26  | 在一個分頁打字，切到別的分頁再切回來，按 `Ctrl+Z`            | 內容與 undo 歷程都還在                                                                  |
-| 27  | `Ctrl+G`、`Ctrl+Tab`、`Ctrl+W`、`Ctrl+T`                     | 開圖譜分頁（只會有一個）、切換分頁、只關閉分頁（視窗不會關）、以新分頁開 Quick switcher |
-| 28  | 拖曳分頁、右鍵分頁                                           | 調整順序；右鍵可「Close / Close others」                                                |
-| 29  | 拖曳檔案樹與編輯器、編輯器與右側面板之間的分隔線；雙擊分隔線 | 調整寬度；雙擊恢復預設                                                                  |
-| 30  | `Ctrl+B`、`Ctrl+Alt+B` 或分頁列兩端的按鈕                    | 開關左側欄、右側面板                                                                    |
-| 31  | 關掉 App 再開同一個 vault                                    | 分頁、面板寬度與開關都還原                                                              |
+### Tabs and panels
 
-### 時間層
+| #   | Action                                                                                                                     | Expected result                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 24  | Click a note in the file tree, then another                                                                                | The second replaces the current tab                                                                                             |
+| 25  | `Ctrl+click` (or middle-click) another note                                                                                | Opens in a new tab; clicking a note that's already open switches to it instead of opening it twice                              |
+| 26  | Type in one tab, switch to another tab and back, press `Ctrl+Z`                                                            | Content and undo history are both kept                                                                                          |
+| 27  | `Ctrl+G`, `Ctrl+Tab`, `Ctrl+W`, `Ctrl+T`                                                                                   | Opens the graph tab (only ever one), switches tabs, closes only the tab (not the window), opens the Quick switcher in a new tab |
+| 28  | Drag a tab; right-click a tab                                                                                              | Reorders tabs; right-click offers "Close / Close others"                                                                        |
+| 29  | Drag the dividers between the file tree and the editor, and between the editor and the right panel; double-click a divider | Resizes; double-clicking restores the default                                                                                   |
+| 30  | `Ctrl+B`, `Ctrl+Alt+B`, or the buttons at both ends of the tab bar                                                         | Toggles the left sidebar and the right panel                                                                                    |
+| 31  | Close the app and reopen the same vault                                                                                    | Tabs, panel widths and open/closed state are restored                                                                           |
 
-兩種時間、各種時間邊的規則與圖譜篩選的意思見 [`time-layer.md`](time-layer.md)。
+### Time layer
 
-時間邊需要編輯歷程。剛複製的 vault 只有每篇一筆 `create`，先在 App 裡編輯幾篇筆記（同一段時間內編輯的會連在一起），或調整下面的設定。
+For the two kinds of time, the rules for each time edge and what the graph filters mean, see [`time-layer.md`](time-layer.md).
 
-| #   | 操作                                                                                     | 預期結果                                                                                                                           |
-| --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 32  | 依序編輯「原子習慣」「深度工作」（間隔不到 30 分鐘），按 `Ctrl+G`                        | 兩篇之間多一條 Session 邊（橘色虛線）；`日記/` 裡的三篇以 Sequence 邊（實線）串起來                                                |
-| 33  | 圖譜工具列點 Links / Session / Same day / Sequence                                       | 對應類型的邊顯示或隱藏，版面跟著微調；重開 App 後維持上次的選擇                                                                    |
-| 34  | 拖動圖譜的時間滑桿，取消勾選「Undated」，切換「Event date / Written」                    | 範圍外的筆記消失但其他節點不移動；工具列顯示「N of M notes」；「Reset」恢復全部                                                    |
-| 35  | 按 `Ctrl+Shift+T`（或側欄的「Timeline」）                                                | 開啟時間軸分頁：「Event date」依日期列出有日期的筆記；「Written」依天列出 session（時間範圍與編輯的筆記，新建的標示 new）          |
-| 36  | 點時間軸上方的長條、點筆記、`Ctrl+點擊`筆記                                              | 捲到該月；在目前分頁開啟；在新分頁開啟                                                                                             |
-| 37  | 時間軸或圖譜工具列按「Settings」，把 Session gap 改成 5、Same-day window 改成 1，按 Save | `cat ~/knowmon-test-vault/.knowmon/settings.json` 看得到新值；圖譜的 Session 邊變少、日記之間多了 Same day 邊；時間軸 session 變短 |
-| 38  | 右側面板切到「Local graph」，切換邊類型                                                  | 局部圖只沿著選取的類型找相連的筆記                                                                                                 |
+Time edges need editing history. A freshly copied vault has just one `create` per note, so first edit a few notes in the app (notes edited within the same stretch of time get linked), or adjust the settings below.
 
-### AI（階段 5）
+| #   | Action                                                                                                       | Expected result                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 32  | Edit "Atomic Habits" and then "Deep Work" (less than 30 minutes apart), press `Ctrl+G`                       | A Session edge (orange dashed line) appears between them; the notes in `Journal/` are chained by Sequence edges (solid lines); "2026-10-14" and "2026-10-14 Design review" have a Same day edge |
+| 33  | Click Links / Session / Same day / Sequence in the graph toolbar                                             | Edges of that type show or hide and the layout adjusts slightly; the choice is kept after restarting the app                                                                                    |
+| 34  | Drag the graph's time slider, uncheck "Undated", switch "Event date / Written"                               | Notes outside the range disappear while other nodes stay put; the toolbar shows "N of M notes"; "Reset" restores everything                                                                     |
+| 35  | Press `Ctrl+Shift+T` (or "Timeline" in the sidebar)                                                          | Opens the timeline tab: "Event date" lists dated notes by date; "Written" lists sessions by day (time range and edited notes, with new ones marked new)                                         |
+| 36  | Click a bar at the top of the timeline, click a note, `Ctrl+click` a note                                    | Scrolls to that month; opens in the current tab; opens in a new tab                                                                                                                             |
+| 37  | Click "Settings" in the timeline or graph toolbar, set Session gap to 5 and Same-day window to 1, click Save | `cat ~/knowmon-test-vault/.knowmon/settings.json` shows the new values; the graph has fewer Session edges and gains Same day edges between journal notes; timeline sessions get shorter         |
+| 38  | Switch the right panel to "Local graph" and toggle edge types                                                | The local graph only follows the selected types to find neighbors                                                                                                                               |
 
-需要 Ollama 與 `bge-m3`、`qwen3:8b`（`ollama pull bge-m3`、`ollama pull qwen3:8b`）。開啟 vault 後，側欄底部會顯示「Indexing N/M」，背景 embedding 完成後變成「AI ready」（test-vault 約 10 秒）。
+### AI (phase 5)
 
-| #   | 操作                                                           | 預期結果                                                                                                        |
-| --- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| 39  | 開「原子習慣」，按 `Ctrl+Shift+S`（或筆記上方的「Summarize」） | 右側面板切到「AI」，逐字顯示繁體中文的條列總結（約 15–30 秒）；`[[深度工作]]` 可點擊；可 Stop、Copy、Regenerate |
-| 40  | 選取一段文字再按 `Ctrl+Shift+S`                                | 標題顯示「Selection in …」，只總結選取的部分                                                                    |
-| 41  | 搜尋切到「Hybrid」，輸入 `培養好習慣的方法` 按 Enter           | 沒有完全相同字詞也找得到「原子習慣」等筆記，標示 meaning（向量）、text（全文）、linked（圖譜鄰居）              |
-| 42  | 點 Hybrid 的結果                                               | 開啟筆記並捲到最相關的段落                                                                                      |
-| 43  | 設定 Hybrid 的日期範圍後按 Enter                               | 只列出 event date（沒有的話用最後修改日）在範圍內的筆記                                                         |
-| 44  | `Ctrl+G`，工具列切換「Semantic」                               | 內容相似的筆記之間有洋紅色的 Semantic 邊；「Settings」可調整相似度門檻與每篇上限                                |
-| 45  | 結束 Ollama（`systemctl stop ollama` 或關掉 `ollama serve`）   | 側欄變成「AI offline」，AI 分頁顯示原因；搜尋、圖譜、編輯照常；Hybrid 退回關鍵字結果並提示                      |
-| 46  | 重新啟動 Ollama                                                | 30 秒內自動恢復（或按 AI 分頁的「Retry」）                                                                      |
-| 47  | AI 分頁按「Settings」                                          | 可改 Ollama 位址與模型；換 embedding 模型會重新索引所有筆記                                                     |
-| 48  | AI 分頁切到「EN」再按 Regenerate                               | 用英文條列總結，`[[原子習慣]]` 等連結保持原文、可點擊；切回「中文」恢復繁體中文；重開 App 後仍記得選擇          |
-| 49  | 總結內容有粗體、清單、程式碼時                                 | 以格式顯示（不是原始 Markdown 符號）；串流途中未完成的語法先顯示為文字                                          |
-| 50  | 總結一篇沒有任何 `[[連結]]` 的筆記                             | 總結裡沒有可點的連結，也沒有 `[[` 符號；有連結的筆記只會出現原文中的連結                                        |
+Needs Ollama with `bge-m3` and `qwen3:8b` (`ollama pull bge-m3`, `ollama pull qwen3:8b`). After opening a vault, the bottom of the sidebar shows "Indexing N/M", which becomes "AI ready" when background embedding finishes (under a minute for test-vault on a CPU).
 
-### 問答（階段 6）
+| #   | Action                                                                                                    | Expected result                                                                                                                                                                                         |
+| --- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 39  | Open "Deep Work" and press `Ctrl+Shift+S` (or "Summarize" above the note)                                 | The right panel switches to "AI" and streams a bullet-point summary, in Traditional Chinese by default (about 15–30 seconds); `[[Atomic Habits]]` is clickable; Stop, Copy and Regenerate work          |
+| 40  | Select some text, then press `Ctrl+Shift+S`                                                               | The title shows "Selection in …" and only the selection is summarized                                                                                                                                   |
+| 41  | Switch search to "Hybrid", type `how to build better habits` and press Enter; then try `培養好習慣的方法` | Atomic Habits comes first even without identical wording, labeled meaning (vector), text (full text) or linked (graph neighbor); the Chinese query finds both Atomic Habits and `中文/原子習慣讀書心得` |
+| 42  | Click a Hybrid result                                                                                     | Opens the note and scrolls to the most relevant passage                                                                                                                                                 |
+| 43  | Set a date range for Hybrid and press Enter                                                               | Lists only notes whose event date (or last modified date when there is none) is in range                                                                                                                |
+| 44  | `Ctrl+G`, toggle "Semantic" in the toolbar                                                                | Magenta Semantic edges link notes with similar content; "Settings" adjusts the similarity threshold and the per-note limit                                                                              |
+| 45  | Stop Ollama (`systemctl stop ollama` or close `ollama serve`)                                             | The sidebar shows "AI offline" and the AI tab shows why; search, the graph and editing work as usual; Hybrid falls back to keyword results with a notice                                                |
+| 46  | Start Ollama again                                                                                        | Recovers automatically within 30 seconds (or click "Retry" in the AI tab)                                                                                                                               |
+| 47  | Click "Settings" in the AI tab                                                                            | The Ollama address and models can be changed; changing the embedding model re-indexes every note                                                                                                        |
+| 48  | Switch the AI tab to "EN" and click Regenerate                                                            | Summarizes in English bullets; links such as `[[Atomic Habits]]` stay clickable; switching back to 「中文」 restores Traditional Chinese; the choice is remembered after restarting the app             |
+| 49  | When a summary has bold, lists or code                                                                    | Shown formatted (not raw Markdown symbols); incomplete syntax mid-stream is shown as text first                                                                                                         |
+| 50  | Summarize a note without any `[[links]]`                                                                  | The summary has no clickable links and no `[[`; for notes with links, only links from the original appear                                                                                               |
 
-同樣需要 Ollama。AI 分頁上方切換「Chat / Agent / Summary」，`Ctrl+Shift+A` 直接打開對話。
+### Q&A (phase 6)
 
-| #   | 操作                                                   | 預期結果                                                                                                      |
-| --- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| 51  | `Ctrl+Shift+A`，輸入 `深度工作的重點是什麼？` 按 Enter | 先顯示「Searching notes…」，再逐字顯示繁體中文回答（約 5 秒）；句子後面有上標的引用編號，下方列出被引用的來源 |
-| 52  | 點回答裡的引用編號或下方的來源                         | 開啟該筆記並捲到引用的段落；`Ctrl+點擊`開在新分頁                                                             |
-| 53  | 輸入 `2026-10-04 到 2026-10-06 之間做了什麼？`         | 輸入時輸入框上方出現「2026-10-04 – 2026-10-06」；回答上方顯示「Notes from …」，來源只有這三天的日記           |
-| 54  | 輸入 `上週寫了什麼？` 後按範圍旁的 ×，再送出           | 範圍變成刪除線的「No date filter」，送出後不篩選日期                                                          |
-| 55  | 按「Date range…」選日期再送出                          | 只用該範圍的筆記回答；送出後範圍恢復成自動偵測                                                                |
-| 56  | 接著問 `那第二點呢？`                                  | 沿用前一題的主題回答（對話脈絡）                                                                              |
-| 57  | 問 `What are the key ideas of Atomic Habits?`          | 用英文回答，引用「原子習慣」                                                                                  |
-| 58  | 問筆記裡沒有的問題（例如 `薛丁格方程式怎麼推導？`）    | 回答「筆記裡沒有相關內容」，不自己編造；來源收在「sources searched」裡                                        |
-| 59  | 回答中按「Copy」貼到筆記                               | 引用編號變成 `[[來源標題]]` 連結                                                                              |
-| 60  | 回答途中按「Stop」；按「New chat」                     | 停止並顯示「Stopped.」；清空對話。換 vault 時對話也會清空                                                     |
-| 61  | Ollama 停止時                                          | 輸入框顯示「AI is offline (see the status above)」，Ask 按鈕停用                                              |
+Also needs Ollama. Switch between "Chat / Agent / Summary" at the top of the AI tab; `Ctrl+Shift+A` opens the chat directly.
 
-### Agent（階段 7）
+| #   | Action                                                                                           | Expected result                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 51  | `Ctrl+Shift+A`, type `What are the key ideas of Deep Work?` and press Enter                      | Shows "Searching notes…", then streams an answer in English; sentences end with superscript citation numbers, and the cited sources (Deep Work first) are listed below                                             |
+| 52  | Click a citation number in the answer or a source below                                          | Opens that note and scrolls to the cited passage; `Ctrl+click` opens it in a new tab                                                                                                                               |
+| 53  | Type `What did I do from 2026-10-14 to 2026-10-21?`                                              | While typing, "2026-10-14 – 2026-10-21" appears above the input; the answer shows "Notes from …" and the sources are only notes dated in that range (journal entries, the design review, The Pragmatic Programmer) |
+| 54  | Type `What did I write last week?`, click × next to the range, then send                         | The range becomes a struck-through "No date filter", and the question is sent without a date filter                                                                                                                |
+| 55  | Click "Date range…", pick dates, then send                                                       | Answers using only notes in that range; after sending, the range goes back to automatic detection                                                                                                                  |
+| 56  | Follow up with `What about attention residue?`                                                   | Answers on the same topic as the previous question (conversation context)                                                                                                                                          |
+| 57  | Ask `2026-11-16 到 2026-11-22 跑了幾公里？` ("How far did I run from 2026-11-16 to 2026-11-22?") | Answers in Traditional Chinese, citing 「跑步紀錄」 (14 km)                                                                                                                                                        |
+| 58  | Ask something the notes don't cover (for example `How is the Schrödinger equation derived?`)     | Answers that the notes don't cover it, without making things up; any sources found are tucked under "sources searched"                                                                                             |
+| 59  | Click "Copy" on an answer and paste into a note                                                  | Citation numbers become `[[source title]]` links                                                                                                                                                                   |
+| 60  | Click "Stop" mid-answer; click "New chat"                                                        | Stops and shows "Stopped."; clears the conversation. Switching vaults also clears it                                                                                                                               |
+| 61  | With Ollama stopped                                                                              | The input shows "AI is offline (see the status above)" and the Ask button is disabled                                                                                                                              |
 
-同樣需要 Ollama。AI 分頁切到「Agent」，或按 `Ctrl+Shift+G`。每個任務約 1–4 分鐘（只用 CPU 時；有 GPU 會快很多）。
+### Agent (phase 7)
 
-| #   | 操作                                                                                     | 預期結果                                                                                                                                 |
-| --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 62  | `Ctrl+Shift+G`，輸入 `2026-10-04 到 2026-10-06 之間寫了哪些筆記？它們各自連到哪些筆記？` | 依序出現步驟（轉圈 → ✓）：「Notes from 2026-10-04 – 2026-10-06 → 3 notes」、三次「Connections of …」；最後的回答連結可點擊               |
-| 63  | 點開一個步驟                                                                             | 顯示工具參數與結果中的筆記；點筆記開啟，`Ctrl+點擊`開新分頁                                                                              |
-| 64  | 輸入 `把「原子習慣」和「深度工作」整理成一篇比較筆記，存在「整理」資料夾`                | 讀完兩篇後出現確認卡片：可修改的路徑與內容；不存在的連結會標示出來。Agent 按鈕、AI 分頁與側欄底部顯示提醒（「Agent: confirm a change」） |
-| 65  | 按「Reject」                                                                             | 步驟變成刪除線（✕），沒有建立任何檔案；回答說明沒有完成                                                                                  |
-| 66  | 再送一次同樣的任務，修改路徑或內容後按「Apply」                                          | 用修改後的路徑與內容建立筆記，檔案樹立刻出現；步驟下方的筆記名稱可點擊開啟                                                               |
-| 67  | 開著「2026-10-04」，輸入 `幫 2026-10-04 這篇日記加上「回顧」標籤`                        | 確認卡片顯示標籤 chip（可按 × 拿掉）與 frontmatter 前後對照；Apply 後開著的分頁自動重新載入，frontmatter 有 `tags: [回顧]`               |
-| 68  | 對已經有該標籤的筆記再要求一次                                                           | 不出現確認卡片，回答說已經有了                                                                                                           |
-| 69  | 等待確認時按「Stop」                                                                     | 停止並顯示「Stopped.」，提案不會寫入；「New task」清空                                                                                   |
-| 70  | 在 Settings 換成不支援工具的模型後送出任務                                               | 顯示「does not support tool calling」，請換模型                                                                                          |
+Also needs Ollama. Switch the AI tab to "Agent", or press `Ctrl+Shift+G`. Each task takes about 1–4 minutes (CPU only; much faster with a GPU).
 
-### 雲端對話服務
+| #   | Action                                                                                                            | Expected result                                                                                                                                                                                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 62  | `Ctrl+Shift+G`, type `Which notes did I write from 2026-11-02 to 2026-11-09, and what does each of them link to?` | Steps appear in order (spinner → ✓): "Notes from 2026-11-02 – 2026-11-09 → 3 notes" and "Connections of …" for each; links in the final answer are clickable                                                                       |
+| 63  | Expand a step                                                                                                     | Shows the tool arguments and the notes in the result; clicking a note opens it, `Ctrl+click` opens it in a new tab                                                                                                                 |
+| 64  | Type `Write a note comparing the key ideas of Atomic Habits and Deep Work, and save it in the Summaries folder`   | After reading both notes, a confirmation card appears with an editable path and content; links to missing notes are marked. The Agent button, the AI tab and the bottom of the sidebar show a reminder ("Agent: confirm a change") |
+| 65  | Click "Reject"                                                                                                    | The step is struck through (✕) and no file is created; the answer explains it wasn't done                                                                                                                                          |
+| 66  | Send the same task again, edit the path or content, then click "Apply"                                            | The note is created with the edited path and content and appears in the file tree right away; the note name under the step opens it                                                                                                |
+| 67  | With "2026-11-02" open, type `Add the tag "milestone" to my 2026-11-02 journal entry`                             | The confirmation card shows the tag as a chip (removable with ×) and a before/after of the frontmatter; after Apply, the open tab reloads automatically and the frontmatter has `tags: [journal, running, milestone]`              |
+| 68  | Ask again for a note that already has the tag                                                                     | No confirmation card appears; the answer says it's already there                                                                                                                                                                   |
+| 69  | Click "Stop" while waiting for confirmation                                                                       | Stops and shows "Stopped."; the proposal isn't written; "New task" clears it                                                                                                                                                       |
+| 70  | In Settings, switch to a model without tool support, then send a task                                             | Shows "does not support tool calling" and asks you to change models                                                                                                                                                                |
 
-需要 OpenAI 或 Gemini 的 API key；沒有時用 Custom 加上 Ollama 的 OpenAI 相容端點（`http://127.0.0.1:11434/v1`，key 隨便填）測一遍。
+### Cloud chat providers
 
-| #   | 操作                                                   | 預期結果                                                                                                                      |
-| --- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| 71  | AI 設定把 Chat provider 換成 OpenAI                    | 出現 API key、Model 欄與黃色確認框；沒勾確認時 Save 停用；說明文字改成「note content is sent to OpenAI」                      |
-| 72  | 貼上 key、不選模型，勾確認後 Save                      | 對話框不關閉，Model 欄的下拉建議列出可用的模型；選一個再 Save 後關閉，AI 分頁顯示「OpenAI <模型>」、側欄「AI ready · OpenAI」 |
-| 73  | 重新打開設定                                           | key 欄顯示「Saved」、不顯示內容；`~/.config/knowmon/settings.json` 的 `llmKeys` 只有加密後的 base64，搜尋不到 key 的明文      |
-| 74  | 重開 App                                               | 仍是雲端模式且可用（key 解密成功）                                                                                            |
-| 75  | 停掉 Ollama 後做總結、問答與 Agent（含建立筆記的確認） | 都能完成；AI 分頁顯示「Ollama is offline, so semantic search…」灰色提示，不是紅色錯誤；Hybrid 搜尋退回關鍵字                  |
-| 76  | 把 key 換成錯的                                        | 顯示「OpenAI rejected the API key」，輸入框顯示 AI is offline；等一分鐘不會重試（不重複出錯）                                 |
-| 77  | 斷網（雲端模式）                                       | 顯示連不上 api.openai.com；恢復網路後 30 秒內自動恢復                                                                         |
-| 78  | Custom 填 `http://192.168.1.5:1234/v1`                 | 不接受（只允許 https 或 localhost 的 http），儲存後仍是原本的位址                                                             |
-| 79  | 切回 Ollama (local)                                    | 與原本行為相同；說明文字恢復「notes never leave this computer」                                                               |
+Needs an OpenAI or Gemini API key. Without one, run through it with Custom and Ollama's OpenAI-compatible endpoint (`http://127.0.0.1:11434/v1`, any key).
 
-### 大型 vault 效能測試
+| #   | Action                                                                               | Expected result                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 71  | In AI settings, change Chat provider to OpenAI                                       | API key and Model fields appear with a yellow consent box; Save is disabled until it's checked; the description changes to "note content is sent to OpenAI"                              |
+| 72  | Paste a key without choosing a model, check the consent box, Save                    | The dialog stays open and the Model field suggests the available models; after choosing one and saving, it closes, the AI tab shows "OpenAI <model>" and the sidebar "AI ready · OpenAI" |
+| 73  | Reopen the settings                                                                  | The key field shows "Saved" without the key; `llmKeys` in `~/.config/knowmon/settings.json` holds only encrypted base64, and the plain key can't be found in it                          |
+| 74  | Restart the app                                                                      | Still in cloud mode and working (the key decrypts)                                                                                                                                       |
+| 75  | Stop Ollama, then use summaries, Q&A and the Agent (including confirming a new note) | All of them work; the AI tab shows "Ollama is offline, so semantic search…" as a grey notice, not a red error; Hybrid search falls back to keywords                                      |
+| 76  | Change the key to a wrong one                                                        | Shows "OpenAI rejected the API key" and the input shows AI is offline; it doesn't retry within a minute (no repeated errors)                                                             |
+| 77  | Go offline (cloud mode)                                                              | Shows that api.openai.com can't be reached; recovers automatically within 30 seconds of reconnecting                                                                                     |
+| 78  | Set Custom to `http://192.168.1.5:1234/v1`                                           | Rejected (only https or http to localhost); after saving the address is unchanged                                                                                                        |
+| 79  | Switch back to Ollama (local)                                                        | Behaves as before; the description goes back to "notes never leave this computer"                                                                                                        |
+
+### Context length and max output
+
+| #   | Action                                                                                                        | Expected result                                                                                                                                                       |
+| --- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 80  | Set Ollama's Context length to 4096, run a summary, then run `ollama ps`                                      | The CONTEXT column shows 4096; after setting it back to 8192, behavior is as before                                                                                   |
+| 81  | Set Max output to 256 and summarize `Projects/Knowmon/Design notes` (a long note that is summarized in parts) | The reply stops partway and its last line is 「回覆達到輸出上限而中斷…」 ("Reply stopped at…" in English mode)                                                        |
+| 82  | Ask a follow-up question in Q&A after that                                                                    | The new answer isn't affected (the old answer's notice isn't sent to the model)                                                                                       |
+| 83  | Set Context length to 32768 and have Q&A and the Agent read a long note                                       | Source passages and each `get_note` page are noticeably longer (the Read step shows Showing characters 0–4800)                                                        |
+| 84  | Enter 100 as the Context length, or a Max output larger than the context (Ollama)                             | Can't be saved; the field shows the allowed range                                                                                                                     |
+| 85  | Switch to a cloud provider                                                                                    | Shows the cloud pair (default 8192 / blank); after changing it and switching back to Ollama, Ollama's pair is unchanged; both pairs are kept after restarting the app |
+
+### Performance test on a large vault
 
 ```bash
-node scripts/gen-vault.mjs ~/knowmon-1000 1000   # 產生 1000 篇測試筆記（第三個參數是亂數種子）
+node scripts/gen-vault.mjs ~/knowmon-1000 1000   # generate 1000 test notes (the third argument is a random seed)
 ```
 
-用 App 開啟 `~/knowmon-1000` 後按 `Ctrl+G`。排版在背景計算，工具列顯示進度，完成前也可以操作。量測結果見 [`plans/phase3-graph.md`](plans/phase3-graph.md)。
+Open `~/knowmon-1000` in the app and press `Ctrl+G`. Layout runs in the background with progress in the toolbar, and you can interact before it finishes. Measurements are in [`plans/phase3-graph.md`](plans/phase3-graph.md).
 
-### 檢查編輯歷程
+### Inspecting editing history
 
 ```bash
 cat ~/knowmon-test-vault/.knowmon/events.jsonl
@@ -201,33 +216,33 @@ sqlite3 ~/knowmon-test-vault/.knowmon/index.db \
    from note_events e join notes n on n.id = e.note_id order by e.ts"
 ```
 
-第一次開啟時，每篇筆記會各記一筆 `create`，之後是操作產生的 `open` / `edit`。同一篇筆記的同一種事件，60 秒內只會記一筆。
+On first open, each note gets one `create`; after that come the `open` / `edit` events from your actions. For the same note and event kind, at most one event is recorded per 60 seconds.
 
-### 測試 DB 重建
+### Testing a DB rebuild
 
-關掉 App 後執行 `rm ~/knowmon-test-vault/.knowmon/index.db*`，再重新開啟同一個 vault，用上面的 sqlite3 指令檢查。歷程應該跟刪除前完全一樣，`events.jsonl` 也不會多出重複的紀錄。搜尋結果與反向連結也應與刪除前相同（連結與全文索引都從 Markdown 檔重建）。向量會在背景重新 embedding（需要 Ollama）。
+Close the app, run `rm ~/knowmon-test-vault/.knowmon/index.db*`, reopen the same vault and check with the sqlite3 command above. The history should be exactly the same as before the deletion, and `events.jsonl` should gain no duplicate entries. Search results and backlinks should also match (links and the full-text index are rebuilt from the Markdown files). Vectors are re-embedded in the background (needs Ollama).
 
-從階段 1 升級的 vault 第一次開啟時，因為 schema 版本改變，`index.db` 會自動重建一次。
+A vault upgraded from phase 1 rebuilds `index.db` once on first open, because the schema version changed.
 
-## 發版前檢查
+## Pre-release checks
 
-推 `v*` tag 之前（流程見 [`releasing.md`](releasing.md)）：
+Before pushing a `v*` tag (process in [`releasing.md`](releasing.md)):
 
-1. GitHub Actions 的 `CI` 在 main 最新的 commit 上全部是綠燈（三個平台的 vitest，加上 typecheck 與 lint）。
-2. 手動觸發一次 `Release`（`workflow_dispatch`），四個 build 都成功，artifacts 共六個檔案：AppImage、deb、rpm、`-setup.exe`、`-arm64.dmg`、`-x64.dmg`。兩個 macOS job 的「Show macOS code signature」步驟顯示 `Signature=adhoc`。
-3. 下載 Linux 的 artifact，在 Fedora 與 Ubuntu 上各測一次。
+1. GitHub Actions `CI` is all green on the latest commit on main (vitest on three platforms, plus typecheck and lint).
+2. Trigger `Release` manually once (`workflow_dispatch`): all four builds succeed, with six files in the artifacts: AppImage, deb, rpm, `-setup.exe`, `-arm64.dmg`, `-x64.dmg`. The "Show macOS code signature" step in both macOS jobs shows `Signature=adhoc`.
+3. Download the Linux artifact and test it once each on Fedora and Ubuntu.
 
-### Linux 安裝檔手動測試
+### Manual test of the Linux installers
 
-Fedora 用 rpm（`sudo dnf install ./knowmon-<版本>.x86_64.rpm`），Ubuntu 用 deb（`sudo apt install ./knowmon_<版本>_amd64.deb`）：
+Fedora uses the rpm (`sudo dnf install ./knowmon-<version>.x86_64.rpm`), Ubuntu the deb (`sudo apt install ./knowmon_<version>_amd64.deb`):
 
-1. 從應用程式選單開啟 Knowmon，不需要 `--no-sandbox` 就能啟動。
-2. 開啟 `~/knowmon-test-vault`，以下都正常：
-   - 側欄顯示 AI ready，embedding 跑完。
-   - Hybrid 搜尋「培養好習慣的方法」有 meaning 結果。
-   - 圖譜有 Semantic 邊；問答與 Agent 能回答。
-   - 貼上圖片後能顯示。
-   - 刪除筆記會進系統垃圾桶。
-3. 關掉再開，上次的 vault、主題與分頁都沿用。
-4. AppImage：`chmod +x` 後直接執行。Fedora 預期 sandbox 正常開啟；Ubuntu 24+ 會因 AppArmor 自動加 `--no-sandbox`。
-5. `sudo dnf remove knowmon`／`sudo apt remove knowmon` 能乾淨移除（`/usr/bin/knowmon` 與選單項目消失，`~/.config/knowmon` 保留）。
+1. Knowmon opens from the application menu without needing `--no-sandbox`.
+2. Open `~/knowmon-test-vault`; all of the following work:
+   - The sidebar shows AI ready and embedding finishes.
+   - Hybrid search for `how to build better habits` has meaning results.
+   - The graph has Semantic edges; Q&A and the Agent answer.
+   - Pasted images are shown.
+   - Deleting a note sends it to the system trash.
+3. After closing and reopening, the last vault, theme and tabs are kept.
+4. AppImage: run it directly after `chmod +x`. On Fedora the sandbox should start normally; on Ubuntu 24+ `--no-sandbox` is added automatically because of AppArmor.
+5. `sudo dnf remove knowmon` / `sudo apt remove knowmon` removes it cleanly (`/usr/bin/knowmon` and the menu entry are gone; `~/.config/knowmon` is kept).

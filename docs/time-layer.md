@@ -1,124 +1,124 @@
-# 時間層設計
+# Time layer design
 
-除了使用者手寫的 `[[連結]]`，Knowmon 也依「時間」自動把筆記連起來，並提供依時間瀏覽筆記的時間軸。本文件說明概念與設計理由；實作細節見 `architecture.md` 的「時間層」，計畫與決定見 `plans/phase4-time.md`。
+Besides the `[[links]]` users write themselves, Knowmon links notes automatically by time and offers a timeline for browsing notes by date. This document explains the concepts and the reasoning behind them. For implementation details, see "Time layer" in `architecture.md`; for the plan and decisions, see `plans/phase4-time.md`.
 
-## 兩種時間
+## Two kinds of time
 
-每篇筆記有兩種時間，兩者都保存，用途不同：
+Every note has two kinds of time. Both are kept, and they serve different purposes:
 
-| 名稱 | 意思 | 來源 | 粒度 |
-| --- | --- | --- | --- |
-| 事件時間（Event date） | 筆記內容講的事何時發生 | frontmatter 的 `date:`，其次是檔名開頭的 `YYYY-MM-DD`；兩者都沒有就是沒有日期 | 一個日期 |
-| 寫作時間（Written） | 使用者何時建立、編輯這篇 | `note_events` 的 `create` / `edit`，App 自動記錄 | 每次事件精確到毫秒；圖譜篩選以「天」為單位 |
+| Name       | Meaning                                     | Source                                                                                                           | Granularity                                               |
+| ---------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Event date | When the events the note describes happened | `date:` in the frontmatter, otherwise a `YYYY-MM-DD` prefix in the file name; with neither, the note has no date | One date                                                  |
+| Written    | When the user created and edited the note   | `create` / `edit` in `note_events`, recorded automatically by the app                                            | Each event to the millisecond; graph filters work in days |
 
-例：10/8 補寫 10/1 的會議紀錄（`date: 2026-10-01`），10/15 又改了幾句。
+Example: on 10/8 you write up the minutes of a meeting held on 10/1 (`date: 2026-10-01`), and on 10/15 you change a few sentences.
 
-- 事件時間：10/1。
-- 寫作時間：10/8、10/15。
+- Event date: 10/1.
+- Written: 10/8 and 10/15.
 
-沒有寫日期的筆記（讀書心得、索引頁）沒有事件時間；但每篇筆記至少有一筆 `create`，所以幾乎一定有寫作時間。
+Notes without a date (book notes, index pages) have no event date. But every note has at least one `create`, so it almost always has a written time.
 
-`open` 事件（只是閱讀）不算寫作時間。
+`open` events (just reading) don't count as written time.
 
-## 時間邊
+## Time edges
 
-每種邊固定依據一種時間，與圖譜工具列的時間軸選單無關。
+Each edge type is always based on one kind of time, regardless of the timeline menu in the graph toolbar.
 
-| 類型 | 依據 | 規則 | 方向 | 權重 |
-| --- | --- | --- | --- | --- |
-| `wikilink`（Links） | 不看時間 | 內文的 `[[連結]]` | 有 | 出現次數 |
-| `same_session`（Session） | 寫作時間 | 同一段工作時間內編輯的筆記兩兩相連 | 無 | 共同出現的 session 數 |
-| `same_day`（Same day） | 事件時間 | 事件時間相差 ≤ `sameDayWindowDays` 天 | 無 | `1 / (1 + 相差天數)` |
-| `sequence`（Sequence） | 事件時間 | 同一資料夾中依事件時間排序，前一篇連到下一篇 | 早 → 晚 | 1 |
+| Type                     | Based on     | Rule                                                               | Directed        | Weight                    |
+| ------------------------ | ------------ | ------------------------------------------------------------------ | --------------- | ------------------------- |
+| `wikilink` (Links)       | Not time     | `[[links]]` in the body                                            | Yes             | Number of occurrences     |
+| `same_session` (Session) | Written time | Notes edited in the same work session are all linked to each other | No              | Number of shared sessions |
+| `same_day` (Same day)    | Event date   | Event dates at most `sameDayWindowDays` days apart                 | No              | `1 / (1 + days apart)`    |
+| `sequence` (Sequence)    | Event date   | Within a folder, sorted by event date, each note links to the next | Earlier → later | 1                         |
 
 ### Session
 
-把全 vault 的 `edit` 事件依時間排序，相鄰兩筆的間隔超過 `sessionGapMinutes`（預設 30 分鐘）就切成新的 session，等於這個值仍算同一段。這和網站分析的「閒置逾時」是同一種定義：只要一直有在寫，session 就會延續，不設總長度上限。
+All `edit` events in the vault are sorted by time. When the gap between two consecutive events is longer than `sessionGapMinutes` (default 30 minutes), a new session starts; a gap exactly equal to it still counts as the same session. This is the same definition as the "idle timeout" in web analytics: as long as you keep writing, the session continues, with no cap on its total length.
 
-同一個 session 內編輯過的筆記兩兩相連，不論在哪個資料夾。它回答的問題是「這篇是和哪些筆記一起寫的」。
+Notes edited in the same session are all linked to each other, whatever folder they are in. This answers "which notes was this written together with?"
 
-- **只看 `edit`**：第一次開啟既有的 vault 時，每篇筆記會以檔案的 birthtime 補記一筆 `create`；從 git clone 或同步工具來的檔案，birthtime 可能全部擠在同一刻，把 `create` 算進來會讓整個 vault 變成完全圖。`open` 只是閱讀，不代表一起思考。
-- **批次保護**：一個 session 編輯超過 `sessionMaxNotes`（預設 20）篇時，多半是外部同步、全域取代、git pull 等批次操作，這個 session 不產生任何邊。
+- **Only `edit` counts**: when an existing vault is opened for the first time, every note gets a backfilled `create` at the file's birthtime. Files that came from a git clone or a sync tool may all share the same birthtime, so counting `create` would turn the whole vault into a complete graph. `open` is just reading and doesn't mean the notes were thought about together.
+- **Batch protection**: when a session edits more than `sessionMaxNotes` notes (default 20), it is most likely a batch operation such as an external sync, a global replace or a git pull, so that session produces no edges.
 
 ### Same day
 
-事件時間相同（或相差在 `sameDayWindowDays` 天內）的筆記相連。它回答「同一天還發生了什麼」。預設只算同一天；放寬時權重隨天數遞減。
+Notes with the same event date (or within `sameDayWindowDays` days of each other) are linked. This answers "what else happened that day?" By default only the same day counts; when the window is wider, the weight drops with the number of days.
 
 ### Sequence
 
-同一個資料夾（含 vault 根目錄）裡有事件時間的筆記，依日期排序（同一天依路徑），每篇只連到前一篇與後一篇，形成一條鏈。它回答「這篇的上一篇、下一篇是什麼」，典型的例子是 `日記/` 裡每天連到隔天。
+Within a folder (including the vault root), notes with an event date are sorted by date (by path within the same day), and each note links only to the previous and next one, forming a chain. This answers "what comes before and after this note?" The typical case is `日記/` (a journal folder), where each day links to the next.
 
-「同一主題」定義為同一資料夾（使用者決定，2026-10-08）：資料夾是使用者已經在做的分類，不需要額外的標記，也不需要改 schema。以 frontmatter tags 分主題是可能的延伸。
+"Same topic" is defined as the same folder (user decision, 2026-10-08): folders are a classification users already make, so no extra markup or schema change is needed. Grouping topics by frontmatter tags is a possible extension.
 
-### Session 與 Sequence 的差別
+### Session vs. Sequence
 
-| | Session | Sequence |
-| --- | --- | --- |
-| 依據 | 寫作時間（到分鐘） | 事件時間（到天） |
-| 範圍 | 跨資料夾 | 同一資料夾 |
-| 形狀 | 同一 session 的筆記兩兩相連（團） | 前後相連（鏈） |
-| 需要 | 在 App 裡實際編輯過 | 筆記有日期 |
+|          | Session                                                | Sequence                   |
+| -------- | ------------------------------------------------------ | -------------------------- |
+| Based on | Written time (to the minute)                           | Event date (to the day)    |
+| Scope    | Across folders                                         | Within one folder          |
+| Shape    | All notes in a session linked to each other (a clique) | Neighbors linked (a chain) |
+| Requires | Actually edited in the app                             | The note has a date        |
 
-例：`日記/` 有 10/4、10/5、10/6 三篇。Sequence 一定是 `10/4 ── 10/5 ── 10/6`，10/4 與 10/6 不直接相連。某天下午連續編輯了「10/5 日記」「原子習慣」「Knowmon 開發日誌」，這三篇會以 Session 兩兩相連，與日期、資料夾無關。
+Example: `日記/` has three notes for 10/4, 10/5 and 10/6. The Sequence is always `10/4 ── 10/5 ── 10/6`; 10/4 and 10/6 are not linked directly. If one afternoon you edit "the 10/5 journal", "Atomic Habits" and "Knowmon dev log" one after another, those three are all linked by Session, regardless of their dates or folders.
 
-## 圖譜的篩選
+## Graph filters
 
-圖譜有兩種互相獨立的篩選：
+The graph has two independent filters:
 
-### 邊類型（Links / Session / Same day / Sequence）
+### Edge types (Links / Session / Same day / Sequence)
 
-決定畫出哪些線。關掉的類型不參與排版，所以切換時版面會微調（沿用原本的座標，不會整張重排）。局部圖先篩選邊類型再找鄰居，關掉的類型不算「相連」。
+These decide which lines are drawn. Hidden types don't take part in layout, so toggling them adjusts the layout slightly (existing positions are kept; the whole graph isn't laid out again). The local graph filters edge types first and then finds neighbors, so hidden types don't count as "linked".
 
-### 時間範圍（滑桿）
+### Time range (slider)
 
-決定哪些**節點**暫時隱藏，不改變任何線的產生方式，也不重新排版：節點在原本的位置出現或消失，相連的線跟著隱藏。
+This decides which **nodes** are temporarily hidden. It doesn't change how any lines are produced and doesn't re-run the layout: nodes appear or disappear where they are, and their lines are hidden with them.
 
-- **時間軸選單（Event date / Written）**：只決定滑桿用哪一種時間判斷節點是否在範圍內。
-  - Event date：事件時間落在範圍內。
-  - Written：任何一天的寫作時間落在範圍內（範圍內有建立或編輯過）。
-- **Undated**：在目前的時間軸上**沒有日期**的筆記要不要顯示。勾選時它們一直顯示、不受滑桿影響；取消勾選時隱藏。Event date 模式下沒有 `date:` 也不是日期檔名的筆記都算；Written 模式下幾乎不會有。
-- **Reset**：恢復全部範圍並顯示未標日期的筆記。
+- **Timeline menu (Event date / Written)**: only decides which kind of time the slider uses to judge whether a node is in range.
+  - Event date: the event date is in range.
+  - Written: any day of written time is in range (the note was created or edited within the range).
+- **Undated**: whether notes that have **no date** on the current timeline are shown. When checked they are always shown, regardless of the slider; when unchecked they are hidden. In Event date mode, this means notes with no `date:` and no date in the file name; in Written mode there are almost none.
+- **Reset**: restores the full range and shows undated notes.
 
-滑桿拉滿且 Undated 勾選時（預設），兩種時間軸看起來完全一樣，這是預期行為。
+With the slider at full range and Undated checked (the default), the two timelines look exactly the same. This is expected.
 
-例：滑桿設為 10/1–10/3，上面的會議紀錄（事件 10/1，寫作 10/8、10/15）在 Event date 模式下顯示、在 Written 模式下隱藏。
+Example: with the slider set to 10/1–10/3, the meeting minutes above (event 10/1, written 10/8 and 10/15) are shown in Event date mode and hidden in Written mode.
 
-## 時間軸視圖
+## Timeline view
 
-一個分頁（`Ctrl/Cmd+Shift+T`），有兩種模式：
+A tab (`Ctrl/Cmd+Shift+T`) with two modes:
 
-- **Event date**：有事件時間的筆記依日期分組，新的在上；最下面顯示沒有日期的篇數。
-- **Written**：依天列出每個工作 session（時間範圍與當時編輯的筆記，新建立的標示 new）。session 的切分與 Session 邊使用同一個函式與同一個 `sessionGapMinutes`，但這裡也把 `create` 算進去，因為建立筆記本身就是寫作的一部分。跨過午夜的 session 算在開始那天。
+- **Event date**: notes with an event date, grouped by date, newest first; the number of undated notes is shown at the bottom.
+- **Written**: each work session listed by day (its time range and the notes edited in it, with newly created ones marked new). Sessions are split by the same function and the same `sessionGapMinutes` as Session edges, but here `create` counts too, since creating a note is part of writing. A session that crosses midnight belongs to the day it started.
 
-上方的長條圖是每個月的數量，點擊捲到該月。
+The bar chart at the top shows the count per month; click it to scroll to that month.
 
-## 參數
+## Settings
 
-存在 `<vault>/.knowmon/settings.json` 的 `time` 欄位，跟著 vault 走（使用者決定，2026-10-08）。檔案不存在或損毀時用預設值，超出範圍的值取最近的邊界。
+Stored in the `time` field of `<vault>/.knowmon/settings.json`, so they travel with the vault (user decision, 2026-10-08). If the file is missing or corrupt, the defaults are used; out-of-range values are clamped to the nearest bound.
 
-| 參數 | 預設 | 範圍 | 影響 |
-| --- | --- | --- | --- |
-| `sessionGapMinutes` | 30 | 5–240 | Session 邊、時間軸的 session |
-| `sessionMaxNotes` | 20 | 2–200 | Session 邊 |
-| `sameDayWindowDays` | 0 | 0–7 | Same day 邊 |
+| Setting             | Default | Range | Affects                                 |
+| ------------------- | ------- | ----- | --------------------------------------- |
+| `sessionGapMinutes` | 30      | 5–240 | Session edges, sessions in the timeline |
+| `sessionMaxNotes`   | 20      | 2–200 | Session edges                           |
+| `sameDayWindowDays` | 0       | 0–7   | Same day edges                          |
 
-修改後時間邊立即重算。
+Time edges are recomputed as soon as a setting changes.
 
-## 資料流
+## Data flow
 
 ```
-events.jsonl ──重播──▶ note_events ─┐
-                                    ├─▶ deriveTimeLinks ──▶ links（三種時間邊）──▶ graph.get()
-*.md ──解析──▶ notes.event_date ────┘          ▲
-                                     settings.json
+events.jsonl ──replay──▶ note_events ─┐
+                                      ├─▶ deriveTimeLinks ──▶ links (three time edge types) ──▶ graph.get()
+*.md ──parse──▶ notes.event_date ─────┘          ▲
+                                       settings.json
 ```
 
-- 時間邊和 wikilink 一樣存在 `links` 表，可以從 Markdown 檔與 `events.jsonl` 完整重建。
-- 不做增量更新：任何事件、日期、路徑或參數的改變都可能影響整個 vault（例如插入一篇日記會改變 Sequence 鏈）。有變動時標記為需要重算，讀取圖譜前才整批重算；1000 篇、5 萬筆事件在 500ms 內。
-- 日期一律使用本地時區。
+- Time edges are stored in the `links` table like wikilinks, and can be fully rebuilt from the Markdown files and `events.jsonl`.
+- There are no incremental updates: any change to events, dates, paths or settings can affect the whole vault (for example, inserting a journal entry changes the Sequence chain). Changes mark the edges as dirty, and they are recomputed in one batch before the graph is read; 1000 notes and 50,000 events take under 500 ms.
+- Dates always use the local time zone.
 
-## 已知限制
+## Known limitations
 
-- Sequence 的方向沒有畫出來：Cytoscape 的 haystack 邊（為了大型圖譜的效能）不支援箭頭。
-- 同一對筆記同時有多種邊時，線會重疊在一起，只看得到最上面那條。
-- 寫作時間只從開始使用 Knowmon 後才有紀錄。App 沒開時在其他編輯器做的多次修改，下次開啟時只會記成一筆 `edit`（時間是檔案最後的修改時間）。
+- Sequence direction isn't drawn: Cytoscape's haystack edges (used for performance on large graphs) don't support arrows.
+- When a pair of notes has several edge types, the lines overlap and only the top one is visible.
+- Written time is only recorded from when you start using Knowmon. Several edits made in another editor while the app is closed are recorded as a single `edit` the next time it opens (at the file's last modification time).

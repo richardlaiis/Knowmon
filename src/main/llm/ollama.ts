@@ -1,11 +1,11 @@
-// Ollama HTTP API client。只用 Node 內建的 fetch；fetch 可注入以便測試。
+// Ollama HTTP API client. Uses only Node's built-in fetch, which can be injected for tests.
 // https://github.com/ollama/ollama/blob/main/docs/api.md
 
-/** auth：API key 錯誤（401/403）；rate：超過用量或頻率限制（429） */
+/** auth: bad API key (401/403); rate: usage or rate limit exceeded (429) */
 export type LlmErrorKind = 'offline' | 'model' | 'timeout' | 'aborted' | 'http' | 'auth' | 'rate'
 export type OllamaErrorKind = LlmErrorKind
 
-/** Ollama 與雲端 client 共用的錯誤 */
+/** Error shared by the Ollama and cloud clients */
 export class LlmError extends Error {
   constructor(
     message: string,
@@ -16,28 +16,28 @@ export class LlmError extends Error {
   }
 }
 
-/** 舊名稱：Ollama 是第一個 client，許多地方仍用這個名字 */
+/** Old name: Ollama was the first client, and many places still use this name */
 export const OllamaError = LlmError
 export type OllamaError = LlmError
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
-  /** assistant 要求的工具呼叫（送回模型時原樣附上） */
+  /** Tool calls requested by the assistant (sent back to the model as is) */
   tool_calls?: {
-    /** 雲端 API 的工具呼叫 id（Ollama 沒有；送給 Ollama 前去掉） */
+    /** A cloud API's tool call id (Ollama has none; stripped before sending to Ollama) */
     id?: string
-    /** 服務商要求原樣帶回的資料（Gemini 的 thought signature）；送給 Ollama 前去掉 */
+    /** Data the provider requires back verbatim (Gemini's thought signature); stripped before sending to Ollama */
     extra?: unknown
     function: { name: string; arguments: Record<string, unknown> }
   }[]
-  /** role = 'tool' 時：結果屬於哪個工具 */
+  /** When role = 'tool': which tool the result belongs to */
   tool_name?: string
-  /** role = 'tool' 時：對應的工具呼叫 id（雲端 API 用；送給 Ollama 前去掉） */
+  /** When role = 'tool': the matching tool call id (for cloud APIs; stripped before sending to Ollama) */
   tool_call_id?: string
 }
 
-/** Ollama 的工具定義（JSON schema） */
+/** Ollama tool definition (JSON schema) */
 export interface ToolDefinition {
   type: 'function'
   function: {
@@ -54,9 +54,9 @@ export interface ToolDefinition {
 export interface ToolCall {
   name: string
   arguments: Record<string, unknown>
-  /** 雲端 API 的工具呼叫 id */
+  /** A cloud API's tool call id */
   id?: string
-  /** 服務商要求原樣帶回的資料（例如 Gemini 的 thought signature） */
+  /** Data the provider requires back verbatim (for example Gemini's thought signature) */
   extra?: unknown
 }
 
@@ -67,20 +67,24 @@ export interface ChatResult {
 
 export interface ChatOptions {
   signal?: AbortSignal
-  /** 串流回來的每個片段 */
+  /** Each streamed chunk */
   onDelta?: (text: string) => void
   temperature?: number
-  /** context 長度（tokens）；不設時用模型的預設值。只有 Ollama 使用 */
+  /** Context length (tokens); the model's default when unset. Only Ollama uses it */
   numCtx?: number
+  /** Maximum tokens per reply; the model's default when unset */
+  maxTokens?: number
+  /** Called when the reply is cut off by maxTokens */
+  onTruncated?: () => void
 }
 
-/** 對話用的 client：Ollama 或雲端（OpenAI 相容）服務 */
+/** Client for chat: Ollama or a cloud (OpenAI-compatible) provider */
 export interface ChatClient {
-  /** 可用的模型名稱（Ollama：已下載的模型） */
+  /** Available model names (Ollama: downloaded models) */
   models(): Promise<string[]>
-  /** 串流對話，回傳完整的回覆 */
+  /** Streaming chat; returns the full reply */
   chat(model: string, messages: ChatMessage[], opts?: ChatOptions): Promise<string>
-  /** 帶工具的串流對話：回傳文字與模型要求的工具呼叫 */
+  /** Streaming chat with tools: returns the text and the tool calls the model requested */
   chatTools(
     model: string,
     messages: ChatMessage[],
@@ -94,7 +98,7 @@ export interface OllamaClient extends ChatClient {
   embed(model: string, input: string[], signal?: AbortSignal): Promise<number[][]>
 }
 
-/** 模型不支援工具呼叫時 Ollama 回傳的錯誤 */
+/** The error Ollama returns when a model doesn't support tool calling */
 export const isNoToolsError = (e: unknown): boolean =>
   e instanceof OllamaError && e.kind === 'http' && /does not support tools/i.test(e.message)
 
@@ -188,7 +192,8 @@ export function createOllama(baseUrl: string, fetchImpl: Fetch = fetch): OllamaC
   ): Promise<ChatResult> {
     const options = {
       ...(opts.temperature === undefined ? {} : { temperature: opts.temperature }),
-      ...(opts.numCtx === undefined ? {} : { num_ctx: opts.numCtx })
+      ...(opts.numCtx === undefined ? {} : { num_ctx: opts.numCtx }),
+      ...(opts.maxTokens === undefined ? {} : { num_predict: opts.maxTokens })
     }
     const send = (think: boolean): Promise<Response> =>
       request(
@@ -198,7 +203,7 @@ export function createOllama(baseUrl: string, fetchImpl: Fetch = fetch): OllamaC
           messages: messages.map(toOllamaMessage),
           stream: true,
           ...(tools && tools.length > 0 ? { tools } : {}),
-          // qwen3 等思考模型不輸出思考過程；不支援 think 的模型改用不帶參數重送
+          // Thinking models such as qwen3 don't output their reasoning; models that don't support think are retried without the parameter
           ...(think ? { think: false } : {}),
           ...(Object.keys(options).length > 0 ? { options } : {})
         },
@@ -218,8 +223,10 @@ export function createOllama(baseUrl: string, fetchImpl: Fetch = fetch): OllamaC
         const o = obj as {
           message?: { content?: string; tool_calls?: unknown[] }
           error?: string
+          done_reason?: string
         }
         if (o.error) throw new OllamaError(o.error, 'http')
+        if (o.done_reason === 'length') opts.onTruncated?.()
         const delta = o.message?.content ?? ''
         if (delta) {
           content += delta
@@ -237,7 +244,7 @@ export function createOllama(baseUrl: string, fetchImpl: Fetch = fetch): OllamaC
   }
 }
 
-/** 去掉 Ollama 不認得的欄位（雲端 API 的工具呼叫 id 等）；同樣的輸入一律得到同樣的結果 */
+/** Strips fields Ollama doesn't recognize (cloud API tool call ids and so on); the same input always gives the same result */
 export function toOllamaMessage(m: ChatMessage): ChatMessage {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { tool_call_id, tool_calls, ...rest } = m
@@ -246,7 +253,7 @@ export function toOllamaMessage(m: ChatMessage): ChatMessage {
     : rest
 }
 
-/** Ollama 回傳的工具呼叫；arguments 通常是物件，有些模型給 JSON 字串 */
+/** A tool call returned by Ollama; arguments is usually an object, but some models send a JSON string */
 function toToolCall(c: unknown): ToolCall | null {
   const f = (c as { function?: { name?: unknown; arguments?: unknown } })?.function
   if (!f || typeof f.name !== 'string') return null
@@ -267,7 +274,7 @@ function toToolCall(c: unknown): ToolCall | null {
   }
 }
 
-/** 逐行解析 NDJSON 串流 */
+/** Parses an NDJSON stream line by line */
 export async function readNdjson(
   body: ReadableStream<Uint8Array> | null,
   onObject: (o: unknown) => void

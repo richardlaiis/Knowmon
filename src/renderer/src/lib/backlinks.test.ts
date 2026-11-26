@@ -6,11 +6,11 @@ const link = (path: string, line: number): Backlink => ({
   path,
   title: path.replace(/\.md$/, ''),
   line,
-  context: [{ text: `第 ${line} 行`, match: false }]
+  context: [{ text: `line ${line}`, match: false }]
 })
 
 describe('groupBacklinks', () => {
-  it('依來源筆記分組並保留順序', () => {
+  it('groups by source note, keeping the order', () => {
     const groups = groupBacklinks([link('a.md', 1), link('a.md', 5), link('b.md', 2)])
     expect(groups.map((g) => [g.path, g.items.map((i) => i.line)])).toEqual([
       ['a.md', [1, 5]],

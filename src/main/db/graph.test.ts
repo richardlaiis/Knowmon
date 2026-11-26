@@ -9,53 +9,53 @@ function note(db: DB, path: string, eventDate: string | null = null): number {
 }
 
 describe('getGraph', () => {
-  it('節點為所有筆記，邊為已解析的 wikilink；未建立的目標與自我連結不列入', () => {
+  it('nodes are all notes and edges are resolved wikilinks; missing targets and self-links are left out', () => {
     const db = openDb(':memory:')
-    const a = note(db, '歡迎.md')
-    const b = note(db, '讀書筆記/原子習慣.md', '2025-12-20')
-    note(db, '孤立.md')
+    const a = note(db, 'Welcome.md')
+    const b = note(db, 'Books/Atomic Habits.md', '2025-12-20')
+    note(db, 'Isolated.md')
     setWikilinks(db, a, [
-      { target: '原子習慣', count: 2 },
-      { target: '尚未建立', count: 1 },
-      { target: '歡迎', count: 1 }
+      { target: 'Atomic Habits', count: 2 },
+      { target: 'Not yet created', count: 1 },
+      { target: 'Welcome', count: 1 }
     ])
-    setWikilinks(db, b, [{ target: '歡迎', count: 1 }])
+    setWikilinks(db, b, [{ target: 'Welcome', count: 1 }])
     expect(getGraph(db)).toEqual({
       nodes: [
-        { path: '孤立.md', title: '孤立', eventDate: null, activeDays: [] },
-        { path: '歡迎.md', title: '歡迎', eventDate: null, activeDays: [] },
         {
-          path: '讀書筆記/原子習慣.md',
-          title: '原子習慣',
+          path: 'Books/Atomic Habits.md',
+          title: 'Atomic Habits',
           eventDate: '2025-12-20',
           activeDays: []
-        }
+        },
+        { path: 'Isolated.md', title: 'Isolated', eventDate: null, activeDays: [] },
+        { path: 'Welcome.md', title: 'Welcome', eventDate: null, activeDays: [] }
       ],
       edges: [
-        { source: '歡迎.md', target: '讀書筆記/原子習慣.md', type: 'wikilink', weight: 2 },
-        { source: '讀書筆記/原子習慣.md', target: '歡迎.md', type: 'wikilink', weight: 1 }
+        { source: 'Books/Atomic Habits.md', target: 'Welcome.md', type: 'wikilink', weight: 1 },
+        { source: 'Welcome.md', target: 'Books/Atomic Habits.md', type: 'wikilink', weight: 2 }
       ]
     })
   })
 
-  it('不同寫法解析到同一篇時合併為一條邊，權重相加', () => {
+  it('different spellings resolving to the same note merge into one edge with summed weight', () => {
     const db = openDb(':memory:')
     const a = note(db, 'a.md')
-    note(db, '資料夾/b.md')
+    note(db, 'Folder/b.md')
     setWikilinks(db, a, [
       { target: 'b', count: 1 },
-      { target: '資料夾/b', count: 2 }
+      { target: 'Folder/b', count: 2 }
     ])
     expect(getGraph(db).edges).toEqual([
-      { source: 'a.md', target: '資料夾/b.md', type: 'wikilink', weight: 3 }
+      { source: 'a.md', target: 'Folder/b.md', type: 'wikilink', weight: 3 }
     ])
   })
 
-  it('5000 篇筆記、約 1 萬條連結時仍在 200ms 內完成', () => {
+  it('finishes within 200ms for 5000 notes and about 10,000 links', () => {
     const db = openDb(':memory:')
     const n = 5000
     db.transaction(() => {
-      for (let i = 0; i < n; i++) note(db, `資料夾${i % 20}/筆記${i}.md`)
+      for (let i = 0; i < n; i++) note(db, `Folder${i % 20}/note${i}.md`)
     })()
     db.transaction(() => {
       for (let i = 1; i < n; i++) {
@@ -63,8 +63,8 @@ describe('getGraph', () => {
           db,
           i + 1,
           [
-            { target: `筆記${(i * 7919) % i}`, count: 1 },
-            { target: `筆記${(i * 31) % n}`, count: 1 }
+            { target: `note${(i * 7919) % i}`, count: 1 },
+            { target: `note${(i * 31) % n}`, count: 1 }
           ],
           () => null
         )

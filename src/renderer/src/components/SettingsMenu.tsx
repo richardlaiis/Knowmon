@@ -1,11 +1,11 @@
-// 左下角的設定按鈕：齒輪 → 小選單，打開「時間與連結」或「AI」設定對話框
+// The settings button at the bottom left: gear → small menu opening the "Time & links" or "AI" settings dialog
 import { useEffect, useRef, useState } from 'react'
 import { SettingsIcon } from './icons'
 
 export interface SettingsMenuProps {
   onTimeSettings: () => void
   onAiSettings: () => void
-  /** AI 狀態還沒載入時不能打開 AI 設定（對話框需要目前的設定值） */
+  /** AI settings can't open until the AI status has loaded (the dialog needs the current settings) */
   aiDisabled: boolean
 }
 
@@ -13,7 +13,7 @@ export function SettingsMenu(props: SettingsMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
 
-  // 點選單外、Esc、視窗失焦時關閉
+  // Close on a click outside the menu, Esc, or the window losing focus
   useEffect(() => {
     if (!open) return
     const onPointer = (e: MouseEvent): void => {

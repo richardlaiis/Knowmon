@@ -1,5 +1,5 @@
-// 把模型輸出的 Markdown 轉成簡單的樹，交給 React 渲染（不產生 HTML 字串）。
-// 用編輯器同一個 lezer 解析器（GFM），另外加上 [[wikilink]]。串流中的半成品也能解析。
+// Turns Markdown from the model into a simple tree for React to render (no HTML strings).
+// Uses the editor's lezer parser (GFM) plus [[wikilink]]; half-finished syntax mid-stream parses too.
 import { markdownLanguage } from '@codemirror/lang-markdown'
 import type { MarkdownConfig, MarkdownParser } from '@lezer/markdown'
 import type { SyntaxNode } from '@lezer/common'
@@ -13,9 +13,9 @@ export type MdInline =
   | { t: 'code'; text: string }
   | { t: 'wikilink'; target: string; label: string }
   | { t: 'link'; href: string; children: MdInline[] }
-  /** 問答的引用編號 [n]（parseMarkdown 的 citations 選項開啟時） */
+  /** A Q&A citation number [n] (when parseMarkdown's citations option is on) */
   | { t: 'cite'; n: number }
-  /** $…$、\(…\)；display 為 $$…$$ 或 \[…\] */
+  /** $…$, \(…\); display for $$…$$ or \[…\] */
   | { t: 'math'; tex: string; display: boolean }
 
 export type MdBlock =
@@ -25,7 +25,7 @@ export type MdBlock =
   | { t: 'code'; text: string }
   | { t: 'quote'; children: MdBlock[] }
   | { t: 'hr' }
-  /** $$ … $$ 或 \[ … \] 區塊 */
+  /** A $$ … $$ or \[ … \] block */
   | { t: 'math'; tex: string }
 
 const WikiLink: MarkdownConfig = {
@@ -43,7 +43,7 @@ const WikiLink: MarkdownConfig = {
   ]
 }
 
-/** [1]、[12]：問答回答中的來源編號。在 Link 之前解析，[1][2] 不會被當成參考連結 */
+/** [1], [12]: source numbers in Q&A answers. Parsed before Link, so [1][2] isn't taken as a reference link */
 const Citation: MarkdownConfig = {
   defineNodes: ['Citation'],
   parseInline: [
@@ -60,12 +60,12 @@ const Citation: MarkdownConfig = {
 }
 
 const base = markdownLanguage.parser as MarkdownParser
-// 模型常寫 \( \) 與 \[ \]，所以回答裡也接受（筆記裡只有 $ 與 $$）
+// Models often write \( \) and \[ \], so answers accept them too (notes only have $ and $$)
 const math = mathMarkdown({ brackets: true })
 const parser = base.configure([WikiLink, math])
 const citationParser = base.configure([WikiLink, Citation, math])
 
-/** 不輸出內容的語法標記 */
+/** Syntax marks that output no content */
 const MARKS = new Set([
   'EmphasisMark',
   'CodeMark',
@@ -87,7 +87,7 @@ function children(node: SyntaxNode): SyntaxNode[] {
 }
 
 export interface ParseOptions {
-  /** 把 [n] 解析成引用編號 */
+  /** Parse [n] as citation numbers */
   citations?: boolean
 }
 
@@ -95,11 +95,11 @@ export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] 
   const src = text
   const slice = (from: number, to: number): string => src.slice(from, to)
 
-  /** from–to 之間的行內內容；子節點以外的部分是純文字 */
+  /** The inline content between from and to; anything outside child nodes is plain text */
   function inlines(node: SyntaxNode, from: number, to: number): MdInline[] {
     const out: MdInline[] = []
     const push = (s: string): void => {
-      // 段落內的換行與續行縮排當作空白
+      // Line breaks and continuation indentation inside a paragraph count as spaces
       const t = s.replace(/\n[ \t>]*/g, ' ')
       if (!t) return
       const last = out[out.length - 1]
@@ -171,7 +171,7 @@ export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] 
       }
     }
     if (pos < to) push(slice(pos, to))
-    // 去掉頭尾空白（標題的 # 後面、段落開頭的縮排）
+    // Trim surrounding whitespace (after a heading's #, indentation at the start of a paragraph)
     const first = out[0]
     if (first?.t === 'text') first.text = first.text.trimStart()
     const last = out[out.length - 1]
@@ -218,7 +218,7 @@ export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] 
           out.push({ t: 'hr' })
           break
         case 'BlockMath': {
-          // 還沒收尾（串流中）或空的區塊顯示原文
+          // Not closed yet (streaming) or empty blocks show the source
           const m = mathSource(c, slice)
           if (m.closed && m.tex) out.push({ t: 'math', tex: m.tex })
           else {
@@ -228,7 +228,7 @@ export function parseMarkdown(text: string, opts: ParseOptions = {}): MdBlock[] 
           break
         }
         default: {
-          // 表格、HTML 等：顯示原文
+          // Tables, HTML and so on: show the source
           const raw = slice(c.from, c.to).trim()
           if (raw) out.push({ t: 'p', children: [{ t: 'text', text: raw }] })
         }

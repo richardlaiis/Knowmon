@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   main: {
     build: {
-      // chokidar 5 只有 ESM，打包進 main 以免依賴 Electron 的 require(esm)
+      // chokidar 5 is ESM-only, so bundle it into main instead of relying on Electron's require(esm)
       externalizeDeps: { exclude: ['chokidar'] }
     }
   },
@@ -17,7 +17,7 @@ export default defineConfig({
       }
     },
     plugins: [react()],
-    // 圖譜的版面配置 Worker（src/renderer/graph/layout.worker.ts）以 ES module 載入
+    // The graph's layout Worker (src/renderer/graph/layout.worker.ts) is loaded as an ES module
     worker: { format: 'es' }
   }
 })

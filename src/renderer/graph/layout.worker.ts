@@ -1,10 +1,10 @@
-// 在 Web Worker 中執行力導向版面配置，每一幀回傳座標，主執行緒只負責繪製
+// Runs the force-directed layout in a Web Worker, returning positions every frame; the main thread only draws
 import { ALPHA_MIN, ForceLayout, type LayoutEdgeInput, type LayoutNodeInput } from './forceLayout'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 const FRAME_MS = 16
 const BUDGET_MS = 10
-/** 不串流時回報進度的間隔 */
+/** Progress reporting interval when not streaming */
 const PROGRESS_MS = 150
 
 let layout: ForceLayout | null = null
@@ -27,7 +27,7 @@ function loop(): void {
     post({ type: 'positions', generation, positions, done: layout.done }, [positions.buffer])
   } else if (performance.now() - lastProgress > PROGRESS_MS) {
     lastProgress = performance.now()
-    // alpha 以指數遞減，用對數換算成大致線性的進度
+    // alpha decays exponentially, so convert it to roughly linear progress with a logarithm
     const progress = Math.log(startAlpha / layout.alpha) / Math.log(startAlpha / ALPHA_MIN)
     post({ type: 'progress', generation, progress: Math.min(1, Math.max(0, progress)) })
   }

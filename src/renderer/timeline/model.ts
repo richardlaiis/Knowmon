@@ -1,4 +1,4 @@
-// 時間軸的純函式：依日期分組、session 切分、每月長條圖。不碰 DOM。
+// Pure functions for the timeline: grouping by date, splitting sessions, monthly bar charts. No DOM.
 import { localDay, sessionize } from '../../shared/time'
 import type { ActivityEvent, NoteSummary } from '../../shared/types'
 
@@ -9,7 +9,7 @@ export interface EventDay {
   notes: NoteSummary[]
 }
 
-/** 事件時間：有 eventDate 的筆記依日期分組（新的在前，同一天依標題）；回傳沒有日期的篇數 */
+/** Event date: notes with an eventDate grouped by date (newest first, by title within a day); returns the number of undated notes */
 export function groupByEventDate(notes: readonly NoteSummary[]): {
   days: EventDay[]
   undated: number
@@ -34,7 +34,7 @@ export function groupByEventDate(notes: readonly NoteSummary[]): {
 export interface SessionNote {
   path: string
   title: string
-  /** 這個 session 裡建立的 */
+  /** Notes created in this session */
   created: boolean
   edits: number
 }
@@ -42,19 +42,19 @@ export interface SessionNote {
 export interface ActivitySession {
   start: number
   end: number
-  /** 依第一次出現的順序 */
+  /** In order of first appearance */
   notes: SessionNote[]
 }
 
 export interface ActivityDay {
   day: string
-  /** 新的在前 */
+  /** Newest first */
   sessions: ActivitySession[]
 }
 
 /**
- * 寫作時間：事件（依時間排序）切成 session 後依開始的日期（本地時區）分組，新的在前。
- * 跨過午夜的 session 算在開始那天。
+ * Written time: events (sorted by time) are split into sessions and grouped by their start date (local time zone), newest first.
+ * A session crossing midnight belongs to the day it started.
  */
 export function groupActivity(events: readonly ActivityEvent[], gapMs: number): ActivityDay[] {
   const days: ActivityDay[] = []
@@ -83,7 +83,7 @@ export interface MonthBar {
   count: number
 }
 
-/** 每月的數量（遞增），最早到最晚之間沒有資料的月份補 0 */
+/** Count per month (ascending), filling months between the earliest and latest without data with 0 */
 export function monthHistogram(days: readonly { day: string; count: number }[]): MonthBar[] {
   const counts = new Map<string, number>()
   for (const d of days) {
@@ -108,7 +108,7 @@ export function monthHistogram(days: readonly { day: string; count: number }[]):
   return out
 }
 
-/** 依月份分組（保持原本的順序） */
+/** Groups by month (keeping the original order) */
 export function groupByMonth<T extends { day: string }>(
   days: readonly T[]
 ): { month: string; days: T[] }[] {

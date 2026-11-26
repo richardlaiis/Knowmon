@@ -1,2 +1,2 @@
-// 解析 [[連結]]、frontmatter、日期
+// Parses [[links]], frontmatter and dates
 export * from './parse'

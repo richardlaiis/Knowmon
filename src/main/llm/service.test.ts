@@ -1,9 +1,11 @@
-// LlmService 與 Vault 的整合：連線狀態、背景 embedding、semantic 邊、檢索、總結、問答（Ollama 用假的）
+// LlmService integrated with Vault: connection status, background embedding, semantic edges, retrieval, summaries, Q&A (with a fake Ollama)
+// The sample notes are Chinese on purpose: summaries default to zh-TW, Chinese questions exercise keyword extraction and
+// time phrases (上個月), and the fake embeddings are character-based, so the semantic tests rely on shared CJK characters.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_LLM_SETTINGS } from '../../shared/llm'
+import { DEFAULT_CHAT_LIMITS, DEFAULT_LLM_SETTINGS } from '../../shared/llm'
 import type {
   AgentChunk,
   AnswerChunk,
@@ -12,9 +14,10 @@ import type {
   SummaryChunk
 } from '../../shared/types'
 import { Vault } from '../vault'
+import { TRUNCATED_NOTICE } from './ask'
 import { LlmError, OllamaError } from './ollama'
 import { memoryKeyStore } from './secrets'
-import { CHAT_NUM_CTX, LlmService, type LlmServiceOptions } from './service'
+import { LlmService, type LlmServiceOptions } from './service'
 import { fakeOllama, type FakeOllama } from './test-utils'
 
 let root: string
@@ -50,7 +53,7 @@ async function start(extra: Partial<LlmServiceOptions> = {}): Promise<{ v: Vault
   return { v: vault, s: service }
 }
 
-/** 等到條件成立（背景工作） */
+/** Waits until a condition holds (for background work) */
 async function until(check: () => boolean, ms = 2000): Promise<void> {
   const end = Date.now() + ms
   while (!check()) {
@@ -89,7 +92,7 @@ afterEach(async () => {
 })
 
 describe('LlmService', () => {
-  it('開啟 vault 後背景 embedding 所有有內容的筆記，並推送進度', async () => {
+  it('embeds every note with content in the background after opening a vault, pushing progress', async () => {
     const { s } = await start()
     await until(idle(s))
     expect(s.status()).toMatchObject({
@@ -104,10 +107,10 @@ describe('LlmService', () => {
     expect(statuses.at(-1)).toMatchObject({ embedded: 3, busy: false })
   })
 
-  it('筆記修改後重新 embedding，semantic 邊加入圖譜', async () => {
+  it('re-embeds after a note changes, and semantic edges join the graph', async () => {
     const { v, s } = await start()
     await until(idle(s))
-    await v.setSemanticSettings({ semanticThreshold: 0.6 }) // 假向量的相似度與 bge-m3 不同
+    await v.setSemanticSettings({ semanticThreshold: 0.6 }) // fake vectors have different similarities from bge-m3
     const semantic = async (): Promise<string[]> =>
       (await v.graph()).edges
         .filter((e) => e.type === 'semantic')
@@ -120,12 +123,12 @@ describe('LlmService', () => {
     expect(await semantic()).toContain('料理.md–跑步.md')
   })
 
-  it('Ollama 沒開時顯示離線，其他功能照常；恢復後自動重試並繼續', async () => {
+  it('shows offline when Ollama is not running while everything else works; retries automatically and continues after recovery', async () => {
     ollama.online = false
     const { v, s } = await start()
     expect(s.status()).toMatchObject({ online: false, embedded: 0, total: 3 })
     expect(s.status().error).toContain('ollama serve')
-    // 檢索退回全文
+    // Retrieval falls back to full text
     const r = await s.retrieve('跑步')
     expect(r.vector).toBe(false)
     expect(r.hits.map((h) => h.path)).toContain('跑步.md')
@@ -136,7 +139,7 @@ describe('LlmService', () => {
     expect(s.status()).toMatchObject({ error: null, embedded: 3 })
   })
 
-  it('模型未下載時提示 ollama pull，不進行 embedding', async () => {
+  it('suggests ollama pull when the model is not downloaded, without embedding', async () => {
     ollama.installed = ['qwen3:8b']
     const { s } = await start()
     expect(s.status()).toMatchObject({ online: true, embedded: 0 })
@@ -144,7 +147,7 @@ describe('LlmService', () => {
     expect(ollama.embedCalls).toEqual([])
   })
 
-  it('混合檢索用到向量', async () => {
+  it('hybrid retrieval uses vectors', async () => {
     const { s } = await start()
     await until(idle(s))
     const r = await s.retrieve('番茄蛋')
@@ -153,7 +156,7 @@ describe('LlmService', () => {
     expect(r.hits[0].via).toContain('vector')
   })
 
-  it('設定會儲存；換 embedding 模型時全部重算', async () => {
+  it('settings are saved; changing the embedding model recomputes everything', async () => {
     ollama.installed.push('nomic-embed-text:latest')
     const { s } = await start()
     await until(idle(s))
@@ -165,7 +168,7 @@ describe('LlmService', () => {
     expect(s.status().embedded).toBe(3)
   })
 
-  it('總結筆記：串流片段，最後送出 done', async () => {
+  it('summarizing a note streams chunks, then sends done', async () => {
     ollama.replies = ['- 跑了五公里']
     const { s } = await start()
     const id = s.summarize({ path: '跑步.md' })
@@ -176,7 +179,7 @@ describe('LlmService', () => {
     expect(ollama.chatCalls[0][1].content).toContain('早上跑步五公里')
   })
 
-  it('總結選取文字只送出選取的部分', async () => {
+  it('summarizing a selection sends only the selected part', async () => {
     const { s } = await start()
     const id = s.summarize({ path: '跑步.md', selection: '只有這段' })
     await until(() => chunks.some((c) => c.id === id && c.done))
@@ -185,7 +188,7 @@ describe('LlmService', () => {
     expect(prompt).not.toContain('五公里')
   })
 
-  it('依要求的語言選擇提示詞，預設繁體中文', async () => {
+  it('picks the prompt by the requested language, Traditional Chinese by default', async () => {
     const { s } = await start()
     const zh = s.summarize({ path: '跑步.md' })
     await until(() => chunks.some((c) => c.id === zh && c.done))
@@ -196,7 +199,7 @@ describe('LlmService', () => {
     expect(ollama.chatCalls[1][1].content).toContain('早上跑步五公里')
   })
 
-  it('空白筆記、離線與取消都會結束並帶上原因', async () => {
+  it('empty notes, offline and cancellation all finish with a reason', async () => {
     ollama.replies = ['很長的回覆'.repeat(50)]
     const { s } = await start()
     const empty = s.summarize({ path: '空白.md' })
@@ -227,7 +230,7 @@ describe('LlmService', () => {
         .map((c) => c.delta)
         .join('')
 
-    it('先推送來源，再串流回答，結束時帶上實際引用的編號', async () => {
+    it('pushes the sources first, then streams the answer, ending with the numbers actually cited', async () => {
       ollama.replies = ['早上跑步五公里 [1]，另一篇 [9] 不存在。']
       const { s } = await start()
       await until(idle(s))
@@ -244,7 +247,7 @@ describe('LlmService', () => {
       expect(prompt).toContain('問題：跑步 跑了多遠？')
     })
 
-    it('從問題解析時間範圍；只有時間時列出範圍內的筆記', async () => {
+    it('parses the time range from the question; lists the notes in the range when there is only a time', async () => {
       write('日記/2026-09-03.md', '讀完一本書。')
       write('日記/2026-10-02.md', '去爬山。')
       const { s } = await start()
@@ -255,14 +258,14 @@ describe('LlmService', () => {
       expect(mine(id)[0].sources?.map((x) => x.path)).toEqual(['日記/2026-09-03.md'])
       expect(ollama.chatCalls[0].at(-1)!.content).toContain('時間範圍：2026-09-01 – 2026-09-30')
 
-      // 使用者取消範圍（null）時不篩選
+      // No filter when the user removed the range (null)
       const all = s.ask({ question: '上個月 爬山', range: null })
       await until(answered(all))
       expect(mine(all)[0].range).toBeNull()
       expect(mine(all)[0].sources?.map((x) => x.path)).toContain('日記/2026-10-02.md')
     })
 
-    it('找不到來源時不呼叫模型', async () => {
+    it('does not call the model when no sources are found', async () => {
       const { s } = await start()
       const id = s.ask({
         question: 'What about quantum physics?',
@@ -274,7 +277,7 @@ describe('LlmService', () => {
       expect(ollama.chatCalls).toHaveLength(0)
     })
 
-    it('追問附上之前的對話；沒有關鍵字時沿用前一個問題檢索', async () => {
+    it('follow-ups include the earlier conversation; without keywords, the previous question is used for retrieval', async () => {
       const { s } = await start()
       await until(idle(s))
       const id = s.ask({
@@ -291,7 +294,7 @@ describe('LlmService', () => {
       expect(messages[2].content).toBe('番茄炒蛋')
     })
 
-    it('取消、離線與空白問題', async () => {
+    it('cancellation, offline and blank questions', async () => {
       ollama.replies = ['很長的回答'.repeat(50)]
       const { s } = await start()
       await until(idle(s))
@@ -305,7 +308,7 @@ describe('LlmService', () => {
       const offline = s.ask({ question: '跑步' })
       await until(answered(offline))
       expect(mine(offline).at(-1)?.error).toContain('ollama serve')
-      // 離線時檢索退回全文，仍然推送來源
+      // Offline, retrieval falls back to full text and sources are still pushed
       expect(mine(offline)[0]).toMatchObject({ vector: false })
       expect(mine(offline)[0].sources?.[0].path).toBe('跑步.md')
 
@@ -313,7 +316,7 @@ describe('LlmService', () => {
     })
   })
 
-  it('總結、問答、agent 都帶同一個 num_ctx（不同時 Ollama 會重新載入模型）', async () => {
+  it('summaries, Q&A and the agent all send the same num_ctx (Ollama reloads the model when it differs)', async () => {
     ollama.toolReplies = [
       { content: '', toolCalls: [{ name: 'search_notes', arguments: { query: '跑步' } }] },
       { content: '五公里。', toolCalls: [] }
@@ -327,7 +330,102 @@ describe('LlmService', () => {
     const task = s.agent({ task: '我跑了多遠？' })
     await until(() => agentChunks.some((c) => c.id === task && c.done))
     expect(ollama.numCtx).toHaveLength(4)
-    expect(ollama.numCtx.every((n) => n === CHAT_NUM_CTX)).toBe(true)
+    expect(ollama.numCtx.every((n) => n === DEFAULT_CHAT_LIMITS.contextTokens)).toBe(true)
+  })
+
+  describe('context length and max output', () => {
+    const text = (list: { id: string; delta: string }[], id: string): string =>
+      list
+        .filter((c) => c.id === id)
+        .map((c) => c.delta)
+        .join('')
+
+    it('the configured context and output limit go to summaries, Q&A and the agent (still identical across them)', async () => {
+      saved = {
+        ...DEFAULT_LLM_SETTINGS,
+        ollamaLimits: { contextTokens: 16384, maxOutputTokens: 500 }
+      }
+      const { s } = await start()
+      await until(idle(s))
+      const sum = s.summarize({ path: '跑步.md' })
+      await until(() => chunks.some((c) => c.id === sum && c.done))
+      const ask = s.ask({ question: '跑步 跑了多遠？' })
+      await until(() => answers.some((c) => c.id === ask && c.done))
+      const task = s.agent({ task: '我跑了多遠？' })
+      await until(() => agentChunks.some((c) => c.id === task && c.done))
+      expect(ollama.numCtx).toEqual([16384, 16384, 16384])
+      expect(ollama.maxTokens).toEqual([500, 500, 500])
+
+      // Changes take effect immediately; no output limit is sent when there is none
+      await s.setSettings({ ollamaLimits: { contextTokens: 4096, maxOutputTokens: null } })
+      const again = s.summarize({ path: '跑步.md' })
+      await until(() => chunks.some((c) => c.id === again && c.done))
+      expect(ollama.numCtx.at(-1)).toBe(4096)
+      expect(ollama.maxTokens.at(-1)).toBeUndefined()
+    })
+
+    it('a smaller context shrinks the character budgets: a long note is summarized in parts', async () => {
+      write(
+        '長.md',
+        '# 長\n\n' +
+          Array.from({ length: 40 }, (_, i) => `第 ${i} 段。` + '字'.repeat(90)).join('\n\n')
+      )
+      saved = {
+        ...DEFAULT_LLM_SETTINGS,
+        ollamaLimits: { contextTokens: 2048, maxOutputTokens: null }
+      }
+      const { s } = await start()
+      await until(idle(s))
+      const id = s.summarize({ path: '長.md' })
+      await until(() => chunks.some((c) => c.id === id && c.done))
+      // About 4000 characters: summarized directly (one call) at 8192, split and combined at 2048 (3000-character limit, 1500 per part)
+      expect(ollama.chatCalls.length).toBeGreaterThan(2)
+    })
+
+    it('appends a notice when the final answer is cut off; no notice when intermediate parts of a split summary are', async () => {
+      write('長.md', Array.from({ length: 40 }, () => '字'.repeat(400)).join('\n\n'))
+      ollama.truncate = () => true
+      const { s } = await start()
+      await until(idle(s))
+      const sum = s.summarize({ path: '跑步.md' })
+      await until(() => chunks.some((c) => c.id === sum && c.done))
+      expect(text(chunks, sum)).toBe('- 重點' + TRUNCATED_NOTICE['zh-TW'])
+      const en = s.summarize({ path: '跑步.md', language: 'en' })
+      await until(() => chunks.some((c) => c.id === en && c.done))
+      expect(text(chunks, en)).toContain(TRUNCATED_NOTICE.en)
+
+      const ask = s.ask({ question: '跑步 跑了多遠？' })
+      await until(() => answers.some((c) => c.id === ask && c.done))
+      expect(text(answers, ask).endsWith(TRUNCATED_NOTICE['zh-TW'])).toBe(true)
+
+      // Only the last (combine) call counts
+      const first = ollama.numCtx.length
+      ollama.truncate = (n) => n === first
+      const long = s.summarize({ path: '長.md' })
+      await until(() => chunks.some((c) => c.id === long && c.done))
+      expect(ollama.numCtx.length - first).toBeGreaterThan(2)
+      expect(text(chunks, long)).not.toContain(TRUNCATED_NOTICE['zh-TW'].trim())
+    })
+
+    it('agent: a notice only when the final answer is cut off', async () => {
+      ollama.toolReplies = [
+        { content: '', toolCalls: [{ name: 'search_notes', arguments: { query: '跑步' } }] },
+        { content: '五公里。', toolCalls: [] }
+      ]
+      const { s } = await start()
+      await until(idle(s))
+      ollama.truncate = (n) => n === 0
+      const a = s.agent({ task: '我跑了多遠？' })
+      await until(() => agentChunks.some((c) => c.id === a && c.done))
+      expect(text(agentChunks, a)).toBe('五公里。')
+
+      // Once the tool replies run out the last one repeats (a direct answer), so there's only one call this time
+      const base = ollama.numCtx.length
+      ollama.truncate = (n) => n === base
+      const b = s.agent({ task: '我跑了多遠？' })
+      await until(() => agentChunks.some((c) => c.id === b && c.done))
+      expect(text(agentChunks, b)).toBe('五公里。' + TRUNCATED_NOTICE['zh-TW'])
+    })
   })
 
   describe('agent', () => {
@@ -340,7 +438,7 @@ describe('LlmService', () => {
       toolCalls: [{ name: 'create_note', arguments: { path: '整理.md', content: '見 [[跑步]]' } }]
     }
 
-    it('執行工具、推送步驟與文字，結束時送出 done', async () => {
+    it('runs tools and pushes steps and text, sending done at the end', async () => {
       ollama.toolReplies = [
         { content: '', toolCalls: [{ name: 'search_notes', arguments: { query: '跑步' } }] },
         { content: '[[跑步]] 是早上跑五公里。', toolCalls: [] }
@@ -359,11 +457,11 @@ describe('LlmService', () => {
       ).toBe('[[跑步]] 是早上跑五公里。')
       expect(mine(id).at(-1)).toMatchObject({ done: true })
       expect(mine(id).at(-1)?.error).toBeUndefined()
-      // 系統提示詞帶上今天的日期（now 注入）
+      // The system prompt includes today's date (with now injected)
       expect(ollama.chatCalls[0][0].content).toContain('2026-10-14')
     })
 
-    it('寫入要等使用者確認：Apply 後才建立筆記', async () => {
+    it('writes wait for the user: the note is created only after Apply', async () => {
       ollama.toolReplies = [create, { content: '已建立。', toolCalls: [] }]
       const { s } = await start()
       const id = s.agent({ task: '建立整理筆記' })
@@ -379,7 +477,7 @@ describe('LlmService', () => {
       ).toBe('applied')
     })
 
-    it('Reject 與停止都不寫入；重複或過期的確認被忽略', async () => {
+    it('Reject and stopping write nothing; duplicate or stale confirmations are ignored', async () => {
       ollama.toolReplies = [create, { content: '好的。', toolCalls: [] }]
       const { s } = await start()
       const rejected = s.agent({ task: '建立' })
@@ -399,7 +497,7 @@ describe('LlmService', () => {
       expect(fs.existsSync(path.join(root, '整理.md'))).toBe(false)
     })
 
-    it('離線、模型不支援工具與空白任務', async () => {
+    it('offline, models without tool support, and blank tasks', async () => {
       const { s } = await start()
       ollama.online = false
       const offline = s.agent({ task: '跑步' })
@@ -418,7 +516,7 @@ describe('LlmService', () => {
     })
   })
 
-  it('換 vault 時停止舊的 embedding', async () => {
+  it('stops the old embedding when switching vaults', async () => {
     ollama.hold()
     const { v, s } = await start()
     await until(() => s.status().busy)
@@ -430,9 +528,9 @@ describe('LlmService', () => {
   })
 })
 
-describe('雲端對話服務', () => {
+describe('cloud chat providers', () => {
   let cloud: FakeOllama
-  /** models() 丟出的錯誤（模擬 key 錯誤、連不上） */
+  /** The error thrown by models() (simulating a bad key or an unreachable provider) */
   let cloudFail: LlmError | null
   let made: { provider: string; baseUrl: string; apiKey: string }[]
   let modelCalls: number
@@ -467,7 +565,7 @@ describe('雲端對話服務', () => {
     })
   }
 
-  it('Ollama 離線時雲端對話照常；embedding 只顯示提示，檢索退回全文', async () => {
+  it('cloud chat works while Ollama is offline; embeddings only show a notice and retrieval falls back to full text', async () => {
     ollama.online = false
     const { s } = await startCloud()
     expect(s.status()).toMatchObject({
@@ -492,13 +590,13 @@ describe('雲端對話服務', () => {
         .map((c) => c.delta)
         .join('')
     ).toBe('- 雲端重點')
-    // 雲端不帶 Ollama 的 num_ctx
+    // The cloud doesn't get Ollama's num_ctx
     expect(cloud.numCtx).toEqual([undefined])
     expect(ollama.chatCalls).toHaveLength(0)
     expect((await s.retrieve('跑步')).vector).toBe(false)
   })
 
-  it('雲端模式下 embedding 仍走 Ollama；只需要 embedding 模型', async () => {
+  it('in cloud mode embeddings still use Ollama, which only needs the embedding model', async () => {
     ollama.installed = ['bge-m3:latest']
     const { s } = await startCloud()
     await until(idle(s))
@@ -507,7 +605,7 @@ describe('雲端對話服務', () => {
     expect(cloud.embedCalls).toHaveLength(0)
   })
 
-  it('沒有 key 時提示輸入；setApiKey 後可用，key 不出現在狀態中', async () => {
+  it('asks for a key when there is none; works after setApiKey, and the key never appears in the status', async () => {
     const { s } = await startCloud(undefined, {})
     expect(s.status()).toMatchObject({ online: false, apiKeys: { openai: false } })
     expect(s.status().error).toBe('Add an API key for OpenAI in AI settings.')
@@ -523,7 +621,7 @@ describe('雲端對話服務', () => {
     expect(s.status()).toMatchObject({ online: false, apiKeys: { openai: false } })
   })
 
-  it('setApiKey 拒絕不認得的服務、過長或含空白的 key；其他服務的 key 不影響目前的連線', async () => {
+  it("setApiKey rejects unknown providers and keys that are too long or contain spaces; other providers' keys don't affect the current connection", async () => {
     const { s } = await startCloud()
     await expect(s.setApiKey('claude' as never, 'x')).rejects.toThrow('Unknown provider')
     await expect(s.setApiKey('openai', 'x'.repeat(501))).rejects.toThrow('too long')
@@ -537,7 +635,7 @@ describe('雲端對話服務', () => {
     expect(made.length).toBe(before)
   })
 
-  it('還沒選模型：列出模型讓使用者選，對話不可用', async () => {
+  it('no model chosen yet: lists models for the user to pick, and chat is unavailable', async () => {
     const { s } = await startCloud({ provider: 'gemini' }, { gemini: 'AIza' })
     expect(s.status()).toMatchObject({ online: false, cloudModels: ['gpt-x', 'gpt-y'] })
     expect(s.status().error).toBe('Choose a Google Gemini model in AI settings.')
@@ -547,7 +645,7 @@ describe('雲端對話服務', () => {
     expect(s.status()).toMatchObject({ online: true, error: null })
   })
 
-  it('key 錯誤不重試；連不上時重試直到恢復', async () => {
+  it('a bad key is not retried; an unreachable provider is retried until it recovers', async () => {
     cloudFail = new LlmError('OpenAI rejected the API key (401)', 'auth')
     const { s } = await startCloud()
     expect(s.status()).toMatchObject({ online: false, error: 'OpenAI rejected the API key (401)' })
@@ -563,7 +661,7 @@ describe('雲端對話服務', () => {
     expect(s.status().error).toBeNull()
   })
 
-  it('服務沒有 /models（其他 HTTP 錯誤）時仍可對話，只是沒有模型清單', async () => {
+  it('a provider without /models (another HTTP error) can still chat, just without a model list', async () => {
     cloudFail = new LlmError('Custom API error 404', 'http')
     const { s } = await startCloud(
       {
@@ -577,7 +675,7 @@ describe('雲端對話服務', () => {
     expect(made[0].baseUrl).toBe('http://localhost:1234/v1')
   })
 
-  it('custom 沒填位址時提示', async () => {
+  it('asks for the address when custom has none', async () => {
     const { s } = await startCloud(
       { provider: 'custom', cloudModels: { custom: 'm' } },
       { custom: 'k' }
@@ -585,7 +683,7 @@ describe('雲端對話服務', () => {
     expect(s.status().error).toBe('Enter the API address of the custom provider in AI settings.')
   })
 
-  it('切換服務時重建 client；切回 Ollama 時用 Ollama 並帶 num_ctx', async () => {
+  it('switching providers rebuilds the client; switching back to Ollama uses Ollama with num_ctx', async () => {
     const { s } = await startCloud()
     await s.setApiKey('gemini', 'AIza')
     await s.setSettings({ provider: 'gemini', cloudModels: { openai: 'gpt-x', gemini: 'gpt-y' } })
@@ -596,10 +694,29 @@ describe('雲端對話服務', () => {
     expect(s.status()).toMatchObject({ online: true, cloudModels: [], embedError: null })
     const id = s.summarize({ path: '跑步.md' })
     await until(() => chunks.some((c) => c.id === id && c.done))
-    expect(ollama.numCtx).toEqual([CHAT_NUM_CTX])
+    expect(ollama.numCtx).toEqual([DEFAULT_CHAT_LIMITS.contextTokens])
   })
 
-  it('agent 用雲端模型的工具呼叫；工具呼叫 id 帶回下一步', async () => {
+  it('the cloud uses its own pair: sends the output limit but no num_ctx', async () => {
+    const { s } = await startCloud({
+      provider: 'openai',
+      cloudModels: { openai: 'gpt-x' },
+      ollamaLimits: { contextTokens: 4096, maxOutputTokens: 256 },
+      cloudLimits: { contextTokens: 131072, maxOutputTokens: 2000 }
+    })
+    const id = s.summarize({ path: '跑步.md' })
+    await until(() => chunks.some((c) => c.id === id && c.done))
+    expect(cloud.numCtx).toEqual([undefined])
+    expect(cloud.maxTokens).toEqual([2000])
+
+    await s.setSettings({ provider: 'ollama' })
+    const again = s.summarize({ path: '跑步.md' })
+    await until(() => chunks.some((c) => c.id === again && c.done))
+    expect(ollama.numCtx).toEqual([4096])
+    expect(ollama.maxTokens).toEqual([256])
+  })
+
+  it("the agent uses the cloud model's tool calls; the tool call id goes back in the next step", async () => {
     cloud.toolReplies = [
       {
         content: '',
@@ -616,7 +733,7 @@ describe('雲端對話服務', () => {
     expect(ollama.toolsOffered).toHaveLength(0)
   })
 
-  it('雲端模型不支援工具時給清楚的提示', async () => {
+  it('gives a clear message when a cloud model does not support tools', async () => {
     cloud.chatTools = async () => {
       throw new LlmError('OpenAI error 400: tools are not supported for this model', 'http')
     }

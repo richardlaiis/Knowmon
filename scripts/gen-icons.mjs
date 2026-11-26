@@ -1,6 +1,6 @@
-// 從 build/icon.svg 產生各平台的應用程式圖示（需要系統的 ImageMagick 7：magick 指令）
-// 用法：node scripts/gen-icons.mjs
-// 產出：build/icon.png（1024）、build/icon.ico、build/icon.icns、resources/icon.png（512，Linux 視窗圖示）
+// Generates the app icons for each platform from build/icon.svg (needs the system ImageMagick 7: the magick command)
+// Usage: node scripts/gen-icons.mjs
+// Output: build/icon.png (1024), build/icon.ico, build/icon.icns, resources/icon.png (512, the Linux window icon)
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const svg = path.join(root, 'build/icon.svg')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'knowmon-icons-'))
 
-/** SVG 以高密度點陣化後再縮小，邊緣比較平滑 */
+/** Rasterize the SVG at high density and then scale down, for smoother edges */
 const render = (size, out) => {
   execFileSync('magick', [
     '-background',

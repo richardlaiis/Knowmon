@@ -1,4 +1,4 @@
-// 讀寫檔案、監聽變更。Vault 協調三者：Markdown 檔（真相）、events.jsonl（歷程真相）、SQLite（索引）。
+// Reads and writes files and watches for changes. Vault coordinates three things: the Markdown files (the truth), events.jsonl (the truth for history) and SQLite (the index).
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import { mkdirSync } from 'node:fs'
@@ -55,16 +55,16 @@ import {
 } from './vault-settings'
 import { watchVault, type Watcher } from './watcher'
 
-/** 同一篇筆記、同一種事件在這段時間內只記一次 */
+/** For the same note and event kind, only one event is recorded within this period */
 export const EVENT_THROTTLE_MS = 60_000
 
 const EMPTY_HASH = sha256('')
 
 export interface VaultOptions {
-  /** 刪除時呼叫；main process 傳入 shell.trashItem，測試時用預設的永久刪除 */
+  /** Called on delete; the main process passes shell.trashItem, and tests use the default permanent delete */
   trash?: (absPath: string) => Promise<void>
   now?: () => number
-  /** 是否啟動 chokidar（測試時關閉，直接呼叫 reconcile） */
+  /** Whether to start chokidar (off in tests, which call reconcile directly) */
   watch?: boolean
   debounceMs?: number
 }
@@ -77,18 +77,18 @@ export class Vault {
   private readonly listeners = new Set<(c: VaultChange) => void>()
   private queue: Promise<unknown> = Promise.resolve()
   private watcher: Watcher | null = null
-  /** wikilink 解析器快取；筆記集合改變時由 relink() 重建 */
+  /** Cached wikilink resolver; rebuilt by relink() when the set of notes changes */
   private resolver: ((target: string) => number | null) | null = null
   private readonly settingsFile: string
   private timeSettings: TimeSettings
-  /** 時間邊需要重算（事件、日期、路徑或設定改變）；讀取圖譜前才重算 */
+  /** Time edges need recomputing (events, dates, paths or settings changed); recomputed just before the graph is read */
   private timeDirty = true
   private semanticSettings: SemanticSettings
-  /** semantic 邊需要重算（整篇向量、筆記或設定改變）；讀取圖譜前才重算 */
+  /** Semantic edges need recomputing (note vectors, notes or settings changed); recomputed just before the graph is read */
   private semanticDirty = true
-  /** 進行中的 semantic 邊重算（分段計算，會讓出 event loop） */
+  /** The semantic edge recomputation in progress (computed in segments, yielding the event loop) */
   private semanticJob: Promise<void> | null = null
-  /** chunk 有變動（需要 embedding）時通知，Embedder 用 */
+  /** Notifies when chunks changed (embedding needed); used by the Embedder */
   private readonly chunkListeners = new Set<() => void>()
 
   private constructor(
@@ -131,7 +131,7 @@ export class Vault {
     return buildTree(this.root)
   }
 
-  /** 所有筆記（依路徑排序） */
+  /** All notes (sorted by path) */
   list(): NoteSummary[] {
     return listNoteSummaries(this.db)
   }
@@ -147,7 +147,7 @@ export class Vault {
     }
     while (this.semanticDirty || this.semanticJob) {
       if (!this.semanticJob) {
-        // 計算途中又變動時 semanticDirty 會再被設為 true，下一輪重算
+        // If anything changes mid-computation, semanticDirty is set to true again and the next round recomputes
         this.semanticDirty = false
         this.semanticJob = rebuildSemanticLinks(this.db, this.semanticSettings).finally(() => {
           this.semanticJob = null
@@ -158,18 +158,18 @@ export class Vault {
     return getGraph(this.db)
   }
 
-  /** 整篇向量改變（Embedder 寫入）時呼叫 */
+  /** Called when note vectors change (written by the Embedder) */
   markSemanticDirty(): void {
     this.semanticDirty = true
   }
 
-  /** chunk 有變動、需要 embedding 時通知 */
+  /** Notifies when chunks changed and need embedding */
   onChunksChanged(cb: () => void): () => void {
     this.chunkListeners.add(cb)
     return () => this.chunkListeners.delete(cb)
   }
 
-  /** [from, to) 之間的 create / edit 事件 */
+  /** create / edit events in [from, to) */
   activity(from: number, to: number): ActivityEvent[] {
     return listActivity(this.db, from, to)
   }
@@ -178,7 +178,7 @@ export class Vault {
     return { ...this.timeSettings }
   }
 
-  /** 修改時間參數（限制在合法範圍內）並寫入 settings.json，回傳實際套用的值 */
+  /** Changes the time parameters (clamped to valid ranges), writes them to settings.json and returns the values actually applied */
   setTimeSettings(change: Partial<TimeSettings>): Promise<TimeSettings> {
     return this.exclusive(async () => {
       const next = clampTimeSettings(change, this.timeSettings)
@@ -193,7 +193,7 @@ export class Vault {
     return { ...this.semanticSettings }
   }
 
-  /** 修改 semantic 參數（限制在合法範圍內）並寫入 settings.json，回傳實際套用的值 */
+  /** Changes the semantic parameters (clamped to valid ranges), writes them to settings.json and returns the values actually applied */
   setSemanticSettings(change: Partial<SemanticSettings>): Promise<SemanticSettings> {
     return this.exclusive(async () => {
       const next = clampSemanticSettings(change, this.semanticSettings)
@@ -241,7 +241,7 @@ export class Vault {
     })
   }
 
-  /** 建立新筆記；已存在時丟出錯誤（不覆蓋）。content 不是空的時同時記一筆 edit */
+  /** Creates a new note; throws if it already exists (never overwrites). With non-empty content it also records an edit */
   create(rel: string, content = ''): Promise<void> {
     return this.exclusive(async () => {
       rel = normalizeRel(rel)
@@ -261,14 +261,14 @@ export class Vault {
     })
   }
 
-  /** 讀取筆記內容，不記 open 事件（agent 工具用：不是使用者打開的） */
+  /** Reads a note's content without recording an open event (for agent tools: the user didn't open it) */
   async peek(rel: string): Promise<string> {
     return fs.readFile(resolveInVault(this.root, normalizeRel(rel)), 'utf8')
   }
 
   /**
-   * 讀取目前的內容、套用 f 後寫回（在佇列中執行，讀寫之間不會插入其他操作）。
-   * 內容有改變時記 edit 並通知 renderer（開著這篇的分頁會重新載入），回傳新的內容。
+   * Reads the current content, applies f and writes it back (run in the queue, so nothing else runs between the read and the write).
+   * If the content changed, records an edit and notifies the renderer (tabs with this note open reload); returns the new content.
    */
   update(rel: string, f: (content: string) => string): Promise<string> {
     return this.exclusive(async () => {
@@ -286,7 +286,7 @@ export class Vault {
     })
   }
 
-  /** 建立空資料夾（資料夾不進 DB，也不記事件） */
+  /** Creates an empty folder (folders aren't stored in the DB and have no events) */
   createFolder(rel: string): Promise<void> {
     return this.exclusive(async () => {
       rel = normalizeRel(rel)
@@ -299,8 +299,8 @@ export class Vault {
   }
 
   /**
-   * 存入貼上的圖片：放在 vault 根目錄的 attachments/，同名時加編號，絕不覆蓋。
-   * 圖片不進 DB、也不記事件。回傳 vault 相對路徑。
+   * Saves a pasted image in attachments/ at the vault root, adding a number on a name clash and never overwriting.
+   * Images aren't stored in the DB and have no events. Returns the vault-relative path.
    */
   saveAttachment(notePath: string, fileName: string, data: Uint8Array): Promise<string> {
     return this.exclusive(async () => {
@@ -327,7 +327,7 @@ export class Vault {
     })
   }
 
-  /** 重新命名或搬移筆記/資料夾，歷程跟著走 */
+  /** Renames or moves a note/folder; its history follows */
   rename(from: string, to: string): Promise<void> {
     return this.exclusive(async () => {
       from = normalizeRel(from)
@@ -349,7 +349,7 @@ export class Vault {
           updateNotePath(this.db, n.path, next, titleFromPath(next))
         }
       })()
-      // 檔名可能帶有日期（日記），重新解析
+      // The file name may contain a date (journals), so re-parse
       for (const n of affected) await this.indexFile(movedPath(n.path, from, to)!, undefined, true)
       this.relink()
       this.timeDirty = true
@@ -360,7 +360,7 @@ export class Vault {
     })
   }
 
-  /** 刪除筆記或資料夾（main process 會移到系統垃圾桶） */
+  /** Deletes a note or folder (the main process moves it to the system trash) */
   remove(rel: string): Promise<void> {
     return this.exclusive(async () => {
       rel = normalizeRel(rel)
@@ -375,7 +375,7 @@ export class Vault {
     })
   }
 
-  /** 讓 DB 與磁碟一致，回傳偵測到的變更。外部修改都經過這裡。 */
+  /** Brings the DB in line with the disk and returns the detected changes. Every external change goes through here. */
   reconcile(): Promise<VaultChange[]> {
     return this.exclusive(() => this.reconcileNow())
   }
@@ -389,9 +389,9 @@ export class Vault {
     this.db.close()
   }
 
-  // ---- 內部 ----
+  // ---- Internals ----
 
-  /** 所有會動到檔案或 DB 的操作依序執行，避免 reconcile 與 App 內操作交錯 */
+  /** Every operation touching files or the DB runs in order, so reconcile never interleaves with in-app operations */
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.queue.then(fn, fn)
     this.queue = run.catch(() => {})
@@ -407,7 +407,7 @@ export class Vault {
       await this.reconcileNow()
       return
     }
-    // DB 是新的（第一次開啟或被刪掉）：先索引檔案，再從日誌重播歷程
+    // The DB is new (first open, or it was deleted): index the files first, then replay history from the log
     for (const rel of await listNotes(this.root)) await this.indexFile(rel)
     this.relink()
     const history = replay(this.log.readAll())
@@ -443,7 +443,7 @@ export class Vault {
       }
     }
 
-    // 不見的檔案：內容與新檔完全相同就當作改名（保留歷程），否則視為刪除
+    // A missing file: treat it as a rename if its content matches a new file exactly (keeping its history), otherwise as a deletion
     for (const gone of known.values()) {
       const i =
         gone.contentHash === EMPTY_HASH ? -1 : added.findIndex((a) => a.hash === gone.contentHash)
@@ -474,8 +474,8 @@ export class Vault {
   }
 
   /**
-   * 依磁碟上的檔案更新索引（notes、links、notes_fts、chunks）。
-   * 內容 hash 與 DB 相同時只更新 mtime，不重新解析；force 用於改名（檔名日期可能改變）。
+   * Updates the index (notes, links, notes_fts, chunks) from the file on disk.
+   * When the content hash matches the DB, only the mtime is updated without re-parsing; force is used for renames (the date in the file name may change).
    */
   private async indexFile(rel: string, content?: string, force = false): Promise<Note> {
     const abs = resolveInVault(this.root, rel)
@@ -501,7 +501,7 @@ export class Vault {
       eventDate: parsed.eventDate,
       contentHash
     }
-    // 日期或路徑可能改變（same_day、sequence）；內容改變後整篇向量作廢
+    // The date or path may have changed (same_day, sequence); a content change invalidates the note vector
     this.timeDirty = true
     this.semanticDirty = true
     const { id, rechunked } = this.db.transaction(() => {
@@ -519,13 +519,13 @@ export class Vault {
     return this.resolver(target)
   }
 
-  /** 筆記新增、改名、刪除後呼叫：重建解析器，並更新所有 wikilink 的目標 */
+  /** Called after notes are created, renamed or deleted: rebuilds the resolver and updates every wikilink target */
   private relink(): void {
     this.resolver = linkResolver(this.db)
     relinkWikilinks(this.db, this.resolver)
   }
 
-  /** 記錄事件到 DB 與 events.jsonl，同類事件在 EVENT_THROTTLE_MS 內只記一次 */
+  /** Records an event to the DB and events.jsonl, at most once per EVENT_THROTTLE_MS for the same kind */
   private record(noteId: number, rel: string, kind: NoteEventKind, ts: number): void {
     if (kind !== 'create') {
       const last = lastEventTs(this.db, noteId, kind)

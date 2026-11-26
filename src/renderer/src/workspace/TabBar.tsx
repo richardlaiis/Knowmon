@@ -1,4 +1,4 @@
-// 分頁列：切換、關閉（含中鍵）、拖曳排序、右鍵選單、新分頁，以及左右面板的開關
+// Tab bar: switching, closing (including middle click), drag reordering, context menu, new tab, and toggles for the left and right panels
 import { useEffect, useState } from 'react'
 import {
   CloseIcon,
@@ -10,7 +10,7 @@ import {
 } from '../components/icons'
 import { tabTitle, type Tab } from './tabs'
 
-/** 分頁拖曳用的 MIME type，和檔案樹的拖曳區分 */
+/** MIME type for dragging tabs, distinct from file tree drags */
 const DRAG_TYPE = 'application/x-knowmon-tab'
 
 export interface TabBarProps {
@@ -19,7 +19,7 @@ export interface TabBarProps {
   onActivate: (id: string) => void
   onClose: (id: string) => void
   onCloseOthers: (id: string) => void
-  /** 把 id 移到 toIndex（以移除前的位置計算） */
+  /** Moves id to toIndex (counted before removal) */
   onMove: (id: string, toIndex: number) => void
   onNewTab: () => void
   leftOpen: boolean
@@ -30,7 +30,7 @@ export interface TabBarProps {
 
 export function TabBar(props: TabBarProps): React.JSX.Element {
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
-  /** 拖曳時會放在第幾個分頁之前 */
+  /** Which tab the drop lands before while dragging */
   const [dropIndex, setDropIndex] = useState<number | null>(null)
 
   useEffect(() => {

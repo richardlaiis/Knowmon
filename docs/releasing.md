@@ -1,56 +1,56 @@
-# 發布新版本
+# Releasing a new version
 
-給維護者：用 GitHub Actions 打包四個平台的安裝檔並建立 Release。計畫與決定的由來見 [`plans/release-ci.md`](plans/release-ci.md)。
+For maintainers: GitHub Actions builds the installers for four platforms and creates a Release. For where the plan and decisions came from, see [`plans/release-ci.md`](plans/release-ci.md).
 
-## 工作流程
+## Workflows
 
-| 檔案                            | 觸發                      | 做什麼                                                                 |
-| ------------------------------- | ------------------------- | ---------------------------------------------------------------------- |
-| `.github/workflows/ci.yml`      | push 到 `main`、PR        | Linux 跑 typecheck 與 lint；Linux、Windows、macOS 各跑一次 vitest      |
-| `.github/workflows/release.yml` | 推 `v*` tag               | 四個平台各自測試並打包，全部成功後建立**草稿** Release，附上六個安裝檔 |
-| `.github/workflows/release.yml` | 手動（workflow_dispatch） | 只打包，安裝檔上傳成 workflow artifacts，不建立 Release                |
+| File                            | Trigger                    | What it does                                                                                                |
+| ------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml`      | Push to `main`, PRs        | Typecheck and lint on Linux; vitest once each on Linux, Windows and macOS                                   |
+| `.github/workflows/release.yml` | Pushing a `v*` tag         | Tests and packages on all four platforms; when all succeed, creates a **draft** Release with six installers |
+| `.github/workflows/release.yml` | Manual (workflow_dispatch) | Packages only; installers are uploaded as workflow artifacts and no Release is created                      |
 
-打包的平台：
+Packaged platforms:
 
-| Runner           | 產出                                                                            |
+| Runner           | Output                                                                          |
 | ---------------- | ------------------------------------------------------------------------------- |
-| `ubuntu-22.04`   | `knowmon-X.Y.Z.AppImage`、`knowmon_X.Y.Z_amd64.deb`、`knowmon-X.Y.Z.x86_64.rpm` |
+| `ubuntu-22.04`   | `knowmon-X.Y.Z.AppImage`, `knowmon_X.Y.Z_amd64.deb`, `knowmon-X.Y.Z.x86_64.rpm` |
 | `windows-latest` | `knowmon-X.Y.Z-setup.exe`                                                       |
 | `macos-latest`   | `knowmon-X.Y.Z-arm64.dmg`                                                       |
 | `macos-15-intel` | `knowmon-X.Y.Z-x64.dmg`                                                         |
 
-安裝檔必須在各自的作業系統上建置：sqlite-vec 只會安裝建置機器所在平台的版本。沒有自動更新（`publish: null`），也沒有程式碼簽章：macOS 是 ad-hoc 簽章，Windows 沒有簽章。
+Installers must be built on their own operating system: sqlite-vec only installs the build for the platform it is installed on. There are no automatic updates (`publish: null`) and no code signing: macOS uses an ad-hoc signature, and Windows is unsigned.
 
-## 發版步驟
+## Release steps
 
-1. 確認 main 上的 CI 全部通過，並照 [`testing.md`](testing.md#發版前檢查) 的「發版前檢查」試打包與手動測試。
-2. 改 `package.json` 的 `version`（例如 `0.2.0`），執行 `npm install --package-lock-only` 同步 `package-lock.json`，commit 並 push。
-3. 推 tag，版本號要和 `package.json` 一致（前面加 `v`）：
+1. Make sure CI on main is green, then follow "Pre-release checks" in [`testing.md`](testing.md#pre-release-checks) to try packaging and run the manual tests.
+2. Change `version` in `package.json` (for example `0.2.0`), run `npm install --package-lock-only` to sync `package-lock.json`, then commit and push.
+3. Push a tag whose version matches `package.json` (with a leading `v`):
 
    ```bash
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-   tag 與 `package.json` 的版本不一致時，`release.yml` 會在打包前失敗。
+   If the tag and the `package.json` version don't match, `release.yml` fails before packaging.
 
-4. 等 Actions 的 `Release` 跑完，到 GitHub 的 Releases 頁面打開草稿：
-   - 確認六個檔案都在、大小合理（每個約 100–130 MB）。
-   - 編輯自動產生的 release notes，需要時補上升級注意事項。
-   - 按 **Publish release**。
+4. Wait for the `Release` run in Actions to finish, then open the draft on the GitHub Releases page:
+   - Check that all six files are there and their sizes look reasonable (about 100–130 MB each).
+   - Edit the generated release notes and add upgrade notes if needed.
+   - Click **Publish release**.
 
-## 發版前試打包
+## Trial packaging before a release
 
-到 GitHub 的 **Actions → Release → Run workflow**，選要打包的分支。完成後在該次執行的頁面下方 **Artifacts** 下載 `knowmon-linux`、`knowmon-windows`、`knowmon-mac-arm64`、`knowmon-mac-x64`。不會建立 Release，也不檢查版本號。
+On GitHub, go to **Actions → Release → Run workflow** and choose the branch to package. When it finishes, download `knowmon-linux`, `knowmon-windows`, `knowmon-mac-arm64` and `knowmon-mac-x64` under **Artifacts** at the bottom of the run page. No Release is created and the version isn't checked.
 
-macOS 的兩個 job 有「Show macOS code signature」步驟，應顯示 `Signature=adhoc`；如果顯示 `code object is not signed at all`，Apple Silicon 上會無法執行，要先修好再發版。
+Both macOS jobs have a "Show macOS code signature" step, which should show `Signature=adhoc`. If it shows `code object is not signed at all`, the app won't run on Apple Silicon; fix that before releasing.
 
-## 失敗時
+## When something fails
 
-某個平台打包失敗時（`fail-fast: false`，其他平台會繼續跑，但不會建立 Release）：
+If packaging fails on one platform (`fail-fast: false`, so the other platforms keep running, but no Release is created):
 
-1. 修正問題，commit 並 push 到 main。
-2. 刪掉舊的 tag，在修正後的 commit 上重打：
+1. Fix the problem, then commit and push to main.
+2. Delete the old tag and tag the fixed commit again:
 
    ```bash
    git push --delete origin v0.2.0
@@ -59,11 +59,11 @@ macOS 的兩個 job 有「Show macOS code signature」步驟，應顯示 `Signat
    git push origin v0.2.0
    ```
 
-如果草稿 Release 已經建立但內容有問題：在 Releases 頁面刪掉草稿，再照上面的方式刪 tag、重打。草稿沒有 Publish 前，一般使用者看不到。
+If the draft Release was already created but has problems, delete the draft on the Releases page, then delete and recreate the tag as above. Users can't see a draft until it is published.
 
-## 注意事項
+## Notes
 
-- **從 1.0.0 降版**：第一次發布前，自行打包的安裝檔版本是 1.0.0。裝過的人 apt／dnf 會把 0.1.0 視為降級，要先 `sudo apt remove knowmon`（或 `sudo dnf remove knowmon`）再安裝。0.1.0 的 release notes 要寫上這點。
-- **Intel Mac runner**：`macos-15-intel` 預計 2027 年 8 月停用。屆時改成在 arm64 runner 上交叉建置 x64（`--mac --x64`；sqlite-vec 要另外安裝 `sqlite-vec-darwin-x64`），或停止支援 Intel Mac。
-- **AppImage static runtime**：`toolsets.appimage: '1.0.3'` 仍是 electron-builder 的 beta 選項，升級 electron-builder 後確認 AppImage 還能建置與執行。
-- **actions 版本**：workflow 裡的 actions 固定到 major 版號，GitHub 停用舊版 Node runtime 時要一起升級。
+- **Downgrading from 1.0.0**: before the first release, self-built installers were version 1.0.0. For anyone who installed one, apt and dnf treat 0.1.0 as a downgrade, so they need to run `sudo apt remove knowmon` (or `sudo dnf remove knowmon`) before installing. The 0.1.0 release notes must say so.
+- **Intel Mac runner**: `macos-15-intel` is scheduled to be retired in August 2027. At that point, either cross-build x64 on the arm64 runner (`--mac --x64`; sqlite-vec then needs `sqlite-vec-darwin-x64` installed separately) or drop Intel Mac support.
+- **AppImage static runtime**: `toolsets.appimage: '1.0.3'` is still a beta option in electron-builder. After upgrading electron-builder, check that the AppImage still builds and runs.
+- **Action versions**: the actions in the workflows are pinned to major versions. Upgrade them when GitHub retires an old Node runtime.

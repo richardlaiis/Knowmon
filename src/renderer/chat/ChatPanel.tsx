@@ -1,4 +1,4 @@
-// AI 分頁的對話：問題、附引用的回答、來源清單、時間範圍
+// Chat in the AI tab: questions, answers with citations, source lists, time ranges
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { parseTimeRange } from '../../shared/timeRange'
 import type { AskSource, DateRange } from '../../shared/types'
@@ -15,11 +15,11 @@ import { Markdown } from './Markdown'
 
 export interface ChatPanelProps {
   conversation: Conversation
-  /** 對話服務可用（Ollama 或雲端） */
+  /** The chat provider is available (Ollama or cloud) */
   online: boolean
-  /** 每次改變時聚焦輸入框（Ctrl/Cmd+Shift+A） */
+  /** Focuses the input whenever it changes (Ctrl/Cmd+Shift+A) */
   focusKey: number
-  /** range：undefined = 由 main 從問題解析，null = 不篩選 */
+  /** range: undefined = main parses it from the question, null = no filter */
   onAsk: (question: string, range: DateRange | null | undefined) => void
   onStop: () => void
   onReset: () => void
@@ -27,7 +27,7 @@ export interface ChatPanelProps {
   onOpenLink: (target: string, newTab: boolean) => void
 }
 
-/** 時間範圍：從問題偵測、使用者關掉、手動指定 */
+/** Time range: detected from the question, turned off by the user, or set by hand */
 type RangeMode = { kind: 'auto' } | { kind: 'off' } | { kind: 'manual'; from: string; to: string }
 
 const fmtRange = (r: DateRange): string => (r.from === r.to ? r.from : `${r.from} – ${r.to}`)
@@ -45,7 +45,7 @@ export function ChatPanel(props: ChatPanelProps): React.JSX.Element {
     if (props.focusKey) inputRef.current?.focus()
   }, [props.focusKey])
 
-  // 新的內容出現時捲到底（使用者往上捲去看舊內容時不打擾）
+  // Scroll to the bottom when new content appears (without interrupting a user who scrolled up to read)
   const last = conversation.entries[conversation.entries.length - 1]
   const lastLength = last ? (last.role === 'user' ? last.text.length : last.text.length + 1) : 0
   const pinned = useRef(true)
@@ -119,7 +119,7 @@ export function ChatPanel(props: ChatPanelProps): React.JSX.Element {
           }
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            // 輸入法選字時的 Enter 不送出
+            // Enter during IME composition doesn't send
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               send()

@@ -29,15 +29,15 @@ function seed(): DB {
 const paths = (db: DB, q: string): string[] => searchNotes(db, q).map((h) => h.path)
 
 describe('searchNotes', () => {
-  it('3 字以上的中文詞走 trigram，標題命中排前面', () => {
+  it('Chinese terms of 3+ characters use trigram, with title matches first', () => {
     const db = seed()
     expect(paths(db, '原子習慣')).toEqual(['讀書筆記/原子習慣.md', '讀書筆記/深度工作.md'])
     expect(paths(db, '稀缺資源')).toEqual(['讀書筆記/深度工作.md'])
   })
 
-  it('2 字中文詞也找得到（trigram 無法比對，改用 LIKE）', () => {
+  it("2-character Chinese terms are found too (trigram can't match them, so LIKE is used)", () => {
     const db = seed()
-    // 標題命中的排前面，其次依最近修改
+    // Title matches first, then by most recently modified
     expect(paths(db, '習慣')).toEqual([
       '讀書筆記/原子習慣.md',
       '習慣養成.md',
@@ -47,21 +47,21 @@ describe('searchNotes', () => {
     expect(paths(db, '茶')).toEqual([])
   })
 
-  it('英文不分大小寫，中英混合', () => {
+  it('English is case-insensitive, and mixed Chinese/English works', () => {
     const db = seed()
     expect(paths(db, 'deep work')).toEqual(['English note.md'])
     expect(paths(db, 'SEARCH 中英混合')).toEqual(['English note.md'])
     expect(paths(db, 'english')).toEqual(['English note.md'])
   })
 
-  it('多個詞需全部出現（AND），長短詞可混用', () => {
+  it('every term must appear (AND), mixing long and short terms', () => {
     const db = seed()
     expect(paths(db, '習慣 專注')).toEqual(['讀書筆記/深度工作.md'])
     expect(paths(db, '原子習慣 每日')).toEqual(['讀書筆記/深度工作.md'])
     expect(paths(db, '原子習慣 不存在的詞')).toEqual([])
   })
 
-  it('特殊字元不會造成語法錯誤或被當成萬用字元', () => {
+  it('special characters cause no syntax errors and are not wildcards', () => {
     const db = seed()
     expect(paths(db, '100%')).toEqual(['日記/2026-10-06.md'])
     expect(paths(db, '_度')).toEqual(['日記/2026-10-06.md'])
@@ -70,13 +70,13 @@ describe('searchNotes', () => {
     expect(paths(db, '(')).toEqual([])
   })
 
-  it('空白查詢回傳空陣列，limit 有效', () => {
+  it('a blank query returns an empty array, and limit works', () => {
     const db = seed()
     expect(searchNotes(db, '   ')).toEqual([])
     expect(searchNotes(db, '習慣', 1)).toHaveLength(1)
   })
 
-  it('結果附上命中位置的摘要', () => {
+  it('results include a snippet around the match', () => {
     const db = seed()
     const [hit] = searchNotes(db, '稀缺')
     expect(hit).toMatchObject({ path: '讀書筆記/深度工作.md', title: '深度工作' })
@@ -89,13 +89,13 @@ describe('searchNotes', () => {
 })
 
 describe('searchTerms', () => {
-  it('依空白切詞並去重（不分大小寫）', () => {
+  it('splits on whitespace and dedupes case-insensitively', () => {
     expect(searchTerms('  Deep  deep 習慣\t習慣 ')).toEqual(['Deep', '習慣'])
   })
 })
 
 describe('snippet', () => {
-  it('長內文只取第一個命中附近，前後加上…', () => {
+  it('long bodies keep only the area around the first match, with … on either side', () => {
     const body = 'a'.repeat(300) + '關鍵字' + 'b'.repeat(300)
     const s = snippet(body, ['關鍵字'])
     expect(s[0].text.startsWith('…')).toBe(true)
@@ -104,13 +104,13 @@ describe('snippet', () => {
     expect(s.map((x) => x.text).join('').length).toBeLessThanOrEqual(162)
   })
 
-  it('只有標題命中時取內文開頭，連續空白壓成一個', () => {
+  it('with only a title match, takes the start of the body and collapses whitespace', () => {
     expect(snippet('\n\n\n第一行\n\n第二行', ['標題'])).toEqual([
       { text: '第一行 第二行', match: false }
     ])
   })
 
-  it('多個詞都會標記', () => {
+  it('marks every term', () => {
     expect(snippet('Deep work and deep focus', ['deep', 'FOCUS'])).toEqual([
       { text: 'Deep', match: true },
       { text: ' work and ', match: false },

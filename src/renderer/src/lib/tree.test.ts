@@ -18,76 +18,80 @@ const tree: TreeNode = {
   kind: 'folder',
   children: [
     {
-      name: '日記',
-      path: '日記',
+      name: 'Journal',
+      path: 'Journal',
       kind: 'folder',
-      children: [{ name: 'Untitled.md', path: '日記/Untitled.md', kind: 'file' }]
+      children: [{ name: 'Untitled.md', path: 'Journal/Untitled.md', kind: 'file' }]
     },
     { name: 'Untitled.md', path: 'Untitled.md', kind: 'file' },
     { name: 'Untitled 1.md', path: 'Untitled 1.md', kind: 'file' }
   ]
 }
 
-describe('tree 工具', () => {
+describe('tree helpers', () => {
   it('parentOf', () => {
     expect(parentOf('a/b/c.md')).toBe('a/b')
     expect(parentOf('c.md')).toBe('')
   })
 
   it('findNode', () => {
-    expect(findNode(tree, '日記/Untitled.md')?.kind).toBe('file')
+    expect(findNode(tree, 'Journal/Untitled.md')?.kind).toBe('file')
     expect(findNode(tree, '')).toBe(tree)
-    expect(findNode(tree, '不存在.md')).toBeNull()
+    expect(findNode(tree, 'missing.md')).toBeNull()
   })
 
-  it('newItemPath 補 .md、擋掉同名與無效名稱', () => {
+  it('newItemPath appends .md and blocks duplicate and invalid names', () => {
     const file = (folder: string): NewItem => ({ folder, kind: 'file' })
     const folder = (f: string): NewItem => ({ folder: f, kind: 'folder' })
-    expect(newItemPath(tree, file(''), ' 週記 ')).toBe('週記.md')
-    expect(newItemPath(tree, file('日記'), '週記.md')).toBe('日記/週記.md')
-    expect(newItemPath(tree, file('新資料夾'), 'Untitled')).toBe('新資料夾/Untitled.md')
-    expect(newItemPath(tree, folder('日記'), '2026')).toBe('日記/2026')
-    // 同名（不分大小寫），檔案與資料夾互相衝突
+    expect(newItemPath(tree, file(''), ' Weekly ')).toBe('Weekly.md')
+    expect(newItemPath(tree, file('Journal'), 'Weekly.md')).toBe('Journal/Weekly.md')
+    expect(newItemPath(tree, file('New folder'), 'Untitled')).toBe('New folder/Untitled.md')
+    expect(newItemPath(tree, folder('Journal'), '2026')).toBe('Journal/2026')
+    // Same name (case-insensitive): files and folders conflict with each other
     expect(() => newItemPath(tree, file(''), 'untitled')).toThrow('already exists')
-    expect(() => newItemPath(tree, folder(''), '日記')).toThrow('already exists')
+    expect(() => newItemPath(tree, folder(''), 'Journal')).toThrow('already exists')
     expect(() => newItemPath(tree, folder(''), 'Untitled.md')).toThrow('already exists')
     expect(() => newItemPath(tree, file(''), '  ')).toThrow()
     expect(() => newItemPath(tree, folder(''), 'a/b')).toThrow()
     expect(() => newItemPath(tree, file(''), '.hidden')).toThrow()
   })
 
-  it('renamedPath 保留資料夾並補 .md', () => {
-    expect(renamedPath({ path: '日記/Untitled.md', kind: 'file' }, '週記')).toBe('日記/週記.md')
-    expect(renamedPath({ path: '日記/Untitled.md', kind: 'file' }, '週記.md')).toBe('日記/週記.md')
-    expect(renamedPath({ path: '日記', kind: 'folder' }, '日誌')).toBe('日誌')
+  it('renamedPath keeps the folder and appends .md', () => {
+    expect(renamedPath({ path: 'Journal/Untitled.md', kind: 'file' }, 'Weekly')).toBe(
+      'Journal/Weekly.md'
+    )
+    expect(renamedPath({ path: 'Journal/Untitled.md', kind: 'file' }, 'Weekly.md')).toBe(
+      'Journal/Weekly.md'
+    )
+    expect(renamedPath({ path: 'Journal', kind: 'folder' }, 'Diary')).toBe('Diary')
     expect(() => renamedPath({ path: 'a.md', kind: 'file' }, '  ')).toThrow()
     expect(() => renamedPath({ path: 'a.md', kind: 'file' }, 'x/y')).toThrow()
     expect(() => renamedPath({ path: 'a.md', kind: 'file' }, '.hidden')).toThrow()
   })
 
-  it('movedInto 算出拖曳後的路徑，擋掉無效的移動', () => {
-    expect(movedInto('日記/a.md', '專案')).toBe('專案/a.md')
-    expect(movedInto('日記/a.md', '')).toBe('a.md')
-    expect(movedInto('a.md', '日記/週記')).toBe('日記/週記/a.md')
-    expect(movedInto('日記', '專案')).toBe('專案/日記')
-    // 位置沒變
-    expect(movedInto('日記/a.md', '日記')).toBeNull()
+  it('movedInto computes the path after a drag and blocks invalid moves', () => {
+    expect(movedInto('Journal/a.md', 'Projects')).toBe('Projects/a.md')
+    expect(movedInto('Journal/a.md', '')).toBe('a.md')
+    expect(movedInto('a.md', 'Journal/Weekly')).toBe('Journal/Weekly/a.md')
+    expect(movedInto('Journal', 'Projects')).toBe('Projects/Journal')
+    // Position unchanged
+    expect(movedInto('Journal/a.md', 'Journal')).toBeNull()
     expect(movedInto('a.md', '')).toBeNull()
-    // 拖到自己或自己的子資料夾
-    expect(movedInto('日記', '日記')).toBeNull()
-    expect(movedInto('日記', '日記/子')).toBeNull()
-    // 名稱前綴相同但不是子資料夾
-    expect(movedInto('日記', '日記本')).toBe('日記本/日記')
+    // Dragged onto itself or one of its subfolders
+    expect(movedInto('Journal', 'Journal')).toBeNull()
+    expect(movedInto('Journal', 'Journal/sub')).toBeNull()
+    // Same name prefix but not a subfolder
+    expect(movedInto('Journal', 'Journals')).toBe('Journals/Journal')
   })
 
-  it('remapPath 與 isWithin', () => {
-    expect(remapPath('日記/a.md', '日記', '日誌')).toBe('日誌/a.md')
-    expect(remapPath('日記本/a.md', '日記', '日誌')).toBe('日記本/a.md')
-    expect(isWithin('日記/a.md', '日記')).toBe(true)
-    expect(isWithin('日記本/a.md', '日記')).toBe(false)
+  it('remapPath and isWithin', () => {
+    expect(remapPath('Journal/a.md', 'Journal', 'Diary')).toBe('Diary/a.md')
+    expect(remapPath('Journals/a.md', 'Journal', 'Diary')).toBe('Journals/a.md')
+    expect(isWithin('Journal/a.md', 'Journal')).toBe(true)
+    expect(isWithin('Journals/a.md', 'Journal')).toBe(false)
   })
 
-  it('errorMessage 去掉 IPC 前綴', () => {
+  it('errorMessage strips the IPC prefix', () => {
     const e = new Error(
       "Error invoking remote method 'notes:create': Error: A note with this name already exists: a.md"
     )

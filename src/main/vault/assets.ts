@@ -1,9 +1,9 @@
-// knowmon-asset:// 協定：只提供目前 vault 內的圖片檔（筆記中的圖片用）
+// The knowmon-asset:// protocol: serves only image files inside the current vault (for images in notes)
 import fs from 'node:fs/promises'
 import { assetPathFromUrl, imageMime } from '../../shared/assets'
 import { resolveInVault } from './paths'
 
-/** 依網址讀取 vault 內的圖片；隱藏檔、跳出 vault、不是圖片都不提供 */
+/** Reads an image inside the vault by URL; hidden files, paths escaping the vault and non-images are never served */
 export async function assetResponse(root: string | null, url: string): Promise<Response> {
   const rel = assetPathFromUrl(url)
   const mime = rel ? imageMime(rel) : null
@@ -16,7 +16,7 @@ export async function assetResponse(root: string | null, url: string): Promise<R
   }
   try {
     const data = await fs.readFile(abs)
-    // 檔案可能在外部被替換，不讓瀏覽器沿用快取
+    // The file may be replaced externally, so don't let the browser reuse its cache
     return new Response(new Uint8Array(data), {
       headers: { 'Content-Type': mime, 'Cache-Control': 'no-cache' }
     })

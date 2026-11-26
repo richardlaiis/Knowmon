@@ -10,6 +10,7 @@ import {
   createCitationFilter,
   detectLanguage,
   gatherSources,
+  TRUNCATED_NOTICE,
   HISTORY_CHARS,
   HISTORY_MESSAGES,
   keywords,
@@ -49,7 +50,7 @@ const hit = (path: string, line = 1): RetrieveHit => ({
   via: ['vector']
 })
 
-/** 把文字依每 n 個字元切成片段，模擬串流 */
+/** Splits text into chunks of n characters, simulating a stream */
 function pieces(text: string, n: number): string[] {
   const out: string[] = []
   for (let i = 0; i < text.length; i += n) out.push(text.slice(i, i + n))
@@ -57,7 +58,7 @@ function pieces(text: string, n: number): string[] {
 }
 
 describe('detectLanguage', () => {
-  it('漢字多於英文單字時用中文', () => {
+  it('uses Chinese when CJK characters outnumber English words', () => {
     expect(detectLanguage('深度工作的重點是什麼？')).toBe('zh-TW')
     expect(detectLanguage('What did I learn about habits?')).toBe('en')
     expect(detectLanguage('What is 深度工作?')).toBe('zh-TW')
@@ -67,18 +68,18 @@ describe('detectLanguage', () => {
 })
 
 describe('keywords', () => {
-  it('去掉標點、疑問詞與虛詞', () => {
+  it('removes punctuation, question words and function words', () => {
     expect(keywords('深度工作的重點是什麼？')).toEqual(['深度工作', '重點'])
     expect(keywords('關於原子習慣，我寫了哪些筆記？')).toEqual(['原子習慣'])
     expect(keywords('What did I write about deep work?')).toEqual(['deep', 'work'])
     expect(keywords('Atomic Habits atomic habits')).toEqual(['Atomic', 'Habits'])
   })
 
-  it('不切壞含有常用字的詞', () => {
+  it('does not break words containing common characters', () => {
     expect(keywords('如何了解是否有效')).toEqual(['了解', '有效'])
   })
 
-  it('只有疑問詞時沒有關鍵字', () => {
+  it('has no keywords when there are only question words', () => {
     expect(keywords('寫了什麼？')).toEqual([])
     expect(keywords('那呢？')).toEqual([])
     expect(keywords('what is it?')).toEqual([])
@@ -86,7 +87,7 @@ describe('keywords', () => {
 })
 
 describe('planQuery', () => {
-  it('解析時間範圍，時間片語不當作關鍵字', () => {
+  it('parses the time range; time phrases are not keywords', () => {
     expect(planQuery('上個月讀了什麼書', [], undefined, NOW)).toEqual({
       range: { from: '2026-09-01', to: '2026-09-30' },
       keywords: [],
@@ -95,13 +96,13 @@ describe('planQuery', () => {
     expect(planQuery('上個月 深度工作', [], undefined, NOW).keywords).toEqual(['深度工作'])
   })
 
-  it('範圍由使用者指定或取消時不從問題解析', () => {
+  it('does not parse from the question when the user set or removed the range', () => {
     const r = { from: '2026-01-01', to: '2026-01-31' }
     expect(planQuery('上個月 深度工作', [], r, NOW).range).toEqual(r)
     expect(planQuery('上個月 深度工作', [], null, NOW).range).toBeNull()
   })
 
-  it('追問沒有關鍵字時沿用前一個問題', () => {
+  it('a follow-up without keywords reuses the previous question', () => {
     const history = [
       { role: 'user' as const, content: '上週 原子習慣的重點' },
       { role: 'assistant' as const, content: '...' }
@@ -115,7 +116,7 @@ describe('planQuery', () => {
       keywords: ['深度工作'],
       vectorText: '原子習慣的重點\n深度工作呢？'
     })
-    // 不像追問的新問題不帶前一個問題
+    // A new question that doesn't read like a follow-up doesn't include the previous one
     expect(planQuery('跑步的紀錄', history, undefined, NOW)).toMatchObject({
       keywords: ['跑步', '紀錄'],
       vectorText: '跑步的紀錄'
@@ -126,13 +127,13 @@ describe('planQuery', () => {
 })
 
 describe('notesInRange', () => {
-  it('依日期新到舊，沒有內容的筆記不列入', () => {
+  it('newest first by date, skipping notes without content', () => {
     const d = db([
       { path: 'a.md', body: '甲', eventDate: '2026-09-03' },
       { path: 'b.md', body: '乙', eventDate: '2026-09-20' },
       { path: 'c.md', body: '', eventDate: '2026-09-21' },
       { path: 'd.md', body: '丁', eventDate: '2026-10-01' },
-      // 沒有 event_date 時用最後修改日
+      // Without an event_date, the last modified date is used
       { path: 'e.md', body: '戊', modifiedAt: new Date(2026, 8, 10, 9).getTime() }
     ])
     const hits = notesInRange(d, { from: '2026-09-01', to: '2026-09-30' })
@@ -145,14 +146,14 @@ describe('gatherSources', () => {
   const para = (ch: string): string => ch.repeat(700)
   const long = ['# 長文', '', para('一'), '', para('二'), '', para('三'), '', para('四')].join('\n')
 
-  it('取 line 所在的 chunk，再補前後的 chunk', () => {
+  it('takes the chunk containing line, then adds the chunks before and after', () => {
     const d = db([{ path: '長文.md', body: long, eventDate: '2026-09-03' }])
     const lines = chunkMarkdown(parseNote('長文.md', long).body).map((c) => c.line)
     expect(lines.length).toBe(4)
     const [s] = gatherSources(d, [hit('長文.md', lines[2])], 1500)
     expect(s).toMatchObject({ n: 1, line: lines[2], date: '2026-09-03', title: '長文' })
     expect(s.text).toContain('三')
-    // 後一塊優先；預算只夠再加一塊
+    // The next chunk first; the budget fits only one more
     expect(s.text).toContain('四')
     expect(s.text).not.toContain('二')
 
@@ -160,7 +161,7 @@ describe('gatherSources', () => {
     expect(all.text.indexOf('一')).toBeLessThan(all.text.indexOf('四'))
   })
 
-  it('超過預算的筆記不列入，沒有內容的略過', () => {
+  it('notes over the budget are left out, and empty ones skipped', () => {
     const d = db([
       { path: '長文.md', body: long },
       { path: '短.md', body: '短短的內容' },
@@ -171,6 +172,14 @@ describe('gatherSources', () => {
     expect(sources.map((s) => [s.n, s.path])).toEqual([[1, '長文.md']])
     const two = gatherSources(d, [hit('長文.md', lines[0]), hit('短.md')], 2000)
     expect(two.map((s) => s.path)).toEqual(['長文.md', '短.md'])
+  })
+
+  it('cuts each chunk to chunkMax characters', () => {
+    const d = db([{ path: '長文.md', body: long }])
+    const lines = chunkMarkdown(parseNote('長文.md', long).body).map((c) => c.line)
+    const [s] = gatherSources(d, [hit('長文.md', lines[1])], 250, 100)
+    // The chunk containing 「二」 and the next one, 「三」, each cut to 100 characters
+    expect(s.text).toBe('二'.repeat(100) + '…\n\n' + '三'.repeat(100) + '…')
   })
 })
 
@@ -185,7 +194,7 @@ describe('askMessages', () => {
     text: '內容'
   }
 
-  it('來源編號、時間範圍、問題；英文再提醒一次語言', () => {
+  it('source numbers, time range and question; English repeats the language instruction', () => {
     const zh = askMessages(
       '問題？',
       [source],
@@ -202,7 +211,7 @@ describe('askMessages', () => {
     expect(en[1].content).toMatch(/Question: Q\?\n\nAnswer in English/)
   })
 
-  it('只帶最近幾則歷史，去掉舊的引用並截斷', () => {
+  it('includes only the last few history messages, stripping old citations and truncating', () => {
     const history = Array.from({ length: 10 }, (_, i) => ({
       role: (i % 2 ? 'assistant' : 'user') as 'user' | 'assistant',
       content: i === 9 ? '很長[2]'.repeat(600) : `第 ${i} 則 [1]`
@@ -213,6 +222,22 @@ describe('askMessages', () => {
     expect(m.at(-2)!.content).toHaveLength(HISTORY_CHARS + 1)
     expect(m.at(-2)!.content).not.toContain('[2]')
   })
+
+  it('strips the truncation notice from old answers in history', () => {
+    const m = askMessages(
+      'Q',
+      [source],
+      [
+        { role: 'user', content: '問' },
+        { role: 'assistant', content: '回答' + TRUNCATED_NOTICE['zh-TW'] },
+        { role: 'user', content: 'ask' },
+        { role: 'assistant', content: ('answer' + TRUNCATED_NOTICE.en).trim() }
+      ],
+      null,
+      'zh-TW'
+    )
+    expect(m.slice(1, -1).map((x) => x.content)).toEqual(['問', '回答', 'ask', 'answer'])
+  })
 })
 
 describe('createCitationFilter', () => {
@@ -222,7 +247,7 @@ describe('createCitationFilter', () => {
     return { out, cited: f.cited() }
   }
 
-  it('保留範圍內的引用，拿掉範圍外的', () => {
+  it('keeps citations in range and removes those out of range', () => {
     for (const size of [1, 2, 3, 100]) {
       expect(run('甲 [1]，乙 [3]。丙 [2]', 2, size)).toEqual({
         out: '甲 [1]，乙 。丙 [2]',
@@ -231,24 +256,24 @@ describe('createCitationFilter', () => {
     }
   })
 
-  it('統一 [1, 2]、【1】、[1，2] 的寫法', () => {
+  it('normalizes [1, 2], 【1】 and [1，2]', () => {
     expect(run('a [1, 2] b 【2】 c [1，3]', 3).out).toBe('a [1][2] b [2] c [1][3]')
     expect(run('[0] [5, 1]', 4)).toEqual({ out: ' [1]', cited: [1] })
   })
 
-  it('一般的中括號與 wikilink 不受影響', () => {
+  it('ordinary brackets and wikilinks are unaffected', () => {
     expect(run('[x] [[2026-10-04]] [ ] [1a] arr[i]', 3).out).toBe(
       '[x] [[2026-10-04]] [ ] [1a] arr[i]'
     )
   })
 
-  it('結尾未完成的引用原樣輸出', () => {
+  it('an unfinished citation at the end is output as is', () => {
     expect(run('結尾 [1', 3).out).toBe('結尾 [1')
   })
 })
 
 describe('answer', () => {
-  it('串流過濾引用與來源以外的連結，回報引用的編號', async () => {
+  it('filters citations and links not in the sources while streaming, reporting the cited numbers', async () => {
     const sources: ContextSource[] = [
       {
         n: 1,

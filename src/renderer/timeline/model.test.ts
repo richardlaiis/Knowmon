@@ -18,11 +18,11 @@ const summary = (path: string, eventDate: string | null): NoteSummary => ({
 })
 
 describe('groupByEventDate', () => {
-  it('依日期分組，新的在前，同一天依標題；計算沒有日期的篇數', () => {
+  it('groups by date, newest first, by title within a day; counts undated notes', () => {
     const { days, undated } = groupByEventDate([
       summary('b.md', '2026-10-05'),
       summary('x.md', null),
-      summary('日記/2026-10-06.md', '2026-10-06'),
+      summary('Journal/2026-10-06.md', '2026-10-06'),
       summary('a.md', '2026-10-05')
     ])
     expect(days.map((d) => [d.day, d.notes.map((n) => n.title)])).toEqual([
@@ -34,7 +34,7 @@ describe('groupByEventDate', () => {
 })
 
 describe('groupActivity', () => {
-  it('切成 session、依開始日期分組（新的在前），記錄新建與編輯次數', () => {
+  it('splits into sessions grouped by start date (newest first), recording new notes and edit counts', () => {
     const days = groupActivity(
       [
         ev('a.md', at(9), 'create'),
@@ -43,7 +43,7 @@ describe('groupActivity', () => {
         ev('a.md', at(9, 30)),
         ev('c.md', at(14)),
         ev('a.md', at(23, 50, 9)),
-        ev('b.md', at(0, 10, 10)) // 跨過午夜，算在 10/9
+        ev('b.md', at(0, 10, 10)) // crosses midnight, counted on 10/9
       ],
       30 * MIN
     )
@@ -64,13 +64,13 @@ describe('groupActivity', () => {
     ])
   })
 
-  it('沒有事件時為空', () => {
+  it('empty when there are no events', () => {
     expect(groupActivity([], MIN)).toEqual([])
   })
 })
 
 describe('monthHistogram', () => {
-  it('每月加總，中間沒有資料的月份補 0，跨年', () => {
+  it('totals per month, filling months without data with 0, across years', () => {
     expect(
       monthHistogram([
         { day: '2026-01-03', count: 2 },
@@ -87,7 +87,7 @@ describe('monthHistogram', () => {
 })
 
 describe('groupByMonth', () => {
-  it('相鄰同月份的日期歸在一起', () => {
+  it('dates in neighboring same months are grouped together', () => {
     expect(
       groupByMonth([{ day: '2026-10-08' }, { day: '2026-10-01' }, { day: '2026-09-30' }]).map(
         (g) => [g.month, g.days.length]

@@ -1,7 +1,7 @@
-// 分頁狀態（純函式）。分頁是筆記、全域圖譜或時間軸；同一篇筆記只開一個分頁，圖譜與時間軸分頁各最多一個。
+// Tab state (pure functions). A tab is a note, the global graph or the timeline; each note opens in at most one tab, and there is at most one graph tab and one timeline tab.
 import { isWithin, remapPath } from '../lib/tree'
 
-/** 全 App 只會有一個的分頁（不是筆記） */
+/** Tabs that exist at most once in the whole app (not notes) */
 export type ViewKind = 'graph' | 'timeline'
 
 export type Tab = { id: string; kind: 'note'; path: string } | { id: string; kind: ViewKind }
@@ -14,7 +14,7 @@ export interface TabsState {
 export const emptyTabs: TabsState = { tabs: [], activeId: null }
 
 let idCounter = 0
-/** 分頁 id 只在這次執行中使用（不存檔），用遞增數字即可 */
+/** Tab ids are only used within this run (never saved), so an incrementing number is enough */
 export function newTabId(): string {
   return `t${++idCounter}`
 }
@@ -28,12 +28,12 @@ export function activeTab(s: TabsState): Tab | null {
   return s.tabs.find((t) => t.id === s.activeId) ?? null
 }
 
-/** 筆記所在的分頁 */
+/** The tab a note is in */
 export function findNoteTab(s: TabsState, path: string): Tab | null {
   return s.tabs.find((t) => t.kind === 'note' && t.path === path) ?? null
 }
 
-/** 在目前分頁右邊插入並啟用 */
+/** Inserts to the right of the current tab and activates it */
 function insertAfterActive(s: TabsState, tab: Tab): TabsState {
   const i = s.tabs.findIndex((t) => t.id === s.activeId)
   const tabs = [...s.tabs]
@@ -42,9 +42,9 @@ function insertAfterActive(s: TabsState, tab: Tab): TabsState {
 }
 
 /**
- * 開啟筆記：已開著就切過去；newTab 或還沒有分頁時開新分頁；否則取代目前的分頁。
- * 取代時分頁換一個新 id：畫面以 id 作為 key，換筆記時編輯器重建；改名（renamePaths）則保留 id 與編輯器。
- * makeId 方便測試時給固定 id。
+ * Opens a note: switches to it if already open; opens a new tab with newTab or when there are no tabs; otherwise replaces the current tab.
+ * A replaced tab gets a new id: views are keyed by id, so switching notes rebuilds the editor, while renames (renamePaths) keep the id and the editor.
+ * makeId lets tests supply fixed ids.
  */
 export function openNote(
   s: TabsState,
@@ -63,7 +63,7 @@ export function openNote(
   }
 }
 
-/** 切到圖譜或時間軸分頁，沒有就在右邊開一個 */
+/** Switches to the graph or timeline tab, opening one to the right if there is none */
 export function openView(s: TabsState, kind: ViewKind, makeId: () => string = newTabId): TabsState {
   const existing = s.tabs.find((t) => t.kind === kind)
   if (existing) return existing.id === s.activeId ? s : { ...s, activeId: existing.id }
@@ -74,7 +74,7 @@ export function activate(s: TabsState, id: string): TabsState {
   return s.tabs.some((t) => t.id === id) && s.activeId !== id ? { ...s, activeId: id } : s
 }
 
-/** 關閉分頁；關的是目前分頁時改為啟用右邊的分頁，沒有就左邊 */
+/** Closes a tab; when it's the current tab, the one to the right is activated, or the left if none */
 export function closeTab(s: TabsState, id: string): TabsState {
   const i = s.tabs.findIndex((t) => t.id === id)
   if (i < 0) return s
@@ -89,7 +89,7 @@ export function closeOthers(s: TabsState, id: string): TabsState {
   return keep ? { tabs: [keep], activeId: keep.id } : s
 }
 
-/** 依序切換到下一個（delta = 1）或上一個（-1）分頁，頭尾相接 */
+/** Switches to the next (delta = 1) or previous (-1) tab, wrapping around */
 export function cycle(s: TabsState, delta: number): TabsState {
   if (s.tabs.length < 2) return s
   const i = s.tabs.findIndex((t) => t.id === s.activeId)
@@ -97,7 +97,7 @@ export function cycle(s: TabsState, delta: number): TabsState {
   return { ...s, activeId: s.tabs[(((i + delta) % n) + n) % n].id }
 }
 
-/** 拖曳排序：把 id 移到 toIndex（以移除前的位置計算，與分頁列的放置位置一致） */
+/** Drag to reorder: moves id to toIndex (counted before removal, matching where the tab bar drops it) */
 export function moveTab(s: TabsState, id: string, toIndex: number): TabsState {
   const from = s.tabs.findIndex((t) => t.id === id)
   if (from < 0) return s
@@ -108,7 +108,7 @@ export function moveTab(s: TabsState, id: string, toIndex: number): TabsState {
   return tabs.every((t, i) => t === s.tabs[i]) ? s : { ...s, tabs }
 }
 
-/** 筆記或資料夾改名／搬移後，更新受影響分頁的路徑 */
+/** Updates the paths of affected tabs after a note or folder is renamed/moved */
 export function renamePaths(s: TabsState, from: string, to: string): TabsState {
   let changed = false
   const tabs = s.tabs.map((t): Tab => {
@@ -119,7 +119,7 @@ export function renamePaths(s: TabsState, from: string, to: string): TabsState {
   return changed ? { ...s, tabs } : s
 }
 
-/** 筆記或資料夾被刪除後，關閉受影響的分頁 */
+/** Closes affected tabs after a note or folder is deleted */
 export function removePaths(s: TabsState, path: string): TabsState {
   let next = s
   for (const t of s.tabs) {
@@ -128,12 +128,12 @@ export function removePaths(s: TabsState, path: string): TabsState {
   return next
 }
 
-/** 滑鼠事件是否要求開新分頁：Ctrl/Cmd+點擊或中鍵 */
+/** Whether a mouse event asks for a new tab: Ctrl/Cmd+click or middle click */
 export function wantsNewTab(e: { ctrlKey: boolean; metaKey: boolean; button?: number }): boolean {
   return e.ctrlKey || e.metaKey || e.button === 1
 }
 
-// ---- 存檔與還原 ----
+// ---- Saving and restoring ----
 
 type SavedTab = { kind: 'note'; path: string } | { kind: ViewKind }
 
@@ -152,8 +152,8 @@ export function serializeTabs(s: TabsState): SavedTabs {
 }
 
 /**
- * 還原分頁：略過格式錯誤、已不存在的筆記、重複的分頁。
- * 原本啟用的分頁被略過時，改為啟用它左邊最近的分頁。
+ * Restores tabs, skipping malformed entries, notes that no longer exist and duplicate tabs.
+ * If the originally active tab is skipped, the nearest tab to its left becomes active.
  */
 export function restoreTabs(
   raw: unknown,

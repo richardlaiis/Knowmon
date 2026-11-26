@@ -12,19 +12,19 @@ const paths = [
 ]
 
 describe('resolveLink', () => {
-  it('以檔名解析，忽略大小寫與 .md', () => {
+  it('resolves by file name, ignoring case and .md', () => {
     expect(resolveLink('歡迎', paths)).toBe('歡迎.md')
     expect(resolveLink('歡迎.md', paths)).toBe('歡迎.md')
     expect(resolveLink('english note', paths)).toBe('English Note.md')
     expect(resolveLink('2026-10-06', paths)).toBe('日記/2026-10-06.md')
   })
 
-  it('同名時取路徑最短，再依字典序', () => {
+  it('on a name clash, takes the shortest path, then lexicographic order', () => {
     expect(resolveLink('時間脈絡連結', paths)).toBe('專案/Knowmon/時間脈絡連結.md')
     expect(resolveLink('NOTE', paths)).toBe('a/note.md')
   })
 
-  it('含 / 的目標比對路徑結尾', () => {
+  it('a target containing / matches the end of a path', () => {
     expect(resolveLink('封存/專案/Knowmon/時間脈絡連結', paths)).toBe(
       '封存/專案/Knowmon/時間脈絡連結.md'
     )
@@ -35,12 +35,12 @@ describe('resolveLink', () => {
     expect(resolveLink('c/note', paths)).toBeNull()
   })
 
-  it('找不到或空目標時回傳 null', () => {
+  it('returns null when not found or for an empty target', () => {
     expect(resolveLink('尚未建立的筆記', paths)).toBeNull()
     expect(resolveLink('  ', paths)).toBeNull()
   })
 
-  it('Unicode 正規化：NFD 的檔名也能用 NFC 的目標找到', () => {
+  it('Unicode normalization: an NFD file name is found by an NFC target', () => {
     const resolve = createLinkResolver(['Café.md'.normalize('NFD')])
     expect(resolve('café')).toBe('Café.md'.normalize('NFD'))
     expect(linkKey('Café'.normalize('NFD'))).toBe('café')
@@ -50,12 +50,12 @@ describe('resolveLink', () => {
 describe('linkTextFor', () => {
   const resolve = createLinkResolver(paths)
 
-  it('能唯一解析時只用檔名', () => {
+  it('uses just the file name when it resolves uniquely', () => {
     expect(linkTextFor('日記/2026-10-06.md', resolve)).toBe('2026-10-06')
     expect(linkTextFor('專案/Knowmon/時間脈絡連結.md', resolve)).toBe('時間脈絡連結')
   })
 
-  it('同名時加上資料夾直到能唯一解析', () => {
+  it('adds folders on a name clash until it resolves uniquely', () => {
     expect(linkTextFor('封存/專案/Knowmon/時間脈絡連結.md', resolve)).toBe(
       '封存/專案/Knowmon/時間脈絡連結'
     )
@@ -64,13 +64,13 @@ describe('linkTextFor', () => {
 })
 
 describe('wikilinkTarget', () => {
-  it('去掉顯示文字、標題與 .md', () => {
+  it('strips the label, heading and .md', () => {
     expect(wikilinkTarget('a|顯示')).toBe('a')
     expect(wikilinkTarget(' b.md #標題 | x')).toBe('b')
     expect(wikilinkTarget('#只有標題')).toBe('')
   })
 
-  it('表格裡的 \\| 也是顯示文字的分隔', () => {
+  it('\\| inside a table also separates the label', () => {
     expect(wikilinkTarget('筆記\\|文字')).toBe('筆記')
     expect(wikilinkTarget('b.md#標題 \\| x')).toBe('b')
   })

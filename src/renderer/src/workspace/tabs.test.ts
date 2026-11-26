@@ -23,7 +23,7 @@ function ids(): () => string {
   return () => `id${++n}`
 }
 
-/** 簡寫：列出分頁內容，目前的分頁加 * */
+/** Shorthand: lists the tab contents, with * on the current tab */
 function show(s: TabsState): string[] {
   return s.tabs.map((t) => (t.kind === 'note' ? t.path : t.kind) + (t.id === s.activeId ? '*' : ''))
 }
@@ -37,7 +37,7 @@ function build(...paths: string[]): TabsState {
 }
 
 describe('openNote', () => {
-  it('沒有分頁時開新分頁；之後取代目前的分頁（換新 id，讓編輯器重建）', () => {
+  it('opens a new tab when there are none; afterwards replaces the current tab (with a new id, so the editor is rebuilt)', () => {
     const id = ids()
     let s = openNote(emptyTabs, 'a.md', false, id)
     expect(show(s)).toEqual(['a.md*'])
@@ -46,28 +46,28 @@ describe('openNote', () => {
     expect(s.tabs[0].id).toBe('id2')
   })
 
-  it('newTab 時插在目前分頁右邊', () => {
+  it('newTab inserts to the right of the current tab', () => {
     let s = build('a.md', 'b.md', 'c.md')
     s = activate(s, s.tabs[0].id)
     s = openNote(s, 'd.md', true, () => 'new')
     expect(show(s)).toEqual(['a.md', 'd.md*', 'b.md', 'c.md'])
   })
 
-  it('已經開著就切過去，不重複開', () => {
+  it('switches to a note that is already open instead of opening it twice', () => {
     const s = build('a.md', 'b.md')
     const next = openNote(s, 'a.md', true)
     expect(show(next)).toEqual(['a.md*', 'b.md'])
     expect(openNote(next, 'a.md')).toBe(next)
   })
 
-  it('圖譜分頁也會被取代', () => {
+  it('the graph tab can be replaced too', () => {
     const s = openNote(build('a.md', 'graph'), 'b.md')
     expect(show(s)).toEqual(['a.md', 'b.md*'])
   })
 })
 
 describe('openView', () => {
-  it('最多一個圖譜分頁，已存在就切過去', () => {
+  it('at most one graph tab; switches to it if it exists', () => {
     let s = build('a.md')
     s = openView(s, 'graph', () => 'g')
     expect(show(s)).toEqual(['a.md', 'graph*'])
@@ -77,7 +77,7 @@ describe('openView', () => {
     expect(s.tabs[1].id).toBe('g')
   })
 
-  it('時間軸分頁與圖譜分頁各自最多一個', () => {
+  it('at most one timeline tab and one graph tab', () => {
     let s = build('a.md', 'graph')
     s = openView(s, 'timeline', () => 't')
     expect(show(s)).toEqual(['a.md', 'graph', 'timeline*'])
@@ -89,7 +89,7 @@ describe('openView', () => {
 })
 
 describe('closeTab', () => {
-  it('關閉目前分頁後啟用右邊，沒有就左邊', () => {
+  it('closing the current tab activates the one to the right, or the left if none', () => {
     let s = build('a.md', 'b.md', 'c.md')
     s = activate(s, s.tabs[1].id)
     s = closeTab(s, s.tabs[1].id)
@@ -100,20 +100,20 @@ describe('closeTab', () => {
     expect(s).toEqual({ tabs: [], activeId: null })
   })
 
-  it('關閉其他分頁不影響目前分頁', () => {
+  it('closing another tab does not affect the current tab', () => {
     const s = build('a.md', 'b.md', 'c.md')
     expect(show(closeTab(s, s.tabs[0].id))).toEqual(['b.md', 'c.md*'])
     expect(closeTab(s, 'nope')).toBe(s)
   })
 
-  it('closeOthers 只留下指定分頁並啟用它', () => {
+  it('closeOthers keeps only the given tab and activates it', () => {
     const s = build('a.md', 'b.md', 'c.md')
     expect(show(closeOthers(s, s.tabs[0].id))).toEqual(['a.md*'])
   })
 })
 
 describe('cycle', () => {
-  it('頭尾相接', () => {
+  it('wraps around at both ends', () => {
     const s = build('a.md', 'b.md', 'c.md')
     expect(show(cycle(s, 1))).toEqual(['a.md*', 'b.md', 'c.md'])
     expect(show(cycle(s, -1))).toEqual(['a.md', 'b.md*', 'c.md'])
@@ -127,13 +127,13 @@ describe('moveTab', () => {
   const id = (i: number): string => s.tabs[i].id
   const order = (x: TabsState): string[] => show(x).map((p) => p.replace('*', ''))
 
-  it('放到某個分頁前面', () => {
+  it('drops before a given tab', () => {
     expect(order(moveTab(s, id(0), 2))).toEqual(['b.md', 'a.md', 'c.md', 'd.md'])
     expect(order(moveTab(s, id(3), 0))).toEqual(['d.md', 'a.md', 'b.md', 'c.md'])
     expect(order(moveTab(s, id(1), 4))).toEqual(['a.md', 'c.md', 'd.md', 'b.md'])
   })
 
-  it('位置沒變時回傳原本的狀態', () => {
+  it('returns the original state when the position is unchanged', () => {
     expect(moveTab(s, id(1), 1)).toBe(s)
     expect(moveTab(s, id(1), 2)).toBe(s)
     expect(moveTab(s, 'nope', 0)).toBe(s)
@@ -141,26 +141,32 @@ describe('moveTab', () => {
 })
 
 describe('renamePaths / removePaths', () => {
-  it('改名與資料夾搬移會更新分頁路徑，id 不變', () => {
-    const s = build('日記/1.md', '日記/2.md', 'a.md')
-    expect(renamePaths(s, '日記', '舊日記').tabs.map((t) => t.id)).toEqual(s.tabs.map((t) => t.id))
-    expect(show(renamePaths(s, '日記', '舊日記'))).toEqual(['舊日記/1.md', '舊日記/2.md', 'a.md*'])
-    expect(show(renamePaths(s, 'a.md', 'b.md'))).toEqual(['日記/1.md', '日記/2.md', 'b.md*'])
-    expect(renamePaths(s, '不相關', 'x')).toBe(s)
+  it('renames and folder moves update tab paths, keeping ids', () => {
+    const s = build('Journal/1.md', 'Journal/2.md', 'a.md')
+    expect(renamePaths(s, 'Journal', 'Old journal').tabs.map((t) => t.id)).toEqual(
+      s.tabs.map((t) => t.id)
+    )
+    expect(show(renamePaths(s, 'Journal', 'Old journal'))).toEqual([
+      'Old journal/1.md',
+      'Old journal/2.md',
+      'a.md*'
+    ])
+    expect(show(renamePaths(s, 'a.md', 'b.md'))).toEqual(['Journal/1.md', 'Journal/2.md', 'b.md*'])
+    expect(renamePaths(s, 'unrelated', 'x')).toBe(s)
   })
 
-  it('刪除資料夾會關閉底下的分頁', () => {
-    const s = build('a.md', '日記/1.md', '日記/2.md', 'graph')
-    expect(show(removePaths(s, '日記'))).toEqual(['a.md', 'graph*'])
+  it('deleting a folder closes the tabs under it', () => {
+    const s = build('a.md', 'Journal/1.md', 'Journal/2.md', 'graph')
+    expect(show(removePaths(s, 'Journal'))).toEqual(['a.md', 'graph*'])
     const t = activate(s, s.tabs[1].id)
-    expect(show(removePaths(t, '日記'))).toEqual(['a.md', 'graph*'])
+    expect(show(removePaths(t, 'Journal'))).toEqual(['a.md', 'graph*'])
   })
 })
 
 describe('serializeTabs / restoreTabs', () => {
-  const exists = (p: string): boolean => p !== '已刪除.md'
+  const exists = (p: string): boolean => p !== 'Deleted.md'
 
-  it('存檔後可以還原，啟用的分頁相同', () => {
+  it('restores after saving, with the same active tab', () => {
     let s = build('a.md', 'graph', 'b.md')
     s = activate(s, s.tabs[1].id)
     const saved = JSON.parse(JSON.stringify(serializeTabs(s)))
@@ -171,11 +177,11 @@ describe('serializeTabs / restoreTabs', () => {
     expect(show(restoreTabs(saved, exists, ids()))).toEqual(['a.md', 'graph*', 'b.md'])
   })
 
-  it('略過不存在的筆記與重複分頁；啟用的分頁被略過時改用左邊的', () => {
+  it('skips missing notes and duplicate tabs; when the active tab is skipped, the one to its left is used', () => {
     const raw = {
       tabs: [
         { kind: 'note', path: 'a.md' },
-        { kind: 'note', path: '已刪除.md' },
+        { kind: 'note', path: 'Deleted.md' },
         { kind: 'note', path: 'a.md' },
         { kind: 'graph' },
         { kind: 'timeline' },
@@ -187,7 +193,7 @@ describe('serializeTabs / restoreTabs', () => {
     expect(show(restoreTabs(raw, exists, ids()))).toEqual(['a.md*', 'graph', 'timeline'])
   })
 
-  it('格式錯誤時回傳空的狀態', () => {
+  it('returns an empty state for malformed data', () => {
     for (const raw of [null, 'x', 42, {}, { tabs: 'x' }, { tabs: [{ kind: 'note' }, 5] }]) {
       const s = restoreTabs(raw, exists, ids())
       expect(s.tabs).toEqual([])
@@ -195,7 +201,7 @@ describe('serializeTabs / restoreTabs', () => {
     }
   })
 
-  it('active 超出範圍時啟用最後一個留下的分頁', () => {
+  it('activates the last remaining tab when active is out of range', () => {
     const raw = {
       tabs: [
         { kind: 'note', path: 'a.md' },
@@ -210,7 +216,7 @@ describe('serializeTabs / restoreTabs', () => {
 })
 
 describe('wantsNewTab', () => {
-  it('Ctrl、Cmd 或中鍵', () => {
+  it('Ctrl, Cmd or middle click', () => {
     expect(wantsNewTab({ ctrlKey: true, metaKey: false })).toBe(true)
     expect(wantsNewTab({ ctrlKey: false, metaKey: true, button: 0 })).toBe(true)
     expect(wantsNewTab({ ctrlKey: false, metaKey: false, button: 1 })).toBe(true)

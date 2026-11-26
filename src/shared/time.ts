@@ -1,4 +1,4 @@
-// 時間層共用的純函式：日期換算、session 切分、時間參數的預設值與範圍。main 與 renderer 共用。
+// Shared pure functions for the time layer: date conversion, session splitting, and defaults and ranges for the time parameters. Shared by main and renderer.
 import type { TimeSettings } from './types'
 
 export const DEFAULT_TIME_SETTINGS: TimeSettings = {
@@ -7,14 +7,14 @@ export const DEFAULT_TIME_SETTINGS: TimeSettings = {
   sameDayWindowDays: 0
 }
 
-/** 每個參數允許的範圍（含兩端） */
+/** Allowed range for each parameter (inclusive) */
 export const TIME_LIMITS: Record<keyof TimeSettings, [number, number]> = {
   sessionGapMinutes: [5, 240],
   sessionMaxNotes: [2, 200],
   sameDayWindowDays: [0, 7]
 }
 
-/** 以 base 為底套用 input 中合法的欄位：非數字略過，超出範圍的取最近的邊界，小數四捨五入 */
+/** Applies the valid fields of input on top of base: non-numbers are skipped, out-of-range values are clamped to the nearest bound, and decimals are rounded */
 export function clampTimeSettings(
   input: unknown,
   base: TimeSettings = DEFAULT_TIME_SETTINGS
@@ -32,18 +32,18 @@ export function clampTimeSettings(
 
 const DAY_MS = 86_400_000
 
-/** YYYY-MM-DD → 自 1970-01-01 起的天數（不受時區影響） */
+/** YYYY-MM-DD → days since 1970-01-01 (independent of time zone) */
 export function dayNumber(day: string): number {
   const [y, m, d] = day.split('-').map(Number)
   return Math.round(Date.UTC(y, m - 1, d) / DAY_MS)
 }
 
-/** dayNumber 的反函數 */
+/** The inverse of dayNumber */
 export function dayString(n: number): string {
   return new Date(n * DAY_MS).toISOString().slice(0, 10)
 }
 
-/** 時間戳記在本地時區的日期（YYYY-MM-DD） */
+/** The date of a timestamp in the local time zone (YYYY-MM-DD) */
 export function localDay(ts: number): string {
   const d = new Date(ts)
   const pad = (n: number): string => String(n).padStart(2, '0')
@@ -51,8 +51,8 @@ export function localDay(ts: number): string {
 }
 
 /**
- * 把依時間排序的事件切成 session：相鄰兩筆間隔超過 gapMs 就開始新的 session。
- * 等於 gapMs 仍算同一個 session。
+ * Splits time-sorted events into sessions: a gap longer than gapMs between neighbors starts a new session.
+ * A gap exactly equal to gapMs stays in the same session.
  */
 export function sessionize<E extends { ts: number }>(events: readonly E[], gapMs: number): E[][] {
   const out: E[][] = []

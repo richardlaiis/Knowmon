@@ -1,15 +1,15 @@
-// 筆記切塊：供 embedding 與檢索使用。純函式，不碰檔案系統與 DB。
+// Note chunking for embedding and retrieval. Pure functions, no file system or DB access.
 //
-// 先依 Markdown 標題切成章節，章節內以空行分段（圍欄程式碼視為一段），
-// 依序累積到約 maxChars 字；單一段落過長時依句子再切，句子仍過長時硬切。
+// First split into sections by Markdown heading, then into paragraphs by blank lines within a section (fenced code counts as one paragraph),
+// accumulating up to about maxChars characters; an overlong paragraph is split by sentence, and a sentence that's still too long is cut hard.
 
 export const CHUNK_CHARS = 800
 
 export interface Chunk {
-  /** 起始行（1-based），對應原檔（frontmatter 已換成空行） */
+  /** Starting line (1-based) in the original file (with frontmatter replaced by blank lines) */
   line: number
   text: string
-  /** 所在章節的標題路徑（「背景 › 細節」），沒有標題時為空字串 */
+  /** Heading path of the section ("Background › Details"); an empty string when there's no heading */
   heading: string
 }
 
@@ -17,7 +17,7 @@ interface Block {
   line: number
   text: string
   heading: string
-  /** 標題行本身：開始新的 chunk */
+  /** The heading line itself: starts a new chunk */
   isHeading: boolean
 }
 
@@ -62,17 +62,17 @@ export function chunkMarkdown(body: string, maxChars = CHUNK_CHARS): Chunk[] {
   return chunks
 }
 
-/** 送進 embedding 的文字：加上筆記標題與章節，讓短的段落也有上下文 */
+/** Text sent for embedding: prefixed with the note title and section so short passages have context */
 export function embeddingText(title: string, chunk: Pick<Chunk, 'heading' | 'text'>): string {
   const path = chunk.heading ? `${title} › ${chunk.heading}` : title
   return `${path}\n\n${chunk.text}`
 }
 
-/** 依空行與標題切段；圍欄程式碼整段保留 */
+/** Splits into paragraphs by blank lines and headings; fenced code is kept whole */
 function splitBlocks(body: string): Block[] {
   const lines = body.split('\n').map((l) => l.replace(/\r$/, ''))
   const blocks: Block[] = []
-  const trail: string[] = [] // trail[i] = 第 i+1 級標題
+  const trail: string[] = [] // trail[i] = heading of level i+1
   let heading = ''
   let buf: string[] = []
   let start = 0
@@ -129,9 +129,9 @@ function splitBlocks(body: string): Block[] {
   return blocks
 }
 
-/** 依句子（中英文句號、問號、驚嘆號、換行）切開過長的段落，句子仍過長時硬切 */
+/** Splits an overlong paragraph by sentence (Chinese and English periods, question marks, exclamation marks, line breaks); a sentence that's still too long is cut hard */
 function splitLong(text: string, maxChars: number): { text: string; lineOffset: number }[] {
-  // 在句末標點（英文句點後須接空白，避免切開 3.14）與換行之後切開，不丟掉任何字元
+  // Split after sentence-ending punctuation (an English period must be followed by whitespace, so 3.14 isn't split) and line breaks, without dropping any characters
   const sentences = text.split(/(?<=[。！？]|[.!?](?=\s)|\n)/)
   const out: { text: string; lineOffset: number }[] = []
   let buf = ''

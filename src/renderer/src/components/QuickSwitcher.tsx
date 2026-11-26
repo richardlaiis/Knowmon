@@ -4,16 +4,16 @@ import { rankNotes } from '../lib/fuzzy'
 
 export interface QuickSwitcherProps {
   notes: NoteSummary[]
-  /** 最近開啟的路徑，越前面越近 */
+  /** Recently opened paths, most recent first */
   recent: string[]
-  /** newTab：Ctrl/Cmd+Enter、Ctrl/Cmd+點擊，或以「新分頁」模式開啟（Ctrl/Cmd+T） */
+  /** newTab: Ctrl/Cmd+Enter, Ctrl/Cmd+click, or opened in "new tab" mode (Ctrl/Cmd+T) */
   onOpen: (path: string, newTab: boolean) => void
   onClose: () => void
-  /** true 時選到的筆記一律開在新分頁 */
+  /** When true, the chosen note always opens in a new tab */
   newTab?: boolean
 }
 
-/** Ctrl/Cmd+O：模糊搜尋筆記名稱並開啟 */
+/** Ctrl/Cmd+O: fuzzy-search note names and open one */
 export function QuickSwitcher({
   notes,
   recent,

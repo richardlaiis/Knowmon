@@ -1,4 +1,4 @@
-// AI：Ollama／雲端服務狀態、總結、問答、agent
+// AI: Ollama / cloud provider status, summaries, Q&A, agent
 export { AiPanel } from './AiPanel'
 export { LlmSettingsDialog, type ApiKeyChanges } from './LlmSettingsDialog'
 export { describeStatus, useLlmStatus } from './status'

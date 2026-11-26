@@ -1,4 +1,4 @@
-// 圖譜邊的類型：顯示名稱與篩選偏好（localStorage）
+// Graph edge types: display names and filter preferences (localStorage)
 import type { LinkType } from '../../shared/types'
 
 export const EDGE_TYPES: { type: LinkType; label: string; title: string }[] = [
@@ -12,9 +12,9 @@ export const EDGE_TYPES: { type: LinkType; label: string; title: string }[] = [
 const ALL = EDGE_TYPES.map((t) => t.type)
 
 /**
- * 解析儲存的偏好：「a,-b」表示 a 開、b 關。沒有提到的類型預設開啟
- * （之後新增的類型，例如階段 5 的 semantic，在舊的偏好裡不會出現）。
- * 舊格式只記開著的類型（沒有 -），沒提到的原有類型視為關閉。
+ * Parses the saved preference: "a,-b" means a is on and b is off. Types not mentioned default to on
+ * (types added later, such as semantic in phase 5, don't appear in old preferences).
+ * The old format only recorded the types that were on (no -), so existing types not mentioned count as off.
  */
 export function parseEdgeTypes(raw: string | null): Set<LinkType> {
   if (raw === null) return new Set(ALL)
@@ -34,7 +34,7 @@ export function serializeEdgeTypes(types: ReadonlySet<LinkType>): string {
   return ALL.map((t) => (types.has(t) ? t : `-${t}`)).join(',')
 }
 
-/** 讀取已選的類型；沒有紀錄或無法讀取時全選 */
+/** Reads the selected types; everything is selected when there's no record or it can't be read */
 export function loadEdgeTypes(key: string): Set<LinkType> {
   try {
     return parseEdgeTypes(localStorage.getItem(key))
@@ -47,6 +47,6 @@ export function saveEdgeTypes(key: string, types: ReadonlySet<LinkType>): void {
   try {
     localStorage.setItem(key, serializeEdgeTypes(types))
   } catch {
-    // 無法儲存時仍可切換
+    // Switching still works when it can't be saved
   }
 }

@@ -16,19 +16,19 @@ const AXIS_KEY = 'knowmon.graph.timeAxis'
 const UNDATED_KEY = 'knowmon.graph.undated'
 
 export interface GlobalGraphProps {
-  /** false 時隱藏但保留（重新打開不需重建整張圖） */
+  /** When false, hidden but kept (reopening doesn't rebuild the whole graph) */
   visible: boolean
   version: number
   current: string | null
   theme: string
-  /** 座標快取（每個 vault 一份，由 App 保存） */
+  /** Position cache (one per vault, kept by App) */
   positions: Map<string, Point>
   onOpen: (path: string, newTab: boolean) => void
   onOpenSettings: () => void
   onError: (e: unknown) => void
 }
 
-/** 全域圖譜：所有筆記，可依邊類型與時間範圍篩選 */
+/** The global graph: every note, filterable by edge type and time range */
 export function GlobalGraph(props: GlobalGraphProps): React.JSX.Element {
   const all = useGraphData(props.version, props.onError)
   const [labels, setLabels] = useState(() => loadPref(LABELS_KEY, ['on', 'off'], 'on') === 'on')
@@ -44,7 +44,7 @@ export function GlobalGraph(props: GlobalGraphProps): React.JSX.Element {
 
   const data = useMemo(() => (all ? filterEdges(all, types) : null), [all, types])
   const domain = useMemo(() => (all ? timeDomain(all, time.axis) : null), [all, time.axis])
-  // 資料更新後範圍可能超出新的日期範圍
+  // After a data update the range may extend beyond the new dates
   const filter = useMemo(() => ({ ...time, range: clampRange(time.range, domain) }), [time, domain])
   const hidden = useMemo(() => (all ? hiddenByTime(all, filter) : new Set<string>()), [all, filter])
   const shown = data ? data.nodes.length - hidden.size : 0

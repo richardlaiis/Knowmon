@@ -1,9 +1,9 @@
-// GFM 表格的即時渲染：游標不在表格裡時，整張表格換成渲染好的 <table>；
-// 游標（或選取範圍）碰到表格就整張顯示原始 Markdown，在原始碼上編輯。
+// Live rendering of GFM tables: when the cursor isn't in a table, the whole table is replaced by a rendered <table>;
+// as soon as the cursor (or selection) touches it, the whole table shows its raw Markdown for editing.
 //
-// 取代跨越換行的裝飾（block widget）不能由 ViewPlugin 提供，所以表格用 StateField，
-// 與 livePreview.ts 的 ViewPlugin 分開。只渲染文件頂層的表格：引用或清單裡的表格
-// 整行取代會連 > 與清單標記一起吃掉，保持原樣。
+// Replace decorations spanning line breaks (block widgets) can't come from a ViewPlugin, so tables use a StateField,
+// separate from the ViewPlugin in livePreview.ts. Only top-level tables are rendered: replacing whole lines of a table
+// inside a quote or list would eat the > and list markers too, so those stay as they are.
 import { syntaxTree } from '@codemirror/language'
 import { type EditorState, type Extension, type Range, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
@@ -14,23 +14,23 @@ import { WIKILINK, frontmatterEnd, splitWikilink } from './syntax'
 
 export type Align = 'left' | 'center' | 'right' | null
 
-/** 格子裡的一段文字與它的樣式 */
+/** A piece of text in a cell, with its style */
 export interface CellSpan {
   text: string
   bold?: boolean
   italic?: boolean
   strike?: boolean
   code?: boolean
-  /** 外部連結 */
+  /** External link */
   url?: string
-  /** wikilink 目標 */
+  /** wikilink target */
   target?: string
-  /** 數學式（text 是 TeX）；display 為 $$…$$ */
+  /** Math (text is TeX); display for $$…$$ */
   math?: 'inline' | 'display'
 }
 
 export interface TableCell {
-  /** 點擊時游標要放的位置，相對於表格第一行的行首 */
+  /** Where the cursor goes on click, relative to the start of the table's first line */
   offset: number
   spans: CellSpan[]
 }
@@ -41,14 +41,14 @@ export interface TableModel {
   rows: TableCell[][]
 }
 
-/** 要渲染（沒有被游標碰到）的頂層表格；from/to 是整行範圍 */
+/** Top-level tables to render (not touched by the cursor); from/to cover whole lines */
 export interface RenderedTable {
   from: number
   to: number
   node: SyntaxNode
 }
 
-/** 文件頂層、不在 frontmatter 裡、沒有被選取範圍碰到的表格 */
+/** Tables at the top level of the document, outside the frontmatter and not touched by a selection */
 export function renderedTables(state: EditorState): RenderedTable[] {
   const { doc } = state
   const fmEnd = frontmatterEnd(doc)
@@ -64,7 +64,7 @@ export function renderedTables(state: EditorState): RenderedTable[] {
   return out
 }
 
-/** 分隔列（|:--|:-:|--:|）的對齊方式 */
+/** Alignment from the delimiter row (|:--|:-:|--:|) */
 function parseAlign(text: string): Align[] {
   let cells = text.trim().split('|')
   if (cells[0].trim() === '') cells = cells.slice(1)
@@ -79,7 +79,7 @@ function parseAlign(text: string): Align[] {
 
 type Style = Omit<CellSpan, 'text'>
 
-/** 把格子 [from, to] 的行內語法轉成一段段文字（隱藏標記） */
+/** Turns the inline syntax of cell [from, to] into pieces of text (marks hidden) */
 function cellSpans(
   state: EditorState,
   cell: SyntaxNode | null,
@@ -97,7 +97,7 @@ function cellSpans(
     return out
   }
 
-  /** 依序輸出 [a, b] 內的子節點，子節點之間的文字照原樣輸出 */
+  /** Outputs the child nodes within [a, b] in order, with the text between them as is */
   const walk = (parent: SyntaxNode, a: number, b: number, style: Style): void => {
     let pos = a
     for (let c = parent.firstChild; c; c = c.nextSibling) {
@@ -128,7 +128,7 @@ function cellSpans(
         return emit(code.replace(/\\\|/g, '|'), { ...style, code: true })
       }
       case 'InlineMath': {
-        // 和程式碼一樣，格子裡的 \| 還原成 |
+        // As with code, \| in a cell is restored to |
         const src = mathSource(n, (a, b) => doc.sliceString(a, b))
         if (!src.tex) return raw()
         return emit(src.tex.replace(/\\\|/g, '|'), {
@@ -139,7 +139,7 @@ function cellSpans(
       case 'Escape':
         return emit(doc.sliceString(n.from + 1, n.to), style)
       case 'Link': {
-        // [x] 沒有網址（例如 [[x]] 裡面）保留括號，之後由 wikilink 處理；裡面的 \| 仍要還原
+        // [x] without a URL (such as inside [[x]]) keeps its brackets and is handled as a wikilink later; \| inside still needs restoring
         const marks = kids(n, 'LinkMark')
         const url = kids(n, 'URL')[0]
         if (marks.length < 2 || !url) return walk(n, n.from, n.to, style)
@@ -149,13 +149,13 @@ function cellSpans(
         })
       }
       case 'Image': {
-        // 格子裡的圖片只顯示替代文字
+        // Images in cells show only their alt text
         const marks = kids(n, 'LinkMark')
         if (marks.length < 2 || !kids(n, 'URL')[0]) return raw()
         return emit(doc.sliceString(marks[0].to, marks[1].from), style)
       }
       case 'URL':
-        // GFM 自動連結（直接寫網址）
+        // GFM autolinks (a bare URL)
         return emit(doc.sliceString(n.from, n.to), { ...style, url: doc.sliceString(n.from, n.to) })
       default:
         return raw()
@@ -165,7 +165,7 @@ function cellSpans(
   if (cell) walk(cell, from, to, {})
   else emit(doc.sliceString(from, to), {})
 
-  // wikilink：解析器不認得，在合併後的文字上用正則找（程式碼裡的不算）
+  // wikilinks: the parser doesn't know them, so find them with a regex on the merged text (not inside code)
   const chars: Style[] = []
   for (const p of pieces) {
     const { text, ...style } = p
@@ -173,7 +173,7 @@ function cellSpans(
   }
   const text = pieces.map((p) => p.text).join('')
   const out: CellSpan[] = []
-  // 同一段（同一個 style 物件）的字元一定合併；數學式之間不合併（相鄰的 $a$$b$ 是兩個公式）
+  // Characters of the same piece (the same style object) are always merged; math isn't merged (adjacent $a$$b$ are two formulas)
   let lastStyle: Style | null = null
   const push = (s: string, style: Style): void => {
     if (!s) return
@@ -217,7 +217,7 @@ function stripUndefined(s: CellSpan): CellSpan {
   return out as unknown as CellSpan
 }
 
-/** 依 | 切出一列的格子；開頭與結尾的 | 不產生空格子 */
+/** Splits a row into cells by |; leading and trailing | produce no empty cells */
 function rowCells(state: EditorState, row: SyntaxNode, base: number): TableCell[] {
   const { doc } = state
   const delims: SyntaxNode[] = []
@@ -242,13 +242,13 @@ function rowCells(state: EditorState, row: SyntaxNode, base: number): TableCell[
     const from = a + (text.length - text.trimStart().length)
     const to = b - (text.length - text.trimEnd().length)
     const cell = cells.find((c) => c.from >= a && c.to <= b) ?? null
-    // 空格子：游標放在 | 之後的第一個空白之後（沒有空白就緊接在 | 後）
+    // An empty cell: the cursor goes after the first space following the | (or right after the | if there's no space)
     const offset = from < to ? from : Math.min(a + 1, b)
     return { offset: offset - base, spans: from < to ? cellSpans(state, cell, from, to) : [] }
   })
 }
 
-/** 把表格節點解析成渲染用的資料；位置相對於表格第一行的行首 */
+/** Parses a table node into render data; positions are relative to the start of the table's first line */
 export function parseTable(state: EditorState, table: SyntaxNode): TableModel {
   const base = state.doc.lineAt(table.from).from
   let header: TableCell[] = []
@@ -260,7 +260,7 @@ export function parseTable(state: EditorState, table: SyntaxNode): TableModel {
     else if (c.name === 'TableDelimiter' && align.length === 0)
       align = parseAlign(state.doc.sliceString(c.from, c.to))
   }
-  // 欄數以表頭為準：太短的列補空格子，太長的截掉（GFM 規則）
+  // The header sets the column count: short rows are padded with empty cells, long rows are cut (the GFM rule)
   const width = header.length
   const fit = (row: TableCell[]): TableCell[] => {
     const last = row[row.length - 1]
@@ -306,7 +306,7 @@ function spanDOM(s: CellSpan): Node {
 
 export class TableWidget extends WidgetType {
   constructor(
-    /** 表格原文；原文相同時解析結果也相同 */
+    /** The table source; the same source always parses the same */
     readonly source: string,
     readonly model: TableModel
   ) {
@@ -344,7 +344,7 @@ export class TableWidget extends WidgetType {
     wrap.append(table)
     return wrap
   }
-  /** 讓編輯器處理表格上的點擊（放游標、Ctrl+點擊連結） */
+  /** Lets the editor handle clicks on the table (placing the cursor, Ctrl+clicking links) */
   ignoreEvent(): boolean {
     return false
   }
@@ -372,16 +372,16 @@ const tableField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f)
 })
 
-/** 點擊格子：把游標放到該格的原始碼（表格因此展開成 Markdown） */
+/** Clicking a cell puts the cursor in that cell's source (so the table expands into Markdown) */
 const tableClicks = EditorView.domEventHandlers({
   mousedown(e, view) {
-    // Ctrl/Cmd+點擊交給連結與 wikilink 的處理
+    // Ctrl/Cmd+click goes to the link and wikilink handling
     if (e.button !== 0 || e.ctrlKey || e.metaKey) return false
     const target = e.target as HTMLElement
     const wrap = target.closest<HTMLElement>('.cm-lp-table-wrap')
     if (!wrap) return false
     const cell = target.closest<HTMLElement>('[data-offset]')
-    // 不在格子上（水平捲軸、留白）：交給瀏覽器，拖曳捲軸時不展開表格
+    // Not on a cell (the horizontal scrollbar, empty space): leave it to the browser, so dragging the scrollbar doesn't expand the table
     if (!cell) return true
     const pos = Math.min(view.posAtDOM(wrap) + Number(cell.dataset.offset), view.state.doc.length)
     view.dispatch({ selection: { anchor: pos } })
@@ -391,7 +391,7 @@ const tableClicks = EditorView.domEventHandlers({
   }
 })
 
-/** 表格即時渲染（屬於 livePreview()，原始碼模式不啟用） */
+/** Live table rendering (part of livePreview(); disabled in source mode) */
 export function tables(): Extension {
   return [tableField, tableClicks]
 }

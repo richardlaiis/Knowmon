@@ -1,4 +1,4 @@
-// 左右面板的寬度與開關（純函式 + localStorage 讀寫）
+// Widths and visibility of the left and right panels (pure functions + localStorage)
 export interface LayoutPrefs {
   left: number
   right: number
@@ -18,12 +18,12 @@ export const PANE_LIMITS = {
   right: { min: 220, max: 640 }
 } as const
 
-/** 編輯器至少保留這麼寬 */
+/** The editor always keeps at least this width */
 export const EDITOR_MIN = 360
 
 /**
- * 限制面板寬度：在 [min, max] 之間，且不能把編輯器擠到 EDITOR_MIN 以下。
- * other 是另一側面板目前佔用的寬度（關閉時為 0）。
+ * Clamps a panel width: within [min, max], without squeezing the editor below EDITOR_MIN.
+ * other is the width currently taken by the panel on the other side (0 when closed).
  */
 export function clampWidth(
   width: number,
@@ -68,6 +68,6 @@ export function saveLayout(p: LayoutPrefs): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(p))
   } catch {
-    // 無法儲存時仍可使用
+    // Still usable when it can't be saved
   }
 }

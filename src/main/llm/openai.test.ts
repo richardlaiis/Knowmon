@@ -32,7 +32,7 @@ function stream(parts: string[]): ReadableStream<Uint8Array> {
   })
 }
 
-/** 每個物件一個 SSE 事件，最後加上 [DONE] */
+/** One SSE event per object, followed by [DONE] */
 const sse = (objs: unknown[]): string[] => [
   ...objs.map((o) => `data: ${JSON.stringify(o)}\n\n`),
   'data: [DONE]\n\n'
@@ -73,7 +73,7 @@ const TOOLS: ToolDefinition[] = [
 ]
 
 describe('readSse', () => {
-  it('事件切在任意位置、CRLF、多行 data、註解與 [DONE]', async () => {
+  it('events split anywhere, CRLF, multi-line data, comments and [DONE]', async () => {
     const out: string[] = []
     await readSse(
       stream([': keep-alive\n\nda', 'ta: {"a":1}\r\n\r', '\ndata: x\ndata: y\n\ndata: [DONE]\n\n']),
@@ -82,7 +82,7 @@ describe('readSse', () => {
     expect(out).toEqual(['{"a":1}', 'x\ny'])
   })
 
-  it('最後沒有空行的事件也會送出；多位元組字元被切開', async () => {
+  it('sends an event with no trailing blank line; handles split multi-byte characters', async () => {
     const bytes = new TextEncoder().encode('data: {"t":"總結"}')
     const out: string[] = []
     await readSse(
@@ -100,7 +100,7 @@ describe('readSse', () => {
 })
 
 describe('toOpenAiMessages', () => {
-  it('工具呼叫轉成 OpenAI 格式：arguments 是字串、帶回 id 與 extra_content', () => {
+  it('converts tool calls to the OpenAI format: arguments as a string, with id and extra_content sent back', () => {
     const messages: ChatMessage[] = [
       { role: 'system', content: 's' },
       { role: 'user', content: 'u' },
@@ -111,7 +111,7 @@ describe('toOpenAiMessages', () => {
           {
             id: 'call_a',
             extra: { google: { thought_signature: 'sig' } },
-            function: { name: 'search_notes', arguments: { query: '跑步' } }
+            function: { name: 'search_notes', arguments: { query: 'running' } }
           }
         ]
       },
@@ -127,7 +127,7 @@ describe('toOpenAiMessages', () => {
           {
             id: 'call_a',
             type: 'function',
-            function: { name: 'search_notes', arguments: '{"query":"跑步"}' },
+            function: { name: 'search_notes', arguments: '{"query":"running"}' },
             extra_content: { google: { thought_signature: 'sig' } }
           }
         ]
@@ -136,7 +136,7 @@ describe('toOpenAiMessages', () => {
     ])
   })
 
-  it('沒有 id 時依位置產生固定的 id，tool 訊息依序對應', () => {
+  it('without ids, generates stable ids by position, matched by tool messages in order', () => {
     const messages: ChatMessage[] = [
       {
         role: 'assistant',
@@ -153,18 +153,22 @@ describe('toOpenAiMessages', () => {
     expect(out[0].tool_calls?.map((c) => c.id)).toEqual(['call_0_0', 'call_0_1'])
     expect(out[0].content).toBe('x')
     expect(out.slice(1).map((m) => m.tool_call_id)).toEqual(['call_0_0', 'call_0_1'])
-    // 同樣的輸入一律得到同樣的結果（prompt 快取）
+    // The same input always gives the same result (prompt cache)
     expect(toOpenAiMessages(messages)).toEqual(out)
   })
 })
 
 describe('createOpenAiCompatible', () => {
-  it('chat 串流片段、帶 Bearer key 與 temperature，不帶 Ollama 專用參數', async () => {
+  it('chat streams chunks with a Bearer key and temperature, without Ollama-only parameters', async () => {
     const { fetch, calls } = fakeFetch(
       () =>
         new Response(
           stream(
-            sse([delta({ role: 'assistant' }), delta({ content: '重' }), delta({ content: '點' })])
+            sse([
+              delta({ role: 'assistant' }),
+              delta({ content: 'Key' }),
+              delta({ content: ' points' })
+            ])
           )
         )
     )
@@ -174,8 +178,8 @@ describe('createOpenAiCompatible', () => {
       temperature: 0.3,
       numCtx: 8192
     })
-    expect(text).toBe('重點')
-    expect(parts).toEqual(['重', '點'])
+    expect(text).toBe('Key points')
+    expect(parts).toEqual(['Key', ' points'])
     expect(calls[0].url).toBe('https://api.example.com/v1/chat/completions')
     expect(calls[0].headers.Authorization).toBe('Bearer sk-test')
     expect(calls[0].body).toEqual({
@@ -186,7 +190,7 @@ describe('createOpenAiCompatible', () => {
     })
   })
 
-  it('不接受 temperature 的模型：不帶參數重送', async () => {
+  it('models that reject temperature: resend without it', async () => {
     const { fetch, calls } = fakeFetch((_u, init) => {
       const body = JSON.parse(String(init.body))
       if ('temperature' in body) {
@@ -205,13 +209,109 @@ describe('createOpenAiCompatible', () => {
     expect(calls[1].body).not.toHaveProperty('temperature')
   })
 
-  it('chatTools 送出工具定義，累積分段的參數，保留 id 與 extra_content', async () => {
+  it('output limit: max_tokens by default, max_completion_tokens for OpenAI; nothing when unset', async () => {
+    const ok = (): Response => new Response(stream(sse([delta({ content: 'ok' })])))
+    const { fetch, calls } = fakeFetch(ok)
+    await client(fetch).chat('m', [{ role: 'user', content: 'q' }], { maxTokens: 500 })
+    await client(fetch).chat('m', [{ role: 'user', content: 'q' }])
+    const openai = createOpenAiCompatible({
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'k',
+      label: 'OpenAI',
+      maxTokensParam: 'max_completion_tokens',
+      fetchImpl: fetch
+    })
+    await openai.chat('gpt-x', [{ role: 'user', content: 'q' }], { maxTokens: 700 })
+    expect(calls.map((c) => c.body)).toMatchObject([
+      { max_tokens: 500 },
+      {},
+      { max_completion_tokens: 700 }
+    ])
+    expect(calls[0].body).not.toHaveProperty('max_completion_tokens')
+    expect(calls[1].body).not.toHaveProperty('max_tokens')
+    expect(calls[2].body).not.toHaveProperty('max_tokens')
+  })
+
+  it('resends with the other name when a parameter name is rejected; works together with the temperature resend', async () => {
+    const { fetch, calls } = fakeFetch((_u, init) => {
+      const body = JSON.parse(String(init.body))
+      if ('max_tokens' in body) {
+        return json(
+          {
+            error: {
+              message:
+                "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."
+            }
+          },
+          400
+        )
+      }
+      if ('temperature' in body) {
+        return json({ error: { message: "Unsupported value: 'temperature'" } }, 400)
+      }
+      return new Response(stream(sse([delta({ content: 'ok' })])))
+    })
+    const text = await client(fetch).chat('o-mini', [{ role: 'user', content: 'q' }], {
+      temperature: 0.2,
+      maxTokens: 300
+    })
+    expect(text).toBe('ok')
+    expect(calls).toHaveLength(3)
+    expect(calls[2].body).toMatchObject({ max_completion_tokens: 300 })
+    expect(calls[2].body).not.toHaveProperty('temperature')
+  })
+
+  it('both names rejected (for example the value exceeds the model limit): reports the first error without resending forever', async () => {
+    const { fetch, calls } = fakeFetch((_u, init) => {
+      const body = JSON.parse(String(init.body))
+      const name = 'max_tokens' in body ? 'max_tokens' : 'max_completion_tokens'
+      return json({ error: { message: `${name} is too large: 999999` } }, 400)
+    })
+    const e = await rejection(
+      client(fetch).chat('m', [{ role: 'user', content: 'q' }], { maxTokens: 999999 })
+    )
+    expect(e.message).toContain('max_tokens is too large')
+    expect(calls).toHaveLength(2)
+  })
+
+  it("reports truncation when finish_reason is 'length'", async () => {
+    const { fetch } = fakeFetch(
+      () =>
+        new Response(
+          stream(
+            sse([
+              delta({ content: 'Half' }),
+              { choices: [{ index: 0, delta: {}, finish_reason: 'length' }] }
+            ])
+          )
+        )
+    )
+    let truncated = 0
+    await client(fetch).chat('m', [{ role: 'user', content: 'q' }], {
+      maxTokens: 256,
+      onTruncated: () => truncated++
+    })
+    expect(truncated).toBe(1)
+
+    const { fetch: done } = fakeFetch(
+      () =>
+        new Response(
+          stream(sse([{ choices: [{ index: 0, delta: { content: 'x' }, finish_reason: 'stop' }] }]))
+        )
+    )
+    await client(done).chat('m', [{ role: 'user', content: 'q' }], {
+      onTruncated: () => truncated++
+    })
+    expect(truncated).toBe(1)
+  })
+
+  it('chatTools sends tool definitions, accumulates split arguments, and keeps id and extra_content', async () => {
     const { fetch, calls } = fakeFetch(
       () =>
         new Response(
           stream(
             sse([
-              delta({ content: '我來找' }),
+              delta({ content: 'Let me look' }),
               delta({
                 tool_calls: [
                   {
@@ -223,7 +323,7 @@ describe('createOpenAiCompatible', () => {
                   }
                 ]
               }),
-              delta({ tool_calls: [{ index: 0, function: { arguments: 'ry":"跑步"}' } }] }),
+              delta({ tool_calls: [{ index: 0, function: { arguments: 'ry":"running"}' } }] }),
               delta({
                 tool_calls: [
                   { index: 1, id: 'call_2', function: { name: 'get_note', arguments: 'not json' } }
@@ -234,11 +334,11 @@ describe('createOpenAiCompatible', () => {
         )
     )
     const res = await client(fetch).chatTools('gpt-x', [{ role: 'user', content: 'q' }], TOOLS)
-    expect(res.content).toBe('我來找')
+    expect(res.content).toBe('Let me look')
     expect(res.toolCalls).toEqual([
       {
         name: 'search_notes',
-        arguments: { query: '跑步' },
+        arguments: { query: 'running' },
         id: 'call_1',
         extra: { google: { thought_signature: 'sig' } }
       },
@@ -247,7 +347,7 @@ describe('createOpenAiCompatible', () => {
     expect((calls[0].body as { tools: unknown }).tools).toEqual(TOOLS)
   })
 
-  it('沒有 index 的服務：每個工具呼叫各自一個；沒有工具時不送 tools', async () => {
+  it('providers without index: one call each; no tools parameter without tools', async () => {
     const { fetch, calls } = fakeFetch(
       () =>
         new Response(
@@ -271,7 +371,7 @@ describe('createOpenAiCompatible', () => {
     expect(calls[0].body).not.toHaveProperty('tools')
   })
 
-  it('HTTP 錯誤依狀態碼分類，帶上服務商的訊息（含 Gemini 的陣列格式）', async () => {
+  it("classifies HTTP errors by status code with the provider's message (including Gemini's array format)", async () => {
     const at = (status: number, body: unknown): typeof fetch =>
       fakeFetch(() => json(body, status)).fetch
     const msgs: ChatMessage[] = [{ role: 'user', content: 'q' }]
@@ -300,7 +400,7 @@ describe('createOpenAiCompatible', () => {
     expect(other.message).toContain('OpenAI error 500')
   })
 
-  it('串流中的錯誤、連不上、取消', async () => {
+  it('errors mid-stream, unreachable, cancelled', async () => {
     const msgs: ChatMessage[] = [{ role: 'user', content: 'q' }]
     const mid = await rejection(
       client(
@@ -332,7 +432,7 @@ describe('createOpenAiCompatible', () => {
     expect(aborted.kind).toBe('aborted')
   })
 
-  it('models：去掉 Gemini 的 models/ 前綴、過濾非對話模型、排序去重', async () => {
+  it("models: strips Gemini's models/ prefix, filters out non-chat models, sorts and dedupes", async () => {
     const { fetch, calls } = fakeFetch(() =>
       json({
         data: [

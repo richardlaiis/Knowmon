@@ -1,16 +1,16 @@
-// 讓節點連同下方的標籤一起不重疊的碰撞力（d3-force 自訂 force）。
-// Cytoscape 的標籤與節點在同一個座標系（跟著縮放），所以版面上不重疊，任何縮放倍率都不會重疊。
+// A collision force that keeps nodes and the labels below them from overlapping (a custom d3-force force).
+// Cytoscape's labels share the nodes' coordinate system (scaling with zoom), so no overlap in the layout means no overlap at any zoom level.
 import type { Force, SimulationNodeDatum } from 'd3-force'
 
-/** 與 style.ts 的標籤樣式一致 */
+/** Matches the label style in style.ts */
 export const LABEL_FONT_SIZE = 11
 export const LABEL_GAP = 4
-/** 每個佔位框四周保留的空隙 */
+/** Gap kept around each box */
 const PAD = 3
 
 /**
- * 估計標籤寬度（Worker 裡沒有 DOM 可量字）：中日韓文字與全形符號約一個字寬，其他約 0.6 個字寬。
- * 寧可估大一點：略多的空隙比重疊好。
+ * Estimates label width (there's no DOM to measure text in a Worker): CJK characters and full-width symbols are about one em wide, others about 0.6.
+ * Better to overestimate: a little extra space beats overlap.
  */
 export function estimateLabelWidth(text: string, fontSize = LABEL_FONT_SIZE): number {
   let w = 0
@@ -21,7 +21,7 @@ export function estimateLabelWidth(text: string, fontSize = LABEL_FONT_SIZE): nu
   return Math.ceil(w * fontSize)
 }
 
-/** 節點加上標籤的佔位框，以節點中心為原點：左右各 half，上 top、下 bottom */
+/** The box covering a node plus its label, with the node center as the origin: half to each side, top above, bottom below */
 export interface Footprint {
   half: number
   top: number
@@ -41,15 +41,15 @@ export interface RectNode extends SimulationNodeDatum {
   box: Footprint
 }
 
-/** 格子大小：大部分佔位框只會落在 1–4 格 */
+/** Grid cell size: most boxes fall in 1–4 cells */
 const CELL = 80
 const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768)
 
 /**
- * 找出重疊的佔位框並推開，沿重疊較少的方向。回傳這一輪發現的重疊數。
- * - velocity：改速度（模擬過程中使用，與 d3 的 forceCollide 相同做法），推開 strength 倍的重疊量
- * - position：直接改座標（收斂後的整理），完整推開；被固定（拖曳中）的節點不動，由另一個節點讓開
- * 以格子分區，只比較附近的節點，每一輪約 O(n)。
+ * Finds overlapping boxes and pushes them apart along the axis with less overlap. Returns the number of overlaps found this round.
+ * - velocity: changes velocity (during the simulation, as d3's forceCollide does), pushing apart strength × the overlap
+ * - position: changes positions directly (cleanup after convergence), pushing apart fully; pinned (dragged) nodes stay put and the other node moves
+ * Uses grid partitioning to compare only nearby nodes, about O(n) per round.
  */
 function collidePass(
   nodes: RectNode[],
@@ -106,12 +106,12 @@ function collidePass(
           const a = nodes[i]
           const b = nodes[j]
           const axis = ox < oy ? 'x' : 'y'
-          // 中心相同時依索引決定方向，避免卡住
+          // When centers coincide, pick the direction by index so it can't get stuck
           const dir =
             Math.sign(
               axis === 'x' ? x1[j] + x2[j] - x1[i] - x2[i] : y1[j] + y2[j] - y1[i] - y2[i]
             ) || 1
-          // 直接移動座標時多推 0.5px，避免浮點誤差讓剛好相接的框又被算成重疊
+          // When moving positions directly, push an extra 0.5px so float error can't make boxes that just touch count as overlapping again
           const overlap = axis === 'x' ? ox : oy
           const total = mode === 'velocity' ? overlap * strength : overlap + 0.5
           const aFixed = fixed(a)
@@ -127,7 +127,7 @@ function collidePass(
   return found
 }
 
-/** 模擬過程中的矩形碰撞力（改速度） */
+/** Rectangular collision force during the simulation (changes velocity) */
 export function forceRectCollide<N extends RectNode>(
   strength = 1,
   iterations = 2
@@ -145,8 +145,8 @@ export function forceRectCollide<N extends RectNode>(
 }
 
 /**
- * 收斂後的整理：只做碰撞，直接移動座標直到沒有重疊（或達到上限）。
- * 每個節點只移動解開重疊所需的最小距離，整體形狀不變。回傳最後一輪剩下的重疊數。
+ * Cleanup after convergence: collision only, moving positions directly until nothing overlaps (or a limit is reached).
+ * Each node moves only the minimum distance needed to resolve its overlap, so the overall shape is unchanged. Returns the overlaps left in the last round.
  */
 export function resolveOverlaps(nodes: RectNode[], maxPasses = 60): number {
   const stamp = new Int32Array(nodes.length)

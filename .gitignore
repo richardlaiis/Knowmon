@@ -5,7 +5,7 @@ out
 .eslintcache
 *.log*
 
-# Knowmon 索引與歷程（每個 vault 各自一份）
+# Knowmon index and history (one per vault)
 test-vault/.knowmon
 .vscode/
 ./noting_test/

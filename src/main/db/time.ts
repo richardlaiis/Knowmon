@@ -1,11 +1,11 @@
-// 時間層的 DB 操作：重算時間邊、時間軸的事件查詢
+// DB operations for the time layer: recomputing time edges, querying events for the timeline
 import { deriveTimeLinks, type TimeLinkType } from '../indexer/timeLinks'
 import type { ActivityEvent, TimeSettings } from '../../shared/types'
 import type { DB } from '.'
 
 export const TIME_LINK_TYPES: readonly TimeLinkType[] = ['same_session', 'same_day', 'sequence']
 
-/** 刪掉所有時間邊，依目前的筆記、編輯事件與設定重新寫入 */
+/** Deletes all time edges and rewrites them from the current notes, edit events and settings */
 export function rebuildTimeLinks(db: DB, settings: TimeSettings): void {
   const notes = db.prepare('SELECT id, path, event_date AS eventDate FROM notes').all() as {
     id: number
@@ -24,7 +24,7 @@ export function rebuildTimeLinks(db: DB, settings: TimeSettings): void {
   })()
 }
 
-/** [from, to) 之間的 create / edit 事件，依時間排序 */
+/** create / edit events in [from, to), sorted by time */
 export function listActivity(db: DB, from: number, to: number): ActivityEvent[] {
   return db
     .prepare(

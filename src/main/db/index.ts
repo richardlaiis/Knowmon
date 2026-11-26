@@ -1,4 +1,4 @@
-// schema 與查詢。DB 只是索引：schema 版本不符時直接刪掉重建（歷程會從 events.jsonl 重播）。
+// Schema and queries. The DB is only an index: on a schema version mismatch it is deleted and rebuilt (history is replayed from events.jsonl).
 import fs from 'node:fs'
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
@@ -28,7 +28,7 @@ CREATE TABLE note_events (
 CREATE INDEX note_events_note ON note_events(note_id, kind, ts);
 CREATE INDEX note_events_ts ON note_events(ts);
 
--- 邊有類型與權重。wikilink 的 dst 為 NULL 表示目標筆記尚未建立，target 保留原始寫法以便之後補上。
+-- Edges have a type and a weight. A NULL dst on a wikilink means the target note doesn't exist yet; target keeps the original text so it can be connected later.
 CREATE TABLE links (
   src    INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
   dst    INTEGER REFERENCES notes(id) ON DELETE SET NULL,
@@ -40,7 +40,7 @@ CREATE TABLE links (
 CREATE INDEX links_src ON links(src, type);
 CREATE INDEX links_dst ON links(dst, type);
 
--- 全文搜尋，rowid = notes.id。trigram 才能搜尋中文。
+-- Full-text search, rowid = notes.id. trigram is needed to search Chinese.
 CREATE VIRTUAL TABLE notes_fts USING fts5(title, body, tokenize='trigram');
 CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
   DELETE FROM notes_fts WHERE rowid = old.id;
@@ -49,8 +49,8 @@ CREATE TRIGGER notes_fts_title AFTER UPDATE OF title ON notes BEGIN
   UPDATE notes_fts SET title = new.title WHERE rowid = new.id;
 END;
 
--- 供 LLM 檢索的文字塊。AUTOINCREMENT：id 不重複使用，背景 embedding 回來時不會寫到新的同號 chunk。
--- 向量表（vec_chunks、vec_notes）在第一次拿到 embedding 時才建立（維度取決於模型），見 vectors.ts。
+-- Text chunks for LLM retrieval. AUTOINCREMENT: ids are never reused, so embeddings returning in the background can't land on a new chunk with the same id.
+-- The vector tables (vec_chunks, vec_notes) are created when the first embedding arrives (the dimension depends on the model); see vectors.ts.
 CREATE TABLE chunks (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
   note_id  INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -66,7 +66,7 @@ CREATE INDEX chunks_pending ON chunks(embedded) WHERE embedded = 0;
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
-/** 開啟（必要時建立/重建）資料庫。file 為 ':memory:' 時用於測試。 */
+/** Opens (creating or rebuilding as needed) the database. file is ':memory:' in tests. */
 export function openDb(file: string): DB {
   let db = new Database(file)
   const version = db.pragma('user_version', { simple: true }) as number
@@ -86,14 +86,14 @@ export function openDb(file: string): DB {
 }
 
 /**
- * 打包後 node_modules 在 app.asar 裡，但 SQLite 以 dlopen 直接讀檔、不經過 Electron 的 asar 轉址，
- * 所以要換成 asarUnpack 解出的 app.asar.unpacked（見 electron-builder.yml）。不在 asar 裡的路徑原樣回傳。
+ * When packaged, node_modules is inside app.asar, but SQLite reads the file directly with dlopen, bypassing Electron's asar redirection,
+ * so the path must point to app.asar.unpacked as unpacked by asarUnpack (see electron-builder.yml). Paths outside an asar are returned unchanged.
  */
 export function unpackedPath(p: string): string {
   return p.replace(/([\\/])app\.asar(?=[\\/])/, '$1app.asar.unpacked')
 }
 
-/** 載入 sqlite-vec；失敗時（不支援的平台）向量功能停用，其餘照常 */
+/** Loads sqlite-vec; if that fails (an unsupported platform), vector features are disabled and everything else works */
 function loadVectorExtension(db: DB): void {
   try {
     db.loadExtension(unpackedPath(sqliteVec.getLoadablePath()))
@@ -135,7 +135,7 @@ export function listAllNotes(db: DB): Note[] {
 
 export type NoteInput = Omit<Note, 'id'>
 
-/** 依 path 新增或更新筆記，回傳 id */
+/** Inserts or updates a note by path and returns its id */
 export function upsertNote(db: DB, n: NoteInput): number {
   const row = db
     .prepare(
@@ -192,7 +192,7 @@ export function listNoteSummaries(db: DB): NoteSummary[] {
     .all() as NoteSummary[]
 }
 
-// ---- 全文索引 ----
+// ---- Full-text index ----
 
 export function setNoteBody(db: DB, noteId: number, title: string, body: string): void {
   db.prepare('DELETE FROM notes_fts WHERE rowid = ?').run(noteId)
@@ -205,7 +205,7 @@ export function getNoteBody(db: DB, noteId: number): string | null {
   return row ? row.body : null
 }
 
-// ---- 連結 ----
+// ---- Links ----
 
 export interface LinkRow {
   src: number
@@ -215,7 +215,7 @@ export interface LinkRow {
   weight: number
 }
 
-/** 依目前的筆記建立 wikilink 解析器 */
+/** Builds a wikilink resolver from the current notes */
 export function linkResolver(db: DB): (target: string) => number | null {
   const rows = db.prepare('SELECT id, path FROM notes').all() as { id: number; path: string }[]
   const ids = new Map(rows.map((r) => [r.path, r.id]))
@@ -226,7 +226,7 @@ export function linkResolver(db: DB): (target: string) => number | null {
   }
 }
 
-/** 以新的 wikilink 取代某篇筆記原有的全部 wikilink */
+/** Replaces all of a note's wikilinks with new ones */
 export function setWikilinks(
   db: DB,
   src: number,
@@ -240,7 +240,7 @@ export function setWikilinks(
   for (const l of links) insert.run(src, resolve(l.target), l.target, l.count)
 }
 
-/** 筆記新增、改名、刪除後，重新解析所有 wikilink 的目標（不需要重讀檔案） */
+/** After notes are created, renamed or deleted, re-resolves every wikilink target (without rereading files) */
 export function relinkWikilinks(
   db: DB,
   resolve: (target: string) => number | null = linkResolver(db)

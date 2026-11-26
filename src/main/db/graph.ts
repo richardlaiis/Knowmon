@@ -1,4 +1,4 @@
-// 圖譜資料：筆記為節點，已解析的 wikilink 與時間邊為邊（尚未建立的目標不列入）
+// Graph data: notes are nodes, and resolved wikilinks and time edges are edges (targets that don't exist yet are left out)
 import { localDay } from '../../shared/time'
 import type { GraphData, GraphEdge, GraphNode } from '../../shared/types'
 import type { DB } from '.'
@@ -9,7 +9,7 @@ export function getGraph(db: DB): GraphData {
     .all() as (Omit<GraphNode, 'activeDays'> & { id: number })[]
   const days = activeDays(db)
   const nodes = rows.map(({ id, ...n }) => ({ ...n, activeDays: days.get(id) ?? [] }))
-  // 同一對筆記可能有多列（[[a]] 與 [[資料夾/a]] 解析到同一篇），合併並加總權重
+  // A pair of notes may have several rows ([[a]] and [[資料夾/a]] resolving to the same note), so merge them and sum the weights
   const edges = db
     .prepare(
       `SELECT s.path AS source, d.path AS target, l.type AS type, SUM(l.weight) AS weight
@@ -24,7 +24,7 @@ export function getGraph(db: DB): GraphData {
   return { nodes, edges }
 }
 
-/** 每篇筆記有 create / edit 事件的日期（本地時區，遞增、不重複） */
+/** Dates on which each note has create / edit events (local time zone, ascending, unique) */
 function activeDays(db: DB): Map<number, string[]> {
   const rows = db
     .prepare(

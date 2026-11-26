@@ -22,7 +22,7 @@ const dist = (p: Float32Array, i: number, j: number): number =>
   Math.hypot(p[i * 2] - p[j * 2], p[i * 2 + 1] - p[j * 2 + 1])
 
 describe('ForceLayout', () => {
-  it('相連的節點會靠近，不相連的會分開', () => {
+  it('connected nodes move closer and unconnected ones apart', () => {
     const layout = new ForceLayout(
       [
         { id: 'a', x: -300, y: 0, r: 5 },
@@ -38,19 +38,19 @@ describe('ForceLayout', () => {
     expect(layout.done).toBe(true)
   })
 
-  it('positions 依 ids 順序輸出', () => {
+  it('positions are output in the order of ids', () => {
     const layout = new ForceLayout([{ id: 'x', x: 1, y: 2, r: 5 }], [])
     expect(layout.ids).toEqual(['x'])
     expect([...layout.positions()]).toEqual([1, 2])
   })
 
-  it('忽略指向不存在節點的邊', () => {
+  it('ignores edges pointing to missing nodes', () => {
     expect(
-      () => new ForceLayout([{ id: 'a', x: 0, y: 0, r: 5 }], [{ source: 'a', target: '不存在' }])
+      () => new ForceLayout([{ id: 'a', x: 0, y: 0, r: 5 }], [{ source: 'a', target: 'missing' }])
     ).not.toThrow()
   })
 
-  it('pin 固定節點並重新加熱，unpin 後恢復自由', () => {
+  it('pin fixes a node and reheats; after unpin it moves freely again', () => {
     const layout = new ForceLayout(
       [
         { id: 'a', x: 0, y: 0, r: 5 },
@@ -71,7 +71,7 @@ describe('ForceLayout', () => {
     expect(layout.positions()[0]).not.toBe(500)
   })
 
-  it('tickFor 在時間預算內停止，至少算一步', () => {
+  it('tickFor stops within the time budget, computing at least one step', () => {
     const { nodes, edges } = randomGraph(50)
     const layout = new ForceLayout(nodes, edges)
     let t = 0
@@ -79,14 +79,14 @@ describe('ForceLayout', () => {
     expect(layout.tickFor(0, () => 0)).toBe(1)
   })
 
-  it('1000 節點、2000 條邊在幾秒內收斂', () => {
+  it('converges within a few seconds for 1000 nodes and 2000 edges', () => {
     const { nodes, edges } = randomGraph(1000)
     const layout = new ForceLayout(nodes, edges)
     const start = performance.now()
     let ticks = 0
     while (!layout.done) ticks += layout.tickFor(50)
     const ms = performance.now() - start
-    // 寬鬆的上限，避免機器差異造成誤判；實測約 1–2 秒
+    // A loose limit to avoid false failures across machines; measured at about 1–2 seconds
     expect(ms).toBeLessThan(8000)
     expect(ticks).toBeLessThan(400)
     expect([...layout.positions()].every(Number.isFinite)).toBe(true)

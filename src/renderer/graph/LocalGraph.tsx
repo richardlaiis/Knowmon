@@ -20,13 +20,13 @@ export interface LocalGraphProps {
   onError: (e: unknown) => void
 }
 
-/** 單篇局部圖：目前筆記與 depth 步內相連的筆記（只走選取的邊類型） */
+/** The per-note local graph: the current note and notes within depth steps (following only the selected edge types) */
 export function LocalGraph(props: LocalGraphProps): React.JSX.Element {
   const global = useGraphData(props.version, props.onError)
   const [depth, setDepth] = useState(() => loadPref(DEPTH_KEY, DEPTHS, '1'))
   const [fitKey, setFitKey] = useState(0)
   const [types, setTypes] = useState<Set<LinkType>>(() => loadEdgeTypes(TYPES_KEY))
-  // 先篩選邊的類型再走 BFS：關掉的類型不算「相連」
+  // Filter edge types before the BFS: types that are off don't count as "linked"
   const data = useMemo(
     () => (global ? localSubgraph(filterEdges(global, types), props.path, Number(depth)) : null),
     [global, types, props.path, depth]

@@ -5,7 +5,7 @@ import { isNotePath } from './paths'
 
 const collator = new Intl.Collator('zh-Hant', { numeric: true })
 
-/** 建出檔案樹：資料夾在前、依名稱排序，只列出 .md，略過隱藏檔。 */
+/** Builds the file tree: folders first, sorted by name, listing only .md and skipping hidden files. */
 export async function buildTree(root: string): Promise<TreeNode> {
   return {
     name: path.basename(root),
@@ -37,7 +37,7 @@ async function readFolder(root: string, rel: string): Promise<TreeNode[]> {
   return [...folders.sort(byName), ...files.sort(byName)]
 }
 
-/** 列出 vault 內所有筆記的相對路徑 */
+/** Lists the relative paths of every note in the vault */
 export async function listNotes(root: string, rel = ''): Promise<string[]> {
   const entries = await fs.readdir(path.join(root, rel), { withFileTypes: true })
   const out: string[] = []

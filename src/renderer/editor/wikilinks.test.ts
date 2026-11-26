@@ -10,45 +10,51 @@ const note = (path: string): NoteSummary => ({
 })
 
 describe('openWikilinkQuery', () => {
-  it('游標在 [[ 之後時回傳已輸入的文字', () => {
-    expect(openWikilinkQuery('見 [[')).toBe('')
-    expect(openWikilinkQuery('見 [[原子')).toBe('原子')
-    expect(openWikilinkQuery('[[a]] 與 [[b c')).toBe('b c')
+  it('returns the text typed so far when the cursor is after [[', () => {
+    expect(openWikilinkQuery('See [[')).toBe('')
+    expect(openWikilinkQuery('See [[Atom')).toBe('Atom')
+    expect(openWikilinkQuery('[[a]] and [[b c')).toBe('b c')
   })
 
-  it('連結已結束或已輸入 | # 時不補全', () => {
+  it('does not complete when the link is closed or | or # has been typed', () => {
     expect(openWikilinkQuery('[[a]]')).toBeNull()
-    expect(openWikilinkQuery('[[a|顯示')).toBeNull()
-    expect(openWikilinkQuery('[[a#標題')).toBeNull()
-    expect(openWikilinkQuery('[單括號')).toBeNull()
+    expect(openWikilinkQuery('[[a|label')).toBeNull()
+    expect(openWikilinkQuery('[[a#heading')).toBeNull()
+    expect(openWikilinkQuery('[single bracket')).toBeNull()
   })
 })
 
 describe('wikilinkAt', () => {
-  const line = '見 [[原子習慣|書]] 與 [[深度工作#第二章]]'
-  it('回傳點擊位置的連結目標', () => {
-    expect(wikilinkAt(line, 3)).toBe('原子習慣')
-    expect(wikilinkAt(line, 12)).toBe('原子習慣')
-    expect(wikilinkAt(line, 20)).toBe('深度工作')
+  const line = 'See [[Atomic Habits|book]] and [[Deep Work#Chapter 2]]'
+  it('returns the link target at the click position', () => {
+    expect(wikilinkAt(line, 5)).toBe('Atomic Habits')
+    expect(wikilinkAt(line, 26)).toBe('Atomic Habits')
+    expect(wikilinkAt(line, 36)).toBe('Deep Work')
   })
 
-  it('不在連結上或只有標題時回傳 null', () => {
+  it('returns null when not on a link or when it is only a heading', () => {
     expect(wikilinkAt(line, 0)).toBeNull()
-    expect(wikilinkAt('[[#標題]]', 3)).toBeNull()
+    expect(wikilinkAt('[[#heading]]', 3)).toBeNull()
   })
 })
 
 describe('wikilinkOptions', () => {
-  const notes = [note('讀書筆記/原子習慣.md'), note('封存/原子習慣.md'), note('歡迎.md')]
+  const notes = [
+    note('Books/Atomic Habits.md'),
+    note('Archive/Atomic Habits.md'),
+    note('Welcome.md')
+  ]
 
-  it('同名筆記插入帶資料夾的目標，並顯示所在資料夾', () => {
-    expect(wikilinkOptions(notes, '原子')).toEqual([
-      { label: '原子習慣', detail: '封存', text: '原子習慣' },
-      { label: '原子習慣', detail: '讀書筆記', text: '讀書筆記/原子習慣' }
+  it('a note with a duplicate name inserts a target with its folder, and shows the folder', () => {
+    expect(wikilinkOptions(notes, 'atom')).toEqual([
+      { label: 'Atomic Habits', detail: 'Archive', text: 'Archive/Atomic Habits' },
+      { label: 'Atomic Habits', detail: 'Books', text: 'Atomic Habits' }
     ])
   })
 
-  it('根目錄的筆記沒有資料夾說明', () => {
-    expect(wikilinkOptions(notes, '歡迎')).toEqual([{ label: '歡迎', detail: '', text: '歡迎' }])
+  it('notes in the root have no folder description', () => {
+    expect(wikilinkOptions(notes, 'Welcome')).toEqual([
+      { label: 'Welcome', detail: '', text: 'Welcome' }
+    ])
   })
 })

@@ -1,17 +1,17 @@
-// 筆記中的圖片：即時渲染用的圖片 widget，以及在編輯器貼上／拖進圖片。
-// 路徑規則（只支援相對於筆記的路徑）見 shared/assets.ts。
+// Images in notes: the image widget for live rendering, and pasting/dropping images into the editor.
+// For the path rules (only paths relative to the note), see shared/assets.ts.
 import { Facet, type Extension } from '@codemirror/state'
 import { EditorView, WidgetType } from '@codemirror/view'
 import { assetUrl, imageMarkdown, pastedImageName } from '../../shared/assets'
 
-/** 目前編輯的筆記路徑；圖片的相對路徑以它所在的資料夾為基準 */
+/** Path of the note being edited; relative image paths are based on its folder */
 export const notePath = Facet.define<string, string>({
   combine: (values) => values[values.length - 1] ?? ''
 })
 
 export class ImageWidget extends WidgetType {
   constructor(
-    /** vault 相對路徑 */
+    /** Vault-relative path */
     readonly path: string,
     readonly alt: string
   ) {
@@ -28,7 +28,7 @@ export class ImageWidget extends WidgetType {
     img.alt = this.alt
     img.title = this.alt || this.path
     img.draggable = false
-    // 圖片載入後高度才確定，讓 CodeMirror 重新量測行高
+    // The height is only known after the image loads, so have CodeMirror measure the line again
     img.onload = () => view.requestMeasure()
     img.onerror = () => {
       wrap.classList.add('cm-lp-image-missing')
@@ -38,14 +38,14 @@ export class ImageWidget extends WidgetType {
     wrap.append(img)
     return wrap
   }
-  /** 點擊圖片時讓編輯器把游標放在這裡（顯示原始語法） */
+  /** Where the editor puts the cursor when the image is clicked (showing the raw syntax) */
   ignoreEvent(): boolean {
     return false
   }
 }
 
 export interface ImagePasteOptions {
-  /** 存入圖片，回傳 vault 相對路徑（notes.saveAttachment） */
+  /** Saves an image and returns its vault-relative path (notes.saveAttachment) */
   save: (notePath: string, fileName: string, data: Uint8Array) => Promise<string>
   onError: (e: unknown) => void
 }
@@ -55,8 +55,8 @@ function imageFiles(data: DataTransfer | null): File[] {
 }
 
 /**
- * 貼上或拖進圖片時存到 vault（attachments/），在游標或放開的位置插入 ![](相對路徑)。
- * 剪貼簿同時有文字時（例如從文書軟體複製）照一般文字貼上。
+ * When an image is pasted or dropped, saves it to the vault (attachments/) and inserts ![](relative path) at the cursor or drop position.
+ * When the clipboard also has text (for example copied from a word processor), it's pasted as ordinary text.
  */
 export function imagePaste(opts: ImagePasteOptions): Extension {
   const insert = async (view: EditorView, files: File[], pos: number | null): Promise<void> => {
@@ -70,7 +70,7 @@ export function imagePaste(opts: ImagePasteOptions): Extension {
     } catch (e) {
       opts.onError(e)
     }
-    // 存檔期間編輯器可能已關閉；筆記可能改名，所以用插入時的路徑計算相對路徑
+    // The editor may have closed while saving, and the note may have been renamed, so the relative path uses the path at insertion time
     if (saved.length === 0 || !view.dom.isConnected) return
     const note = view.state.facet(notePath)
     const text = saved.map((p) => imageMarkdown(note, p)).join('\n')

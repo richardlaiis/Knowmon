@@ -28,7 +28,7 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 describe('buildTree', () => {
-  it('資料夾在前、依 zh-Hant 自然排序、只列 .md、略過隱藏檔', async () => {
+  it('folders first, natural zh-Hant ordering, only .md, hidden files skipped', async () => {
     const tree = await buildTree(root)
     expect(tree.path).toBe('')
     expect(tree.children!.map((c) => c.path)).toEqual([
@@ -48,7 +48,7 @@ describe('buildTree', () => {
 })
 
 describe('listNotes', () => {
-  it('遞迴列出所有筆記', async () => {
+  it('lists every note recursively', async () => {
     expect((await listNotes(root)).sort()).toEqual(
       ['a.md', 'b.md', '日記/2026-10-06.md', '筆記10.md', '筆記2.md'].sort()
     )

@@ -12,17 +12,17 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
 describe('settings', () => {
-  it('沒有設定檔時回傳預設值', () => {
+  it('returns the defaults when there is no settings file', () => {
     expect(loadSettings(dir)).toEqual({ lastVault: null })
   })
 
-  it('記住上次開啟的 vault', () => {
-    saveSettings(dir, { lastVault: '/home/me/筆記' })
-    expect(loadSettings(dir).lastVault).toBe('/home/me/筆記')
+  it('remembers the last opened vault', () => {
+    saveSettings(dir, { lastVault: '/home/me/Notes' })
+    expect(loadSettings(dir).lastVault).toBe('/home/me/Notes')
   })
 
-  it('設定檔損毀時回傳預設值', () => {
-    fs.writeFileSync(path.join(dir, 'settings.json'), '{壞掉')
+  it('returns the defaults when the settings file is corrupt', () => {
+    fs.writeFileSync(path.join(dir, 'settings.json'), '{broken')
     expect(loadSettings(dir)).toEqual({ lastVault: null })
   })
 })

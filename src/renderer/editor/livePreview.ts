@@ -1,6 +1,6 @@
-// Markdown 即時渲染（類似 Obsidian 的 Live Preview）：
-// 標記符號（# ** ` [[ ]] 等）在游標不在附近時隱藏，只顯示渲染後的樣式；
-// 游標移到該元素或該行時再顯示原始語法，方便編輯。
+// Live Markdown rendering (like Obsidian's Live Preview):
+// marks (# ** ` [[ ]] and so on) are hidden when the cursor isn't near them, showing only the rendered style;
+// they show again when the cursor moves onto the element or line, for editing.
 import {
   HighlightStyle,
   LanguageDescription,
@@ -30,8 +30,8 @@ import { renderedTables, tables } from './tables'
 export { frontmatterEnd }
 
 /**
- * 依程式碼區塊的語言標記找出可上色的語言（@codemirror/language-data，用到時才動態載入）。
- * 先比對語言名稱與別名，再比對副檔名，所以 ```py、```rs 也認得。
+ * Finds a language to highlight from a code block's language tag (@codemirror/language-data, loaded dynamically on use).
+ * Matches language names and aliases first, then file extensions, so ```py and ```rs are recognized too.
  */
 export function findCodeLanguage(info: string): LanguageDescription | null {
   const name = info.trim().split(/\s+/)[0]
@@ -42,7 +42,7 @@ export function findCodeLanguage(info: string): LanguageDescription | null {
   )
 }
 
-/** Markdown 語言支援（GFM：表格、刪除線、待辦清單）與語法顏色，原始碼模式也會用到 */
+/** Markdown language support (GFM: tables, strikethrough, task lists) and syntax colors, also used in source mode */
 export function markdownSupport(): Extension {
   return [
     markdown({
@@ -54,7 +54,7 @@ export function markdownSupport(): Extension {
   ]
 }
 
-/** 即時渲染（可用 Compartment 開關） */
+/** Live rendering (toggled with a Compartment) */
 export function livePreview(): Extension {
   return [livePreviewPlugin, tables(), blockMath()]
 }
@@ -69,7 +69,7 @@ const markdownHighlight = HighlightStyle.define([
   { tag: t.monospace, fontFamily: 'var(--font-mono)' },
   { tag: [t.processingInstruction, t.meta, t.contentSeparator], color: 'var(--syntax)' },
   { tag: t.quote, color: 'var(--quote)' },
-  // 程式碼區塊內的語法顏色（各主題的實際色值在 main.css 的 --hl-* 變數）
+  // Syntax colors inside code blocks (each theme's actual colors are the --hl-* variables in main.css)
   { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword], color: 'var(--hl-keyword)' },
   { tag: [t.string, t.special(t.string), t.regexp], color: 'var(--hl-string)' },
   {
@@ -86,9 +86,9 @@ const markdownHighlight = HighlightStyle.define([
   { tag: t.invalid, color: 'var(--danger)' }
 ])
 
-// ---- 純函式：計算裝飾 ----
+// ---- Pure functions: computing decorations ----
 
-/** 這些節點裡不顯示 wikilink（程式碼；數學式整段渲染） */
+/** Nodes in which wikilinks aren't shown (code; math is rendered whole) */
 const NO_WIKILINK = new Set([
   'InlineCode',
   'FencedCode',
@@ -98,7 +98,7 @@ const NO_WIKILINK = new Set([
   'BlockMath'
 ])
 
-/** 計算 [from, to] 範圍內的即時渲染裝飾 */
+/** Computes the live rendering decorations within [from, to] */
 export function buildDecorations(
   state: EditorState,
   from = 0,
@@ -127,7 +127,7 @@ export function buildDecorations(
   const hide = (a: number, b: number): void => {
     if (b > a) decos.push(Decoration.replace({}).range(a, b))
   }
-  /** 隱藏標記以及緊接在後的一個空白 */
+  /** Hides a mark and the single space right after it */
   const hideWithSpace = (a: number, b: number): void => {
     hide(a, doc.sliceString(b, b + 1) === ' ' ? b + 1 : b)
   }
@@ -145,11 +145,11 @@ export function buildDecorations(
   if (fmEnd > 0 && from < fmEnd) eachLine(0, fmEnd, 'cm-lp-frontmatter')
 
   const tree = syntaxTree(state)
-  // 整張換成表格 widget 的範圍（tables.ts），裡面不需要其他裝飾
+  // Ranges replaced whole by a table widget (tables.ts) need no other decorations inside
   const tableRanges = renderedTables(state)
   const inTable = (a: number): boolean => tableRanges.some((t) => t.from <= a && a <= t.to)
 
-  // [[wikilink]] 與 [[目標|顯示文字]]：Markdown 解析器不認得（還會把裡面的 [x] 當成連結），先用正則找出來
+  // [[wikilink]] and [[target|label]]: the Markdown parser doesn't know them (and treats the [x] inside as a link), so find them with a regex first
   const wikilinks: { from: number; to: number; target: string; textFrom: number }[] = []
   for (const m of doc.sliceString(from, to).matchAll(WIKILINK)) {
     const a = from + m.index!
@@ -169,7 +169,7 @@ export function buildDecorations(
     from,
     to,
     enter: (ref) => {
-      // frontmatter 裡的內容不套用 Markdown 渲染
+      // Content inside the frontmatter isn't rendered as Markdown
       if (ref.from < fmEnd) return ref.to > fmEnd
       const node = ref.node
       const name = ref.name
@@ -230,8 +230,8 @@ export function buildDecorations(
           return
         }
         case 'Image': {
-          // ![alt](相對路徑)：游標不在上面時整段換成圖片，在上面時圖片接在原始語法後面
-          // ![[x]] 沒有 URL（由 wikilink 處理）；網址與絕對路徑不渲染
+          // ![alt](relative path): replaced whole by the image when the cursor isn't on it; when it is, the image follows the raw syntax
+          // ![[x]] has no URL (handled as a wikilink); URLs and absolute paths aren't rendered
           const url = children(node, 'URL')[0]
           if (!url || inWikilink(ref.from, ref.to)) return
           const rel = resolveImageSrc(note, doc.sliceString(url.from, url.to))
@@ -247,7 +247,7 @@ export function buildDecorations(
           return false
         }
         case 'InlineMath': {
-          // $x$：游標不在上面時整段換成公式，在上面時顯示原始語法
+          // $x$: replaced whole by the formula when the cursor isn't on it; shows the raw syntax when it is
           if (!touches(ref.from, ref.to)) {
             const src = mathSource(node, (a, b) => doc.sliceString(a, b))
             if (src.tex) {
@@ -258,7 +258,7 @@ export function buildDecorations(
           return false
         }
         case 'BlockMath':
-          // $$ 區塊由 math.ts 的 StateField 處理
+          // $$ blocks are handled by the StateField in math.ts
           return false
         case 'QuoteMark':
           if (!lineTouched(ref.from)) hideWithSpace(ref.from, ref.to)
@@ -308,7 +308,7 @@ export function buildDecorations(
           const close = marks.length > 1 ? marks[marks.length - 1] : null
           const info = children(node, 'CodeInfo')[0]
           const lang = info ? doc.sliceString(info.from, info.to).trim() : ''
-          // 游標不在區塊裡時，``` 圍欄換成語言標籤／隱藏
+          // When the cursor isn't in the block, ``` fences become a language label / are hidden
           if (open && !touches(ref.from, ref.to)) {
             const openLine = doc.lineAt(open.from)
             addLineClass(open.from, 'cm-lp-fence-hidden')
@@ -349,7 +349,7 @@ export function buildDecorations(
   return Decoration.set(decos, true)
 }
 
-/** 切換 pos 位置的待辦方塊（[ ] ↔ [x]），回傳要套用的變更 */
+/** Toggles the task box at pos ([ ] ↔ [x]) and returns the change to apply */
 export function toggleTask(
   doc: Text,
   pos: number
@@ -360,7 +360,7 @@ export function toggleTask(
   return null
 }
 
-/** 只允許用外部瀏覽器開啟這些協定 */
+/** Only these protocols may be opened in an external browser */
 export function isOpenableUrl(url: string): boolean {
   return /^(https?:|mailto:)/i.test(url.trim())
 }
@@ -449,7 +449,7 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         if (e.ctrlKey || e.metaKey) {
           const url = target.closest<HTMLElement>('[data-url]')?.dataset.url
           if (url && isOpenableUrl(url)) {
-            // main process 的 setWindowOpenHandler 會改用系統瀏覽器開啟
+            // The main process's setWindowOpenHandler opens it in the system browser instead
             window.open(url)
             e.preventDefault()
             return true

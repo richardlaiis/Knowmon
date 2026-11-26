@@ -1,5 +1,5 @@
-// 混合檢索：全文（FTS5）+ 向量（sqlite-vec）以 Reciprocal Rank Fusion 合併，
-// 再把前幾名的圖譜鄰居加進來，並可依日期篩選。查詢向量由呼叫者提供（null = 只用全文）。
+// Hybrid retrieval: full text (FTS5) + vectors (sqlite-vec), merged with Reciprocal Rank Fusion,
+// then the top results' graph neighbors are added, with optional date filtering. The caller provides the query vector (null = full text only).
 import { localDay } from '../../shared/time'
 import type { RetrieveHit, RetrieveOptions, RetrieveResult, SearchHit } from '../../shared/types'
 import { getNoteBody, type DB } from '../db'
@@ -7,13 +7,13 @@ import { searchNotes, searchTerms } from '../db/search'
 import { clip, findAll, toSegments, type Range } from '../db/segments'
 import { nearestChunks } from '../db/vectors'
 
-/** RRF 的常數：分數 = Σ 1 / (RRF_K + 名次) */
+/** RRF constant: score = Σ 1 / (RRF_K + rank) */
 export const RRF_K = 60
-/** 每種來源取前幾篇 */
+/** Top notes taken from each source */
 export const SOURCE_DEPTH = 50
-/** 前幾名的圖譜鄰居會加分 */
+/** Graph neighbors of this many top results get a bonus */
 export const EXPAND_SEEDS = 5
-/** 鄰居得到種子分數的這個比例 */
+/** Neighbors get this fraction of the seed's score */
 export const NEIGHBOR_FACTOR = 0.5
 const SNIPPET_MAX = 160
 
@@ -23,13 +23,13 @@ interface Candidate {
   noteId: number
   score: number
   line: number
-  /** 最相關的段落（向量命中的 chunk）；沒有時用全文摘要或筆記開頭 */
+  /** The most relevant passage (the chunk the vector matched); otherwise the full-text snippet or the start of the note */
   text: string | null
   snippet: RetrieveHit['snippet'] | null
   via: Set<Via>
 }
 
-/** Reciprocal Rank Fusion：每份排名（由好到壞的 id）依名次給分後相加 */
+/** Reciprocal Rank Fusion: each ranking (ids from best to worst) gives points by rank, summed */
 export function reciprocalRankFusion(
   rankings: readonly (readonly number[])[]
 ): Map<number, number> {
@@ -48,14 +48,14 @@ interface NoteRow {
   modifiedAt: number
 }
 
-/** 篩選用的日期：event_date，沒有的話用最後修改日（本地時區） */
+/** Date used for filtering: event_date, or the last modified date when there is none (local time zone) */
 export function noteDay(n: Pick<NoteRow, 'eventDate' | 'modifiedAt'>): string {
   return n.eventDate ?? localDay(n.modifiedAt)
 }
 
 /**
- * keywords 有值時（問答用），全文改為每個關鍵字各自搜尋（OR），命中越多個關鍵字的排越前面；
- * 沒有關鍵字但有查詢向量時只用向量。
+ * When keywords are given (for Q&A), full text searches each keyword separately (OR), ranking notes that match more keywords higher;
+ * with no keywords but a query vector, only vectors are used.
  */
 export function retrieve(
   db: DB,
@@ -96,7 +96,7 @@ export function retrieve(
     return c
   }
 
-  // 1. 全文
+  // 1. Full text
   const fulltext: number[] = []
   const depth = filtered ? 500 : SOURCE_DEPTH
   for (const h of keywords ? searchAny(db, terms, depth) : searchNotes(db, query, depth)) {
@@ -110,7 +110,7 @@ export function retrieve(
     if (fulltext.length >= SOURCE_DEPTH) break
   }
 
-  // 2. 向量：同一篇只取最近的一塊
+  // 2. Vectors: only the nearest chunk per note
   const vector: number[] = []
   if (queryVector) {
     for (const hit of nearestChunks(db, queryVector, filtered ? 1000 : SOURCE_DEPTH * 4)) {
@@ -118,17 +118,17 @@ export function retrieve(
       vector.push(hit.noteId)
       const c = candidate(hit.noteId)
       c.via.add('vector')
-      // 向量命中的段落比全文的第一個命中更能代表「為什麼相關」
+      // The passage a vector matched explains "why it's relevant" better than the first full-text match
       c.line = hit.line
       c.text = hit.text
       if (vector.length >= SOURCE_DEPTH) break
     }
   }
 
-  // 3. 合併
+  // 3. Merge
   for (const [id, score] of reciprocalRankFusion([fulltext, vector])) candidate(id).score = score
 
-  // 4. 圖譜鄰居
+  // 4. Graph neighbors
   if (opts.expand !== false && candidates.size > 0) {
     const seeds = [...candidates.values()].sort((a, b) => b.score - a.score).slice(0, EXPAND_SEEDS)
     const seedScore = new Map(seeds.map((s) => [s.noteId, s.score]))
@@ -140,7 +140,7 @@ export function retrieve(
            AND (src IN (${marks}) OR dst IN (${marks}))`
       )
       .all(...seedScore.keys(), ...seedScore.keys()) as { src: number; dst: number }[]
-    const bonus = new Map<number, Map<number, number>>() // 鄰居 → 種子 → 加分（同一對只算一次）
+    const bonus = new Map<number, Map<number, number>>() // neighbor → seed → bonus (each pair counted once)
     for (const e of edges) {
       for (const [seed, other] of [
         [e.src, e.dst],
@@ -178,7 +178,7 @@ export function retrieve(
   return { hits, vector: queryVector !== null }
 }
 
-/** 每個詞各自搜尋，依命中的詞數排序，同數時依各詞名次的 RRF 分數 */
+/** Searches each term separately, sorting by number of matched terms, then by the RRF score of each term's rank */
 function searchAny(db: DB, terms: readonly string[], limit: number): SearchHit[] {
   const found = new Map<string, { hit: SearchHit; count: number; score: number }>()
   for (const term of terms) {
@@ -195,7 +195,7 @@ function searchAny(db: DB, terms: readonly string[], limit: number): SearchHit[]
     .map((f) => f.hit)
 }
 
-/** 結果顯示的段落：向量命中的 chunk、全文摘要，或筆記的第一塊 */
+/** The passage shown for a result: the chunk a vector matched, the full-text snippet, or the note's first chunk */
 function describe(
   db: DB,
   c: Candidate,
@@ -218,7 +218,7 @@ function highlight(text: string, terms: readonly string[]): RetrieveHit['snippet
   return toSegments(c.text, c.ranges)
 }
 
-/** 第一個包含任一查詢詞的行（1-based）；只有標題命中時為 1 */
+/** The first line containing any query term (1-based); 1 when only the title matches */
 export function firstMatchLine(body: string, terms: readonly string[]): number {
   const lines = body.split('\n')
   for (let i = 0; i < lines.length; i++) {

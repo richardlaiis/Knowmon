@@ -1,209 +1,209 @@
-# 階段 8：CI 測試與三平台安裝檔發布
+# Phase 8: CI tests and installer releases for three platforms
 
 ## Context
 
-現在要用 Knowmon 得先裝 Node.js 和 Git、clone、`npm install`，Linux 還要用 sudo 設定 chrome-sandbox，對一般使用者門檻太高。目標是讓使用者從 GitHub Releases 下載安裝檔直接安裝。
+Using Knowmon today means installing Node.js and Git, cloning, running `npm install`, and on Linux setting up chrome-sandbox with sudo, which is too high a bar for ordinary users. The goal is for users to download an installer from GitHub Releases and install it directly.
 
-卡關的原因：sqlite-vec 只會裝建置機器所在平台的版本，所以安裝檔必須在各自的作業系統上建置（`docs/architecture.md`「開發環境注意事項」）。之前只在 Ubuntu 26.04 驗證過 deb 與 AppImage（`docs/plans/phase8-packaging.md`），使用者現在用的 Fedora 44 沒有測過，也沒有 rpm。
+What's been blocking this: sqlite-vec only installs the build for the build machine's platform, so installers must be built on their own operating system (`docs/architecture.md`, "Development environment notes"). The deb and AppImage were only verified on Ubuntu 26.04 (`docs/plans/phase8-packaging.md`); Fedora 44, which the user now uses, hasn't been tested, and there's no rpm.
 
-這次分三步：
+This time, three steps:
 
-1. Fedora 驗證，並加上 rpm。
-2. GitHub Actions：每次 push 在三個平台跑測試；推 tag 時打包四種安裝檔，上傳成草稿 Release。
-3. Windows 與 macOS 先以「實驗性」發布，並寫好使用說明。
+1. Verify on Fedora and add an rpm.
+2. GitHub Actions: run the tests on three platforms on every push; on a tag push, build four kinds of installers and upload them to a draft Release.
+3. Release Windows and macOS as "experimental" for now, with installation instructions.
 
-使用者決定（2026-11-15）：
+User decisions (2026-11-15):
 
-- 授權用 **MIT**。
-- 第一個版本是 **0.1.0**。
-- repo **公開**。
-- macOS 支援 **Apple Silicon 與 Intel**。
-- 沿用之前的討論：發布時機由使用者控制，推 `v*` tag 才打包，結果是**草稿** Release，使用者檢查後手動按 Publish。沒有自動更新（`publish: null` 不變）。
+- License: **MIT**.
+- The first version is **0.1.0**.
+- The repo is **public**.
+- macOS supports **Apple Silicon and Intel**.
+- Carried over from earlier discussion: the user controls release timing; packaging happens only on a `v*` tag push, producing a **draft** Release that the user checks and publishes manually. No auto-updates (`publish: null` stays).
 
-## 步驟
+## Steps
 
-### 0. 存檔
+### 0. Save the plan
 
-把這份計畫存成 `docs/plans/release-ci.md`，之後的發現與結果都記錄在這份文件。
+Save this plan as `docs/plans/release-ci.md`; later findings and results go in this document.
 
-### 1. 打包設定與 Fedora 驗證
+### 1. Packaging configuration and Fedora verification
 
-`electron-builder.yml`：
+`electron-builder.yml`:
 
-- `linux.target` 加入 `rpm`。electron-builder 預設的 after-install 腳本 deb 和 rpm 共用，會設定 chrome-sandbox 的 SUID。
-- `dmg.artifactName` 改為 `${name}-${version}-${arch}.${ext}`。不改的話，arm64 與 x64 兩個 dmg 會同名，在 Release 裡互相覆蓋。
-- `mac.target` 明確設為 `dmg`，不另外產 zip。
+- Add `rpm` to `linux.target`. electron-builder's default after-install script is shared by deb and rpm and sets chrome-sandbox's SUID bit.
+- Change `dmg.artifactName` to `${name}-${version}-${arch}.${ext}`. Otherwise the arm64 and x64 dmgs share a name and overwrite each other in the Release.
+- Set `mac.target` explicitly to `dmg`, without a separate zip.
 
-`package.json`：`version` 改為 `0.1.0`。
+`package.json`: change `version` to `0.1.0`.
 
-新增 `LICENSE`（MIT，`Copyright (c) 2026 Richard Lai`），並在 `package.json` 加 `"license": "MIT"`。
+Add `LICENSE` (MIT, `Copyright (c) 2026 Richard Lai`), and add `"license": "MIT"` to `package.json`.
 
-Fedora 本機驗證（需要 sudo，由使用者執行）：
+Local verification on Fedora (needs sudo, run by the user):
 
-1. `! sudo dnf install rpm-build`（fpm 打包 rpm 需要 `rpmbuild`）。
-2. 執行 `npx electron-vite build && npx electron-builder --linux AppImage rpm`。本機不打 deb，因為 Fedora 不一定有對應的打包工具，deb 交給 CI。
-3. 先由我做自動驗證：沿用 phase8 第 5 步的 wrapper 和 CDP 做法，對 `dist/linux-unpacked/` 跑一次。`XDG_CONFIG_HOME` 指到 scratchpad，用 `~/knowmon-test-vault` 副本確認：
-   - userData 位置正確
-   - `llm.status()` 沒有 sqlite-vec 錯誤
-   - Hybrid 搜尋帶 `vector: true`
-   - Semantic 邊存在
-   - 圖片協定能讀到圖片
-4. 使用者手動測試：
-   - `! sudo dnf install ./dist/knowmon-0.1.0.x86_64.rpm`，從選單開啟，確認不需要 `--no-sandbox`。
-   - 照 phase8 第 6 步的清單測：AI ready、Hybrid、Semantic 邊、問答、Agent、圖片、刪除進垃圾桶、設定沿用。
-   - AppImage：直接執行，記錄 sandbox 是否開啟。Fedora 沒有 AppArmor 限制，預期 `unshare` 成功、不會自動加 `--no-sandbox`。
-   - `! sudo dnf remove knowmon` 能乾淨移除。
-5. 如果 rpm 預設相依（例如 `libXScrnSaver`）在 Fedora 44 不存在、導致安裝失敗，就在 `rpm.depends` 覆寫，並記錄原因。
+1. `! sudo dnf install rpm-build` (fpm needs `rpmbuild` to build an rpm).
+2. Run `npx electron-vite build && npx electron-builder --linux AppImage rpm`. No deb locally, since Fedora may not have the packaging tools for it; the deb is left to CI.
+3. First I run the automated verification: reuse the wrapper and CDP approach from phase 8 step 5 against `dist/linux-unpacked/`. With `XDG_CONFIG_HOME` pointing to the scratchpad and a copy of `~/knowmon-test-vault`, confirm:
+   - userData is in the right place
+   - `llm.status()` has no sqlite-vec error
+   - Hybrid search returns `vector: true`
+   - Semantic edges exist
+   - The image protocol can read images
+4. Manual testing by the user:
+   - `! sudo dnf install ./dist/knowmon-0.1.0.x86_64.rpm`, open it from the menu, and confirm it doesn't need `--no-sandbox`.
+   - Test with the checklist from phase 8 step 6: AI ready, Hybrid, Semantic edges, Q&A, Agent, images, deleting to the trash, settings carried over.
+   - AppImage: run it directly and record whether the sandbox is on. Fedora has no AppArmor restriction, so `unshare` should succeed and `--no-sandbox` shouldn't be added automatically.
+   - `! sudo dnf remove knowmon` removes it cleanly.
+5. If an rpm default dependency (for example `libXScrnSaver`) doesn't exist on Fedora 44 and installation fails, override it in `rpm.depends` and record why.
 
-### 2. CI：三平台測試（`.github/workflows/ci.yml`）
+### 2. CI: tests on three platforms (`.github/workflows/ci.yml`)
 
-- 觸發條件：push 到 `main`，以及 pull request。
-- 權限：`permissions: contents: read`。設定 `concurrency`，同一分支的新 push 會取消舊的執行。
-- job `check`（`ubuntu-latest`）：`npm ci` → `npm run typecheck` → `npm run lint`。這兩項與平台無關，只在 Linux 跑。
-- job `test`，matrix 為 `ubuntu-latest`、`windows-latest`、`macos-latest`：`npm ci` → `npx vitest run`。`ollama.integration.test.ts` 已經用 `skipIf` 預設跳過。
-- 共用設定：`actions/setup-node`，Node 24，`cache: npm`。actions 版本固定到 major 版號。
+- Triggers: pushes to `main` and pull requests.
+- Permissions: `permissions: contents: read`. Set `concurrency` so a new push on the same branch cancels the old run.
+- Job `check` (`ubuntu-latest`): `npm ci` → `npm run typecheck` → `npm run lint`. These are platform-independent, so they run only on Linux.
+- Job `test`, with a matrix of `ubuntu-latest`, `windows-latest` and `macos-latest`: `npm ci` → `npx vitest run`. `ollama.integration.test.ts` is already skipped by default with `skipIf`.
+- Shared setup: `actions/setup-node`, Node 24, `cache: npm`. Action versions are pinned to major versions.
 
-新增 `.gitattributes`，內容為 `* text=auto eol=lf`，二進位檔（png、ico、icns）另外標 `binary`。原因是 Windows runner 的 git 預設會把換行轉成 CRLF，Prettier（`endOfLine` 預設 `lf`）與讀取檔案內容的測試都會受影響；之後 Windows 上的貢獻者也一樣。
+Add `.gitattributes` with `* text=auto eol=lf`, marking binary files (png, ico, icns) as `binary`. The reason: git on the Windows runner converts line endings to CRLF by default, which affects Prettier (`endOfLine` defaults to `lf`) and tests that read file contents; the same goes for future contributors on Windows.
 
-第一次在 Windows 和 macOS 跑測試時，可能會出現從沒見過的失敗，例如路徑分隔字元、大小寫不分的檔案系統、暫存目錄刪除時檔案被鎖住：
+The first test runs on Windows and macOS may show never-before-seen failures, such as path separators, case-insensitive file systems, or files locked while a temp directory is deleted:
 
-- **測試寫法的問題，或很小的 bug**：在這次一併修正，並補上測試。
-- **需要改 `types.ts`、DB schema，或要改變 App 行為**（例如 Windows 不允許的檔名字元）：先記錄下來，問使用者要不要拆成另一個任務。
+- **Problems in how tests are written, or very small bugs**: fix them in this task and add tests.
+- **Anything needing a change to `types.ts`, the DB schema, or the app's behavior** (for example file name characters Windows doesn't allow): record it first and ask the user whether to split it into another task.
 
-### 3. 發布：推 tag 時打包（`.github/workflows/release.yml`）
+### 3. Releases: packaging on tag push (`.github/workflows/release.yml`)
 
-觸發條件：
+Triggers:
 
-- `push: tags: ['v*']`：正式發版。
-- `workflow_dispatch`：手動試跑。只把安裝檔上傳成 workflow artifacts，**不建立 Release**，用來在發版前試打 Windows 和 macOS 版。
+- `push: tags: ['v*']`: an actual release.
+- `workflow_dispatch`: a manual trial run. Installers are only uploaded as workflow artifacts, **with no Release created**, for trying the Windows and macOS builds before releasing.
 
-job `build`，matrix 共四個（`fail-fast: false`，一個平台失敗不影響其他平台）：
+Job `build`, with a matrix of four (`fail-fast: false`, so one platform failing doesn't stop the others):
 
-| runner           | 指令                                           | 產出               |
-| ---------------- | ---------------------------------------------- | ------------------ |
-| `ubuntu-22.04`   | 先 `sudo apt-get install -y rpm`，再 `--linux` | AppImage、deb、rpm |
-| `windows-latest` | `--win`                                        | NSIS `-setup.exe`  |
-| `macos-latest`   | `--mac`                                        | `-arm64.dmg`       |
-| `macos-15-intel` | `--mac`                                        | `-x64.dmg`         |
+| Runner           | Command                                             | Output             |
+| ---------------- | --------------------------------------------------- | ------------------ |
+| `ubuntu-22.04`   | First `sudo apt-get install -y rpm`, then `--linux` | AppImage, deb, rpm |
+| `windows-latest` | `--win`                                             | NSIS `-setup.exe`  |
+| `macos-latest`   | `--mac`                                             | `-arm64.dmg`       |
+| `macos-15-intel` | `--mac`                                             | `-x64.dmg`         |
 
-- Linux 用較舊的 22.04 打包，產出的程式在舊發行版上比較不會因為 glibc 版本太新而跑不起來。
-- 每個 job 的步驟：`npm ci` → `npx vitest run`（測試沒過就不打包）→ `npx electron-vite build` → `npx electron-builder <平台> --publish never`。
-- 上傳 `dist/` 裡的安裝檔，用 `actions/upload-artifact`。
-- 推 tag 時，先檢查 `${GITHUB_REF_NAME#v}` 是否等於 `package.json` 的 `version`，不一致就失敗，避免打出版本號錯誤的檔案。
-- macOS 設定 `CSC_IDENTITY_AUTO_DISCOVERY=false`，不嘗試用 keychain 簽章。Apple Silicon 的 App 至少要有 ad-hoc 簽章才能執行，所以要用 log 裡的 `codesign -dv` 確認結果。沒有簽章的話，在 `mac` 設定 `identity: '-'`。
+- Linux packages on the older 22.04, so the app is less likely to fail on older distributions because of too new a glibc.
+- Each job's steps: `npm ci` → `npx vitest run` (no packaging if tests fail) → `npx electron-vite build` → `npx electron-builder <platform> --publish never`.
+- Upload the installers in `dist/` with `actions/upload-artifact`.
+- On a tag push, first check that `${GITHUB_REF_NAME#v}` equals the `version` in `package.json`, failing otherwise, so files with the wrong version number are never built.
+- macOS sets `CSC_IDENTITY_AUTO_DISCOVERY=false` so it doesn't try to sign with the keychain. Apple Silicon apps need at least an ad-hoc signature to run, so check the result with `codesign -dv` in the log. If it's unsigned, set `identity: '-'` in the `mac` configuration.
 
-job `release`，只在推 tag 時執行，需要等四個 build 都完成：
+Job `release`, only on tag pushes, after all four builds finish:
 
-- 權限：`permissions: contents: write`。
-- 用 `actions/download-artifact` 收集所有安裝檔。
-- 執行 `gh release create "$GITHUB_REF_NAME" --draft --generate-notes <檔案>`。用 runner 內建的 `gh` 和 `GITHUB_TOKEN`，不需要新增 secrets。
+- Permissions: `permissions: contents: write`.
+- Collect all installers with `actions/download-artifact`.
+- Run `gh release create "$GITHUB_REF_NAME" --draft --generate-notes <files>`, using the runner's built-in `gh` and `GITHUB_TOKEN`, so no new secrets are needed.
 
-這次**不用** electron-builder 的 `--publish`，因為它需要 `publish` 設定，還會產生 `latest*.yml` 這類自動更新的描述檔，跟 `publish: null` 的決定衝突。
+electron-builder's `--publish` is **not** used this time, because it needs a `publish` configuration and also generates auto-update metadata such as `latest*.yml`, which conflicts with the `publish: null` decision.
 
-### 4. 文件
+### 4. Documentation
 
-- 新增 `docs/releasing.md`，寫給維護者：
-  - 發版流程：改版本號 → commit → `git tag vX.Y.Z && git push origin vX.Y.Z` → 檢查草稿 → Publish。
-  - 用 `workflow_dispatch` 試打包的方法。
-  - 失敗時怎麼處理：刪掉草稿與 tag，修正後重打。
-- `installation.md`（中英文）：
-  - 最前面新增「下載安裝檔」：從 Releases 下載，依平台挑選格式。
-    - Linux：Debian／Ubuntu 用 deb，Fedora／RHEL／openSUSE 用 rpm，其他發行版用 AppImage。
-    - Windows：SmartScreen 會警告，按「其他資訊 → 仍要執行」。標示為實驗性。
-    - macOS：依晶片選 arm64 或 x64。沒有公證的 App 會顯示「已損毀」或被 Gatekeeper 擋下，用 `xattr -cr /Applications/Knowmon.app` 解除。標示為實驗性。
-  - 「從原始碼執行」改成第二種方式，給開發者用。
-  - 「自行打包安裝檔」加入 rpm。
-  - 「更新到最新版」加上安裝檔的更新方式：下載新版覆蓋安裝。
-  - 版本改成 0.1.0 後，文件中的 `knowmon_1.0.0_amd64.deb` 這類檔名一併更新。
-- `README.md`：
-  - 「快速開始」第一行改成「從 Releases 下載安裝檔」，原本的原始碼步驟留給開發者。
-  - 「文件」表格加入 `docs/releasing.md`。
-  - 加上 MIT 授權說明。
-- `docs/architecture.md`「開發環境注意事項」：
-  - Linux 改為 AppImage、deb、rpm 三種格式。
-  - 安裝檔由 CI 在各平台建置。
-  - dmg 檔名帶 arch。
-  - `.gitattributes` 固定 LF。
-- `docs/testing.md`：加上「發版前檢查」，包含 Fedora 和 Ubuntu 的手動測試清單（從 phase8 第 6 步整理），以及 CI 全部通過。
-- `docs/roadmap.md`：
-  - 在「產出安裝檔」底下記錄進度：CI、rpm、LICENSE、版本號已完成。
-  - Windows 與 macOS 尚未在實機上驗證，所以這一項**先不勾**，等有人實測完再勾。
-  - 「下一步」的「正式打包」改寫成剩下的工作：實機驗證、程式碼簽章與否。
+- Add `docs/releasing.md` for maintainers:
+  - The release process: bump the version → commit → `git tag vX.Y.Z && git push origin vX.Y.Z` → check the draft → Publish.
+  - How to do a trial build with `workflow_dispatch`.
+  - What to do on failure: delete the draft and the tag, fix, and tag again.
+- `installation.md` (Chinese and English):
+  - Add "Download an installer" at the top: download from Releases and pick the format for your platform.
+    - Linux: deb for Debian/Ubuntu, rpm for Fedora/RHEL/openSUSE, AppImage for other distributions.
+    - Windows: SmartScreen warns; click "More info → Run anyway". Marked experimental.
+    - macOS: choose arm64 or x64 by chip. Without notarization the app shows as "damaged" or is blocked by Gatekeeper; clear it with `xattr -cr /Applications/Knowmon.app`. Marked experimental.
+  - "Run from source" becomes the second option, for developers.
+  - Add rpm to "Building installers yourself".
+  - Add how to update an installed version to "Updating": download the new version and install over it.
+  - With the version now 0.1.0, update file names such as `knowmon_1.0.0_amd64.deb` in the docs.
+- `README.md`:
+  - The first line of "Quick start" becomes "download an installer from Releases"; the source steps stay for developers.
+  - Add `docs/releasing.md` to the "Documentation" table.
+  - Add the MIT license.
+- `docs/architecture.md`, "Development environment notes":
+  - Linux now has three formats: AppImage, deb and rpm.
+  - Installers are built by CI on each platform.
+  - dmg file names include the arch.
+  - `.gitattributes` forces LF.
+- `docs/testing.md`: add "Pre-release checks", with the manual test checklist for Fedora and Ubuntu (adapted from phase 8 step 6) and CI being all green.
+- `docs/roadmap.md`:
+  - Record progress under "produce installers": CI, rpm, LICENSE and the version number are done.
+  - Windows and macOS haven't been verified on real machines, so the item **stays unchecked** until someone tests them.
+  - Rewrite "final packaging" under "Next steps" as the remaining work: real-machine verification and whether to code sign.
 
-### 5. 推上 GitHub 並試跑（需要使用者同意才 push）
+### 5. Push to GitHub and do a trial run (push only with the user's approval)
 
-1. 本機的 vitest、typecheck、lint 全部通過後 commit。由使用者決定何時 push 到 `main`，觸發 `ci.yml`。
-2. 在 Actions 頁面手動觸發 `release.yml`（`workflow_dispatch`），確認四個平台都打包成功、檔名正確、macOS 有 ad-hoc 簽章，下載 artifacts 看檔案大小。
-3. 都沒問題之後，由使用者推 `v0.1.0` tag，到 Releases 檢查草稿後 Publish。
+1. Commit once local vitest, typecheck and lint all pass. The user decides when to push to `main`, triggering `ci.yml`.
+2. Trigger `release.yml` manually (`workflow_dispatch`) from the Actions page, and confirm all four platforms build, the file names are right, and macOS has an ad-hoc signature; download the artifacts and check the file sizes.
+3. Once everything checks out, the user pushes the `v0.1.0` tag, checks the draft on the Releases page and publishes it.
 
-## 不在這次範圍
+## Out of scope this time
 
-- 程式碼簽章與公證：Apple Developer Program、Windows 憑證。
-- 自動更新，或 App 內的新版提醒。之後要做的話會新增 IPC，要動到 `types.ts`。
-- Windows 檔名非法字元（`: * ? " < > |`、`CON` 這類保留名稱）的處理，以及大小寫不分檔案系統上的改名：CI 測出問題的話，另開任務。
-- Linux arm64、Flathub 或 apt repository。
-- better-sqlite3 只保留目標平台的 prebuild（瘦身）。
-- 首次使用引導（App 內下載模型、開啟範例 vault）。
+- Code signing and notarization: the Apple Developer Program, a Windows certificate.
+- Auto-updates or in-app new-version notices. Doing that later adds IPC, which means changing `types.ts`.
+- Handling characters Windows forbids in file names (`: * ? " < > |`, reserved names such as `CON`) and renames on case-insensitive file systems: if CI finds problems, open a separate task.
+- Linux arm64, Flathub or an apt repository.
+- Keeping only the target platform's better-sqlite3 prebuild (slimming down).
+- A first-run walkthrough (downloading models or opening the sample vault from inside the app).
 
-## 已知風險
+## Known risks
 
-- 使用者之前在 Ubuntu 上裝過 1.0.0 的 deb，改成 0.1.0 後 apt 會視為降級。要先 `sudo apt remove knowmon` 再裝，寫進 release notes 和 `docs/releasing.md`。
-- `macos-15-intel` runner 預計 2027 年 8 月停用，屆時 Intel 版要改成在 arm64 runner 上交叉建置，或停止支援。記錄在 `docs/releasing.md`。
-- `toolsets.appimage` 仍是 electron-builder 的 beta 選項，CI 建置時確認還能用。
+- The user previously installed the 1.0.0 deb on Ubuntu, and apt treats 0.1.0 as a downgrade. They need to `sudo apt remove knowmon` before installing; mention this in the release notes and `docs/releasing.md`.
+- The `macos-15-intel` runner is scheduled for retirement in August 2027, after which the Intel build must be cross-built on the arm64 runner or dropped. Recorded in `docs/releasing.md`.
+- `toolsets.appimage` is still a beta option in electron-builder; confirm it still works in CI builds.
 
-## 驗證
+## Verification
 
-- 本機：`npx vitest run`、`npm run typecheck`、`npm run lint` 全部通過。
-- Fedora：第 1 步的自動驗證，以及使用者手動測試 rpm 和 AppImage 都通過。
-- GitHub：
-  - `ci.yml` 在三個平台都是綠燈。
-  - `release.yml` 的 `workflow_dispatch` 產出 AppImage、deb、rpm、`-setup.exe`、`-arm64.dmg`、`-x64.dmg` 共六個檔案。
-  - 推 `v0.1.0` 後建立的是草稿 Release，而且附上這六個檔案。
-  - 故意用不一致的 tag（例如在 fork 或測試分支上推 `v9.9.9`）時，版本檢查會讓工作流程失敗。
+- Local: `npx vitest run`, `npm run typecheck` and `npm run lint` all pass.
+- Fedora: step 1's automated verification and the user's manual tests of the rpm and AppImage all pass.
+- GitHub:
+  - `ci.yml` is green on all three platforms.
+  - `release.yml` via `workflow_dispatch` produces six files: AppImage, deb, rpm, `-setup.exe`, `-arm64.dmg` and `-x64.dmg`.
+  - Pushing `v0.1.0` creates a draft Release with those six files.
+  - Pushing a mismatched tag on purpose (for example `v9.9.9` on a fork or test branch) makes the version check fail the workflow.
 
-## 結果（2026-11-17）
+## Results (2026-11-17)
 
-### 與計畫不同之處
+### Differences from the plan
 
-- macOS 簽章不等 CI log 再決定，直接設 `mac.identity: '-'`：查 electron-builder 26.15.3 原始碼（`MacTargetHelper.findSigningIdentity`），找不到憑證時只會略過簽章，不會自動 ad-hoc；只有 identity 明確是 `'-'` 才做 ad-hoc。同時設 `hardenedRuntime: false`：ad-hoc 簽章加 hardened runtime 時，library validation 會擋下沒有 Team ID 的 dylib（sqlite-vec 以 `dlopen` 載入），electron-builder 也會為此警告。hardened runtime 只有公證時才需要。CI 的「Show macOS code signature」步驟仍保留，用來確認 `Signature=adhoc`。
-- `.gitattributes` 另把 `*.docx`、`*.pdf`、`*.jpg`、`*.gif`、`*.webp` 標成 `binary`（`Reports/` 有 docx）。`.editorconfig` 原本在 repo 裡是 CRLF，一併改成 LF。
-- actions 版本：最後是 `checkout@v7`、`setup-node@v7`、`upload-artifact@v7`、`download-artifact@v8`（一開始寫的是舊一版的 major，第一次 Release 出現 `upload-artifact@v5` 使用 Node 20 的淘汰警告後升級；新版的變更是改用 ESM、新增選項，對這裡的用法沒有影響）。`merge-multiple: true` 把四個 artifact 合併到同一個資料夾。
-- 安裝說明的 rpm 只列 Fedora／RHEL 系，openSUSE 改用 AppImage（使用者同意，2026-11-17）：electron-builder 的 rpm 相依套件用 Fedora 的名稱（例如 `libXScrnSaver`，openSUSE 叫 `libXss1`），在 openSUSE 上可能無法解析，而且沒有驗證過。
-- `gh release create` 加上 `--repo "$GITHUB_REPOSITORY"`：release job 沒有 checkout，`gh` 無法從 git remote 推得 repo。
+- macOS signing wasn't left to the CI log: `mac.identity: '-'` is set directly. Reading the electron-builder 26.15.3 source (`MacTargetHelper.findSigningIdentity`), when no certificate is found it just skips signing rather than falling back to ad-hoc; only an explicit identity of `'-'` gives an ad-hoc signature. `hardenedRuntime: false` is also set: with an ad-hoc signature plus the hardened runtime, library validation blocks dylibs without a Team ID (sqlite-vec is loaded with `dlopen`), and electron-builder warns about it. The hardened runtime is only needed for notarization. The "Show macOS code signature" step stays in CI to confirm `Signature=adhoc`.
+- `.gitattributes` also marks `*.docx`, `*.pdf`, `*.jpg`, `*.gif` and `*.webp` as `binary` (`Reports/` has docx files). `.editorconfig` was CRLF in the repo and was converted to LF too.
+- Action versions: in the end `checkout@v7`, `setup-node@v7`, `upload-artifact@v7` and `download-artifact@v8` (the first version used the previous major; after the first Release showed a deprecation warning about `upload-artifact@v5` using Node 20, they were upgraded; the new versions switch to ESM and add options, which doesn't affect this usage). `merge-multiple: true` merges the four artifacts into one folder.
+- The installation guide lists the rpm only for the Fedora/RHEL family, with openSUSE pointed to the AppImage (approved by the user, 2026-11-17): electron-builder's rpm dependencies use Fedora package names (for example `libXScrnSaver`, which openSUSE calls `libXss1`), which may not resolve on openSUSE, and it hasn't been verified.
+- `gh release create` gained `--repo "$GITHUB_REPOSITORY"`: the release job has no checkout, so `gh` can't infer the repo from a git remote.
 
-### Fedora 44 本機
+### Fedora 44 locally
 
-- `npx vitest run`（55 個檔案、489 個測試通過，4 個跳過）、`npm run typecheck`、`npm run lint` 通過。
-- rpm 預設相依（`gtk3`、`libnotify`、`nss`、`libXScrnSaver`、`libXtst`、`xdg-utils`、`at-spi2-core`、`libuuid`）在 Fedora 44 都有，而且這台都已安裝，不需要覆寫 `rpm.depends`。
-- `npx electron-builder --linux AppImage` 成功：`dist/knowmon-0.1.0.AppImage` 122 MB。
-- 自動驗證（`dist/linux-unpacked/` 的 asar，wrapper + CDP，`XDG_CONFIG_HOME` 指到 scratchpad，`~/knowmon-test-vault` 副本，embedModel `bge-m3`、chatModel 改成這台有的 `qwen3.5:2b`）：
+- `npx vitest run` (55 files, 489 tests passed, 4 skipped), `npm run typecheck` and `npm run lint` pass.
+- The rpm's default dependencies (`gtk3`, `libnotify`, `nss`, `libXScrnSaver`, `libXtst`, `xdg-utils`, `at-spi2-core`, `libuuid`) all exist on Fedora 44 and are already installed on this machine, so `rpm.depends` didn't need overriding.
+- `npx electron-builder --linux AppImage` succeeds: `dist/knowmon-0.1.0.AppImage`, 122 MB.
+- Automated verification (the asar in `dist/linux-unpacked/`, wrapper + CDP, `XDG_CONFIG_HOME` pointing to the scratchpad, a copy of `~/knowmon-test-vault`, embedModel `bge-m3`, chatModel changed to `qwen3.5:2b`, which this machine has):
 
-| 檢查                                        | 結果                                                    |
-| ------------------------------------------- | ------------------------------------------------------- |
-| userData                                    | `<XDG_CONFIG_HOME>/knowmon` ✓                           |
-| `llm.status()`                              | online、沒有 sqlite-vec 錯誤、9/9 篇完成 embedding ✓    |
-| Hybrid 檢索「培養好習慣的方法」             | `vector: true`，前三名「原子習慣」「深度工作」「歡迎」✓ |
-| 圖譜邊                                      | wikilink 15、semantic 9、sequence 4 ✓                   |
-| `knowmon-asset://vault/attachments/pic.png` | 載入 1024×1024 ✓                                        |
+| Check                                       | Result                                                          |
+| ------------------------------------------- | --------------------------------------------------------------- |
+| userData                                    | `<XDG_CONFIG_HOME>/knowmon` ✓                                   |
+| `llm.status()`                              | online, no sqlite-vec error, 9/9 notes embedded ✓               |
+| Hybrid retrieval for 「培養好習慣的方法」   | `vector: true`; the top three are 原子習慣, 深度工作 and 歡迎 ✓ |
+| Graph edges                                 | wikilink 15, semantic 9, sequence 4 ✓                           |
+| `knowmon-asset://vault/attachments/pic.png` | Loads at 1024×1024 ✓                                            |
 
-- rpm 打包（2026-11-17）：
-  - 只裝 `rpm-build` 時失敗：electron-builder 下載的 fpm 內附 Ruby，需要 `libcrypt.so.1`，Fedora 預設只有 `libcrypt.so.2`（exit 127）。裝 `libxcrypt-compat` 後成功，已寫進安裝說明的「自行打包安裝檔」。CI 在 Ubuntu 打包，不受影響。
-  - `dist/knowmon-0.1.0.x86_64.rpm` 90 MB（安裝後 344 MB），License MIT，相依套件即上面的預設清單。
-  - 內含 `app.asar.unpacked/node_modules/sqlite-vec-linux-x64/vec0.so`；`.desktop` 的 `Exec=/opt/Knowmon/knowmon %U`（絕對路徑）。
-  - after-install 腳本：user namespace 可用時 chrome-sandbox 設為 `0755`（用 namespace sandbox），不可用時才設 SUID `4755`。計畫寫的「會設定 SUID」不精確，Fedora 上預期是前者。
-  - 可能的問題（尚未驗證）：after-remove 腳本沒有判斷 rpm 的 `$1`，升級時舊版的 postun 在新版安裝後執行，可能把 `update-alternatives` 的 `/usr/bin/knowmon` 移除。選單用絕對路徑不受影響，只影響終端機的 `knowmon` 指令。之後第一次升級（0.1.0 → 下一版）時確認。
-- 使用者手動測試（2026-11-17）：`sudo dnf install` 安裝 rpm 後照第 1 步第 4 點測試，回報通過。
-  - Fedora 44 沒有 AppArmor，`unshare -Ur true` 成功，所以 AppImage 的 AppRun 不會加 `--no-sandbox`，以 sandbox 執行（符合預期）。
-  - `sudo dnf remove knowmon`：`/usr/bin/knowmon`、`/etc/alternatives/knowmon`、`.desktop` 都移除，`~/.config/knowmon` 保留 ✓。但 `/opt/Knowmon` 留下一串**空資料夾**（0 個檔案）：fpm 打包 rpm 時只把檔案列進 `%files`、不擁有資料夾，所以 rpm 移除時不會刪資料夾。不影響使用與重新安裝；可以用 `rpm.fpm: ['--directories', '/opt/Knowmon']` 讓套件擁有整個資料夾，尚未決定要不要改。
+- rpm packaging (2026-11-17):
+  - With only `rpm-build` installed it fails: the fpm that electron-builder downloads bundles Ruby, which needs `libcrypt.so.1`, while Fedora has only `libcrypt.so.2` by default (exit 127). It succeeds after installing `libxcrypt-compat`, which is now in "Building installers yourself" in the installation guide. CI packages on Ubuntu and is unaffected.
+  - `dist/knowmon-0.1.0.x86_64.rpm` is 90 MB (344 MB installed), License MIT, with the default dependency list above.
+  - It contains `app.asar.unpacked/node_modules/sqlite-vec-linux-x64/vec0.so`; the `.desktop` file has `Exec=/opt/Knowmon/knowmon %U` (an absolute path).
+  - The after-install script sets chrome-sandbox to `0755` when user namespaces are available (using the namespace sandbox) and to SUID `4755` only when they aren't. The plan's "sets SUID" was imprecise; on Fedora the former is expected.
+  - A possible problem (not yet verified): the after-remove script doesn't check rpm's `$1`, so on upgrade the old version's postun runs after the new version is installed and may remove `update-alternatives`' `/usr/bin/knowmon`. The menu uses an absolute path and is unaffected; only the `knowmon` command in a terminal would be. Check this on the first upgrade (0.1.0 → the next version).
+- Manual testing by the user (2026-11-17): after installing the rpm with `sudo dnf install`, tested per step 1 point 4 and reported it passing.
+  - Fedora 44 has no AppArmor, so `unshare -Ur true` succeeds and the AppImage's AppRun doesn't add `--no-sandbox`; it runs sandboxed (as expected).
+  - `sudo dnf remove knowmon`: `/usr/bin/knowmon`, `/etc/alternatives/knowmon` and the `.desktop` file are removed and `~/.config/knowmon` is kept ✓. But `/opt/Knowmon` is left as a tree of **empty folders** (0 files): when fpm builds the rpm it lists only files in `%files` and doesn't own the folders, so rpm doesn't delete them on removal. This doesn't affect use or reinstalling; `rpm.fpm: ['--directories', '/opt/Knowmon']` would make the package own the whole folder, but whether to change it hasn't been decided.
 
 ### GitHub
 
-- 第一次 push（`4db342c`，2026-11-17）：`ci.yml` 四個 job 全部通過，約 3 分鐘（check 1:23、Ubuntu 1:07、macOS 2:02、Windows 2:55）。Windows 與 macOS 第一次跑 vitest 就沒有失敗，不需要修測試。
-- 第一次手動觸發 `release.yml`：`macos-latest` 在 `electron-vite build` 失敗，`"Markdown" is not exported by "src/renderer/chat/markdown.ts"`。`src/renderer/chat/` 同時有元件 `Markdown.tsx` 與解析器 `markdown.ts`，macOS 預設不分大小寫，`import './Markdown'` 解析到了 `markdown.ts`（Windows 也會）。CI 沒抓到，因為 vitest 只 import 解析器、不經過 vite 建置。使用者中止了這次執行。修正：
-  - 解析器改名為 `parseMarkdown.ts`（測試一併改名）。
-  - 新增 `scripts/case-collisions.test.mjs`：遞迴檢查 repo（略過 dot 開頭、`node_modules`、`out`、`dist`），同一資料夾裡去掉副檔名後只差大小寫的名稱就失敗，在 Linux 上也能抓到。
-  - `ci.yml` 的三平台 test job 加上 `npx electron-vite build`（與計畫不同：原本只跑 vitest）。
-- 同一次執行裡 `windows-latest` 與 `macos-15-intel` 在 vitest 失敗，都是效能測試的時間上限：Intel Mac 上 `vectors.test.ts` 4835ms（上限 1500）、`time.test.ts` 3063ms（500）、`graph.test.ts` 387ms（200）；Windows 上 `time.test.ts` 579ms（500）。CI 的 `windows-latest` 同一個測試剛好通過，共用機器的速度不穩定。修正：新增 `perfBudget`（`src/main/db/test-utils.ts`），本機照原本的設計目標，`CI` 環境變數有值時放寬 10 倍（Intel Mac 最多慢約 6 倍）；仍能抓到數量級的退化。`forceLayout.test.ts` 的 8 秒上限本來就寬，沒有改。
-- 第三次 Release（`8c54dea`）：Windows、Ubuntu、macOS arm64 成功；`macos-15-intel` 的 `vectors.test.ts`、`time.test.ts` 撞上 vitest 預設的單一測試逾時 5 秒（包含準備 1000 篇資料的時間，不只是量測的部分）。`vitest.config.ts` 的 `testTimeout` 在 `CI` 有值時改成 60 秒。
-- 第四次 Release（`19d0395`，workflow_dispatch）：四個平台全部成功，約 6 分 20 秒（Intel Mac 最慢）。artifacts：`knowmon-linux` 314 MB、`knowmon-windows` 106 MB、`knowmon-mac-arm64` 124 MB、`knowmon-mac-x64` 133 MB。待使用者確認：artifacts 內的檔名、兩個 macOS job 的 `Signature=adhoc`。
-- 推 `v0.1.0` tag（2026-11-17）：版本檢查通過，四個 build 與 release job 全部成功（約 5 分鐘），建立了草稿 Release（未登入的 API 看不到草稿，由使用者在 Releases 頁面檢查後 Publish）。
+- First push (`4db342c`, 2026-11-17): all four `ci.yml` jobs passed in about 3 minutes (check 1:23, Ubuntu 1:07, macOS 2:02, Windows 2:55). vitest passed on the first run on Windows and macOS, so no tests needed fixing.
+- First manual `release.yml` run: `macos-latest` failed in `electron-vite build` with `"Markdown" is not exported by "src/renderer/chat/markdown.ts"`. `src/renderer/chat/` had both the `Markdown.tsx` component and the `markdown.ts` parser, and since macOS is case-insensitive by default, `import './Markdown'` resolved to `markdown.ts` (Windows would too). CI didn't catch it because vitest only imports the parser and never runs the vite build. The user cancelled the run. Fixes:
+  - The parser was renamed to `parseMarkdown.ts` (its test too).
+  - Added `scripts/case-collisions.test.mjs`: it walks the repo recursively (skipping dot entries, `node_modules`, `out` and `dist`) and fails when names in the same folder differ only in case after removing the extension, so it catches this on Linux too.
+  - The three-platform test job in `ci.yml` now also runs `npx electron-vite build` (a change from the plan, which only ran vitest).
+- In the same run, `windows-latest` and `macos-15-intel` failed in vitest, both on performance test time limits: on the Intel Mac `vectors.test.ts` took 4835 ms (limit 1500), `time.test.ts` 3063 ms (500) and `graph.test.ts` 387 ms (200); on Windows `time.test.ts` took 579 ms (500). The same test happened to pass on `windows-latest` in CI; shared machines vary in speed. Fix: added `perfBudget` (`src/main/db/test-utils.ts`), which keeps the original design targets locally and relaxes them 10× when the `CI` environment variable is set (the Intel Mac is up to about 6× slower); order-of-magnitude regressions are still caught. The 8-second limit in `forceLayout.test.ts` was already generous and wasn't changed.
+- Third Release run (`8c54dea`): Windows, Ubuntu and macOS arm64 succeeded; on `macos-15-intel`, `vectors.test.ts` and `time.test.ts` hit vitest's default 5-second per-test timeout (which includes preparing 1000 notes, not just the measured part). `testTimeout` in `vitest.config.ts` becomes 60 seconds when `CI` is set.
+- Fourth Release run (`19d0395`, workflow_dispatch): all four platforms succeeded in about 6 minutes 20 seconds (the Intel Mac being slowest). Artifacts: `knowmon-linux` 314 MB, `knowmon-windows` 106 MB, `knowmon-mac-arm64` 124 MB, `knowmon-mac-x64` 133 MB. For the user to confirm: the file names inside the artifacts, and `Signature=adhoc` in both macOS jobs.
+- Pushed the `v0.1.0` tag (2026-11-17): the version check passed, and all four builds and the release job succeeded (about 5 minutes), creating a draft Release (drafts aren't visible to the unauthenticated API; the user checks it on the Releases page and publishes it).

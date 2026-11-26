@@ -10,27 +10,27 @@ import {
 } from './labelCollide'
 
 describe('estimateLabelWidth', () => {
-  it('中日韓文字約一個字寬，英數約 0.6 個字寬', () => {
+  it('CJK characters are about one em wide, letters and digits about 0.6', () => {
     expect(estimateLabelWidth('原子習慣', 10)).toBe(40)
     expect(estimateLabelWidth('abcde', 10)).toBe(31)
     expect(estimateLabelWidth('Knowmon 開發日誌', 10)).toBe(Math.ceil((7 * 0.62 + 0.3 + 4) * 10))
     expect(estimateLabelWidth('')).toBe(0)
   })
 
-  it('預設使用圖譜標籤的字級', () => {
+  it("uses the graph labels' font size by default", () => {
     expect(estimateLabelWidth('字')).toBe(LABEL_FONT_SIZE)
   })
 })
 
 describe('footprint', () => {
-  it('寬度取節點與標籤較寬者，下方包含標籤', () => {
+  it('the width is the wider of the node and the label, with the label below', () => {
     const f = footprint(5, 100)
     expect(f.half).toBeGreaterThanOrEqual(50)
     expect(f.top).toBeLessThan(f.bottom)
     expect(footprint(30, 10).half).toBeGreaterThanOrEqual(30)
   })
 
-  it('沒有標籤時是節點的方框', () => {
+  it("without a label it's the node's box", () => {
     const f = footprint(5, 0)
     expect(f.top).toBe(f.bottom)
     expect(f.half).toBe(f.top)
@@ -64,7 +64,7 @@ function overlaps(bs: Box[], slack = 0): number {
 }
 
 describe('forceRectCollide', () => {
-  it('把疊在一起的寬標籤推開', () => {
+  it('pushes apart wide labels stacked on each other', () => {
     const nodes: RectNode[] = [
       { x: 0, y: 0, box: footprint(5, 120) },
       { x: 10, y: 5, box: footprint(5, 120) },
@@ -74,7 +74,7 @@ describe('forceRectCollide', () => {
     expect(overlaps(boxes(nodes))).toBe(0)
   })
 
-  it('不重疊的節點不受影響', () => {
+  it('leaves non-overlapping nodes alone', () => {
     const nodes: RectNode[] = [
       { x: 0, y: 0, box: footprint(5, 40) },
       { x: 200, y: 0, box: footprint(5, 40) }
@@ -87,8 +87,8 @@ describe('forceRectCollide', () => {
   })
 })
 
-describe('ForceLayout 連同標籤', () => {
-  it('收斂後標籤不重疊', () => {
+describe('ForceLayout with labels', () => {
+  it('labels do not overlap after convergence', () => {
     let seed = 7
     const random = (): number => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646
     const n = 300
@@ -109,7 +109,7 @@ describe('ForceLayout 連同標籤', () => {
       }))
     )
     while (!layout.done) layout.tick(10)
-    // 收斂時會做一次只有碰撞的整理（容許 1px 內的浮點殘差）
+    // A collision-only cleanup runs on convergence (allowing float residue under 1px)
     const pos = layout.positions()
     const bs = titles.map((t, i) => {
       const f = footprint(5, estimateLabelWidth(t))

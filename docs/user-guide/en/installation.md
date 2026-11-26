@@ -155,13 +155,13 @@ See [Setting up local AI](ai-setup.md) for details. Knowmon works without Ollama
 
 ### Try the sample vault
 
-The source includes a sample vault, `test-vault/`, with journal entries, book notes, and project notes — handy for exploring the features. **Make a copy** first so you don't modify files in the source tree:
+The source includes a sample vault, `test-vault/`: about seven weeks of journal entries, book notes, two projects, meeting notes and recipes — handy for exploring the graph, the timeline and the AI features. **Make a copy** first so you don't modify files in the source tree:
 
 ```bash
 cp -r test-vault ~/knowmon-test-vault
 ```
 
-Then click **Open folder** in Knowmon and choose `~/knowmon-test-vault`. (The sample notes are in Chinese.)
+Then click **Open folder** in Knowmon and choose `~/knowmon-test-vault`, and start with the **Welcome** note. The notes are in English, except for a small `中文` folder for trying Chinese search and summaries.
 
 > **Keep it under your home folder, not `/tmp`**: `/tmp` has no system trash, so deleting notes there fails.
 

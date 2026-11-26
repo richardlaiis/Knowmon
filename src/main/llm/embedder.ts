@@ -1,7 +1,7 @@
-// 背景 embedding：依序處理還沒有向量的 chunk，每批呼叫一次 Ollama。
+// Background embedding: processes chunks without vectors in order, calling Ollama once per batch.
 //
-// 不經過 Vault 的佇列：better-sqlite3 是同步的，寫入不會與其他操作交錯；
-// embedding 途中筆記被修改或刪除時，舊 chunk 已不存在（id 不重複使用），storeEmbeddings 會略過。
+// It doesn't go through the Vault queue: better-sqlite3 is synchronous, so writes can't interleave with other operations;
+// if a note is modified or deleted mid-embedding, its old chunks no longer exist (ids are never reused), and storeEmbeddings skips them.
 import type { DB } from '../db'
 import {
   ensureVectorTables,
@@ -19,27 +19,27 @@ export interface EmbedderOptions {
   model: string
   embed: (texts: string[], signal: AbortSignal) => Promise<number[][]>
   batchSize?: number
-  /** 這些筆記的整篇向量已更新（semantic 邊要重算） */
+  /** These notes' vectors were updated (semantic edges need recomputing) */
   onNotesEmbedded?: (noteIds: number[]) => void
-  /** busy、error 或進度改變 */
+  /** busy, error or progress changed */
   onChange?: () => void
 }
 
 export class Embedder {
   busy = false
-  /** 上一輪停下來的原因（離線、模型未下載…）；下一次 wake 成功後清除 */
+  /** Why the last round stopped (offline, model not downloaded…); cleared after the next successful wake */
   error: unknown = null
   private stopped = false
   private readonly abort = new AbortController()
   private running: Promise<void> | null = null
 
   constructor(private readonly opts: EmbedderOptions) {
-    // 換了 embedding 模型：舊向量作廢
+    // The embedding model changed: old vectors are invalid
     const current = vectorModel(opts.db)
     if (current && current.model !== opts.model) resetVectors(opts.db)
   }
 
-  /** 有新的 chunk 或連線恢復時呼叫；已在執行時不重複啟動（迴圈每批都會重新查詢） */
+  /** Called when there are new chunks or the connection is back; doesn't start again while running (the loop re-queries every batch) */
   wake(): void {
     if (this.stopped || this.running) return
     this.running = this.run().finally(() => {
@@ -47,7 +47,7 @@ export class Embedder {
     })
   }
 
-  /** 等待目前這一輪結束（測試用） */
+  /** Waits for the current round to finish (for tests) */
   idle(): Promise<void> {
     return this.running ?? Promise.resolve()
   }

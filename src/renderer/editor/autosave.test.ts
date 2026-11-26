@@ -5,7 +5,7 @@ beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
 describe('createAutosave', () => {
-  it('停止輸入後只寫最後一次內容', async () => {
+  it('writes only the last content after typing stops', async () => {
     const save = vi.fn(async () => {})
     const a = createAutosave(save, 500)
     a.schedule('a.md', '1')
@@ -18,7 +18,7 @@ describe('createAutosave', () => {
     expect(a.isDirty('a.md')).toBe(false)
   })
 
-  it('flush 立即寫出，切換筆記時先寫前一篇', async () => {
+  it('flush writes immediately, and switching notes writes the previous one first', async () => {
     const save = vi.fn(async () => {})
     const a = createAutosave(save, 500)
     a.schedule('a.md', 'A')
@@ -30,7 +30,7 @@ describe('createAutosave', () => {
     ])
   })
 
-  it('cancel 放棄未儲存內容', async () => {
+  it('cancel discards unsaved content', async () => {
     const save = vi.fn(async () => {})
     const a = createAutosave(save, 500)
     a.schedule('a.md', 'A')
@@ -39,24 +39,24 @@ describe('createAutosave', () => {
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('寫入依序進行，失敗時交給 onError', async () => {
+  it('writes happen in order, with failures passed to onError', async () => {
     const order: string[] = []
     const onError = vi.fn()
     const save = vi.fn(async (_p: string, c: string) => {
-      await new Promise((r) => setTimeout(r, c === '慢' ? 100 : 0))
-      if (c === '壞') throw new Error('寫入失敗')
+      await new Promise((r) => setTimeout(r, c === 'slow' ? 100 : 0))
+      if (c === 'bad') throw new Error('write failed')
       order.push(c)
     })
     const a = createAutosave(save, 500, onError)
-    a.schedule('a.md', '慢')
+    a.schedule('a.md', 'slow')
     void a.flush()
-    a.schedule('a.md', '壞')
+    a.schedule('a.md', 'bad')
     void a.flush()
-    a.schedule('a.md', '快')
+    a.schedule('a.md', 'fast')
     const done = a.flush()
     await vi.advanceTimersByTimeAsync(200)
     await done
-    expect(order).toEqual(['慢', '快'])
+    expect(order).toEqual(['slow', 'fast'])
     expect(onError).toHaveBeenCalledTimes(1)
   })
 })

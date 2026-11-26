@@ -18,12 +18,12 @@ function loadMode(): Mode {
 }
 
 export interface SearchPanelProps {
-  /** 改變時把焦點移到搜尋框（Ctrl/Cmd+Shift+F） */
+  /** When it changes, focus moves to the search box (Ctrl/Cmd+Shift+F) */
   focusKey: number
-  /** 索引有變動時遞增，重新查詢 */
+  /** Incremented when the index changes, to query again */
   version: number
   selected: string | null
-  /** newTab：Ctrl/Cmd+點擊或中鍵；line：混合檢索命中的段落 */
+  /** newTab: Ctrl/Cmd+click or middle click; line: the passage hybrid retrieval matched */
   onOpen: (path: string, newTab: boolean, line?: number) => void
 }
 
@@ -46,7 +46,7 @@ export function SearchPanel({
   const [mode, setMode] = useState<Mode>(loadMode)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchHit[] | null>(null)
-  /** key：查詢與日期篩選，改變後按 Enter 才重新查詢 */
+  /** key: the query and date filter; after a change, Enter is needed to query again */
   const [hybrid, setHybrid] = useState<{ key: string; result: RetrieveResult } | null>(null)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -60,7 +60,7 @@ export function SearchPanel({
     input.current?.select()
   }, [focusKey])
 
-  // 關鍵字模式：邊打邊查
+  // Keyword mode: search while typing
   useEffect(() => {
     if (mode !== 'keyword' || !query.trim()) return
     let stale = false
@@ -80,7 +80,7 @@ export function SearchPanel({
     }
   }, [query, version, mode])
 
-  // 混合模式：需要呼叫 Ollama，按 Enter 才查
+  // Hybrid mode: needs to call Ollama, so it queries only on Enter
   const hybridKey = `${query.trim()}|${from}|${to}`
   const runHybrid = (): void => {
     const q = query.trim()
@@ -105,7 +105,7 @@ export function SearchPanel({
     try {
       localStorage.setItem(MODE_KEY, m)
     } catch {
-      // 無法儲存偏好時仍可切換
+      // Switching still works when the preference can't be saved
     }
     input.current?.focus()
   }

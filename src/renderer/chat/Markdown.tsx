@@ -1,4 +1,4 @@
-// 以 React 元素渲染 parseMarkdown 的結果；wikilink 可點擊開啟筆記，問答的 [n] 可點擊開啟來源
+// Renders parseMarkdown's result as React elements; wikilinks open notes and Q&A [n] citations open sources
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import type { AskSource } from '../../shared/types'
 import { renderMath } from '../editor/mathRender'
@@ -8,14 +8,14 @@ export interface MarkdownProps {
   text: string
   className?: string
   onOpenLink: (target: string, newTab: boolean) => void
-  /** 有值時把 [n] 渲染成引用，點擊開啟對應的來源 */
+  /** When set, [n] renders as a citation that opens its source */
   citations?: {
     sources: AskSource[]
     onOpen: (source: AskSource, newTab: boolean) => void
   }
 }
 
-/** KaTeX 產生的 DOM 節點放進 ref（不經過 HTML 字串） */
+/** Puts the DOM nodes KaTeX creates into a ref (never through an HTML string) */
 function TexMath({
   tex,
   display,

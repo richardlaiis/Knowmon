@@ -1,5 +1,5 @@
-// note_events 的真相來源：<vault>/.knowmon/events.jsonl（append-only）。
-// DB 裡的 note_events 只是索引，DB 重建時從這裡重播。
+// The source of truth for note_events: <vault>/.knowmon/events.jsonl (append-only).
+// note_events in the DB is only an index, replayed from here when the DB is rebuilt.
 import fs from 'node:fs'
 import type { NoteEventKind } from '../../shared/types'
 
@@ -15,7 +15,7 @@ export class EventsLog {
     fs.appendFileSync(this.file, JSON.stringify(entry) + '\n')
   }
 
-  /** 讀出所有紀錄；壞掉的行（例如寫到一半斷電）直接略過 */
+  /** Reads every entry; corrupt lines (for example from a power cut mid-write) are skipped */
   readAll(): LogEntry[] {
     let raw: string
     try {
@@ -29,7 +29,7 @@ export class EventsLog {
       try {
         out.push(JSON.parse(line))
       } catch {
-        // 略過損毀的行
+        // Skip corrupt lines
       }
     }
     return out
@@ -41,7 +41,7 @@ export interface ReplayedEvent {
   kind: NoteEventKind
 }
 
-/** 重播日誌：rename 搬移歷程、delete 清除歷程。回傳「目前路徑 → 事件」。 */
+/** Replays the log: rename moves history and delete clears it. Returns "current path → events". */
 export function replay(entries: LogEntry[]): Map<string, ReplayedEvent[]> {
   const byPath = new Map<string, ReplayedEvent[]>()
   for (const e of entries) {
@@ -50,7 +50,7 @@ export function replay(entries: LogEntry[]): Map<string, ReplayedEvent[]> {
       list.push({ ts: e.ts, kind: e.kind })
       byPath.set(e.path, list)
     } else if (e.op === 'rename') {
-      // 支援資料夾改名：from 底下的所有路徑一起搬
+      // Folder renames: every path under from moves along
       for (const [p, list] of [...byPath]) {
         const moved = movedPath(p, e.from, e.to)
         if (moved === null) continue
@@ -66,7 +66,7 @@ export function replay(entries: LogEntry[]): Map<string, ReplayedEvent[]> {
   return byPath
 }
 
-/** p 等於 from 或位於 from 資料夾底下時，回傳搬到 to 之後的路徑，否則 null */
+/** When p equals from or is inside the from folder, returns its path after moving to to; otherwise null */
 export function movedPath(p: string, from: string, to: string): string | null {
   if (p === from) return to
   if (p.startsWith(from + '/')) return to + p.slice(from.length)

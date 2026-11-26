@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'],
     environment: 'node',
-    // CI 的共用機器慢（Intel Mac runner 準備 1000 篇筆記的效能測試就超過預設的 5 秒），
-    // 與 perfBudget（src/main/db/test-utils.ts）一樣放寬；本機維持預設
+    // CI's shared machines are slow (on the Intel Mac runner, preparing 1000 notes for the performance tests alone exceeds the default 5 seconds),
+    // so relax it like perfBudget (src/main/db/test-utils.ts); keep the default locally
     testTimeout: process.env.CI ? 60_000 : 5_000
   }
 })

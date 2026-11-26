@@ -1,4 +1,4 @@
-// 時間軸視圖：依「事件時間」（eventDate）或「寫作時間」（create / edit 事件，分成 session）列出筆記
+// Timeline view: lists notes by "event date" (eventDate) or "written time" (create / edit events, split into sessions)
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadPref, savePref } from '../graph/prefs'
 import type { ActivityEvent, NoteSummary } from '../../shared/types'
@@ -18,11 +18,11 @@ const MODES = ['event', 'written'] as const
 type Mode = (typeof MODES)[number]
 
 export interface TimelineViewProps {
-  /** false 時隱藏但保留（捲動位置不變），也不重新取得資料 */
+  /** When false, hidden but kept (scroll position unchanged), without refetching data */
   visible: boolean
   version: number
   current: string | null
-  /** session 的間隔（分鐘），與 same_session 邊相同 */
+  /** Session gap (minutes), the same as for same_session edges */
   sessionGapMinutes: number
   onOpen: (path: string, newTab: boolean) => void
   onOpenSettings: () => void

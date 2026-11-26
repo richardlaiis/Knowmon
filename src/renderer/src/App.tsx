@@ -105,7 +105,7 @@ const PREVIEW_KEY = 'knowmon.livePreview'
 const SIDE_TAB_KEY = 'knowmon.sidePanel'
 const TABS_KEY = 'knowmon.tabs:'
 const RECENT_MAX = 20
-/** 快捷鍵提示在 macOS 顯示 ⌘ */
+/** Shortcut hints show ⌘ on macOS */
 const MAC = isMacPlatform(navigator.userAgent)
 
 function loadFlag(key: string): boolean {
@@ -120,7 +120,7 @@ function saveFlag(key: string, on: boolean): void {
   try {
     localStorage.setItem(key, String(on))
   } catch {
-    // 無法儲存偏好時仍可切換
+    // Switching still works when the preference can't be saved
   }
 }
 
@@ -135,7 +135,7 @@ function loadSideTab(): SideTab {
   }
 }
 
-/** 每個 vault 各自記住開著的分頁 */
+/** Each vault remembers its own open tabs */
 function loadSavedTabs(vault: string): unknown {
   try {
     const raw = localStorage.getItem(TABS_KEY + vault)
@@ -149,7 +149,7 @@ function saveTabs(vault: string, tabs: T.TabsState): void {
   try {
     localStorage.setItem(TABS_KEY + vault, JSON.stringify(T.serializeTabs(tabs)))
   } catch {
-    // 無法儲存時下次就從空白開始
+    // If it can't be saved, start blank next time
   }
 }
 
@@ -172,7 +172,7 @@ function App(): React.JSX.Element {
   const [layout, setLayout] = useState<LayoutPrefs>(loadLayout)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'search'>('files')
   const [searchFocus, setSearchFocus] = useState(0)
-  /** 索引可能改變時遞增（外部修改、App 內操作、儲存），讓搜尋、反向連結與圖譜重新查詢 */
+  /** Incremented when the index may have changed (external changes, in-app operations, saves), so search, backlinks and the graph query again */
   const [indexVersion, setIndexVersion] = useState(0)
   const [switcher, setSwitcher] = useState<{
     notes: NoteSummary[]
@@ -180,12 +180,12 @@ function App(): React.JSX.Element {
     newTab: boolean
   } | null>(null)
   const [sideTab, setSideTab] = useState<SideTab>(() => loadSideTab())
-  // 圖譜節點座標快取，換 vault 時重新開始
+  // Graph node position cache, reset when switching vaults
   const graphPositions = useMemo(
     () => ({ global: new Map<string, Point>(), local: new Map<string, Point>(), vault }),
     [vault]
   )
-  /** 這個 vault 的時間參數（時間軸的 session 切分用；時間邊由 main 計算） */
+  /** This vault's time parameters (for splitting timeline sessions; time edges are computed by main) */
   const [timeSettings, setTimeSettings] = useState<TimeSettings>(DEFAULT_TIME_SETTINGS)
   const [semanticSettings, setSemanticSettings] =
     useState<SemanticSettings>(DEFAULT_SEMANTIC_SETTINGS)
@@ -195,23 +195,23 @@ function App(): React.JSX.Element {
   const [summary, setSummary] = useState<SummaryState | null>(null)
   const [summaryLanguage, setSummaryLanguage] = useState(loadSummaryLanguage)
   const [aiMode, setAiMode] = useState<AiMode>(loadAiMode)
-  /** 問答對話，只存在記憶體；換 vault 時清空 */
+  /** The Q&A conversation, kept only in memory; cleared when switching vaults */
   const [conversation, setConversation] = useState<Conversation>(emptyConversation)
-  /** 遞增時聚焦對話輸入框 */
+  /** Incremented to focus the chat input */
   const [chatFocus, setChatFocus] = useState(0)
-  /** agent 任務，只存在記憶體；換 vault 時清空 */
+  /** The agent task, kept only in memory; cleared when switching vaults */
   const [agentSession, setAgentSession] = useState<AgentSession>(emptySession)
   const [agentFocus, setAgentFocus] = useState(0)
   const agentWaiting = pendingConfirm(agentSession) !== null
-  /** 各筆記編輯器目前選取的文字（總結選取文字用） */
+  /** The text currently selected in each note's editor (for summarizing the selection) */
   const selections = useRef(new Map<string, string>())
-  /** 搜尋結果要捲到的行；n 每次遞增，同一行也會再跳 */
+  /** The line a search result should scroll to; n increments every time, so the same line jumps again */
   const [jump, setJump] = useState<{ path: string; line: number; n: number } | null>(null)
   const [theme, setTheme] = useState<Theme>(() =>
     document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
   )
 
-  // 事件處理器（watcher）讀取最新的分頁狀態
+  // Event handlers (the watcher) read the latest tab state
   const tabsRef = useRef(tabs)
   useEffect(() => {
     tabsRef.current = tabs
@@ -220,9 +220,9 @@ function App(): React.JSX.Element {
   const current = T.activeTab(tabs)
   const currentNote = current?.kind === 'note' ? current.path : null
 
-  // 最近開啟的筆記（Quick switcher 排序用），越前面越近
+  // Recently opened notes (for Quick switcher ordering), most recent first
   const recent = useRef<string[]>([])
-  /** 最後看的筆記：切到時間軸時仍標示它（render 時直接調整，不經過 effect） */
+  /** The last note viewed: still highlighted when switching to the timeline (adjusted during render, not in an effect) */
   const [lastNote, setLastNote] = useState<string | null>(null)
   if (currentNote && currentNote !== lastNote) setLastNote(currentNote)
   useEffect(() => {
@@ -234,8 +234,8 @@ function App(): React.JSX.Element {
     }
   }, [currentNote])
 
-  // ---- 分頁的存檔與還原 ----
-  /** 已經還原過分頁的 vault；還原完成前不存檔，避免空的狀態蓋掉上次的分頁 */
+  // ---- Saving and restoring tabs ----
+  /** Vaults whose tabs have been restored; nothing is saved until restoring finishes, so an empty state can't overwrite the previous tabs */
   const restoredFor = useRef<string | null>(null)
   useEffect(() => {
     if (!vault) return
@@ -271,7 +271,7 @@ function App(): React.JSX.Element {
     }
   }, [vault])
 
-  // 背景 embedding 告一段落時，semantic 邊與混合檢索的結果可能改變
+  // When background embedding settles, semantic edges and hybrid retrieval results may change
   const embedBusy = llmStatus?.busy ?? false
   const wasBusy = useRef(false)
   useEffect(() => {
@@ -279,7 +279,7 @@ function App(): React.JSX.Element {
     wasBusy.current = embedBusy
   }, [embedBusy])
 
-  // 總結與問答的串流片段
+  // Streamed chunks of summaries and answers
   useEffect(() => window.api.llm.onSummary((c) => setSummary((s) => s && applyChunk(s, c))), [])
   useEffect(
     () => window.api.llm.onAnswer((c) => setConversation((s) => applyAnswerChunk(s, c))),
@@ -318,7 +318,7 @@ function App(): React.JSX.Element {
     try {
       localStorage.setItem(SIDE_TAB_KEY, tab)
     } catch {
-      // 無法儲存偏好時仍可切換
+      // Switching still works when the preference can't be saved
     }
   }, [])
 
@@ -333,7 +333,7 @@ function App(): React.JSX.Element {
     setSearchFocus((n) => n + 1)
   }, [updateLayout])
 
-  // App 自己發起的新增/改名/刪除進行中，忽略 watcher 對開著的筆記的通知
+  // While the app's own create/rename/delete is in progress, ignore watcher notifications about open notes
   const localOps = useRef(0)
   const isLocalOp = useCallback(() => localOps.current > 0, [])
 
@@ -360,7 +360,7 @@ function App(): React.JSX.Element {
     }
   }, [showError])
 
-  // 啟動：還原上次的 vault
+  // Startup: restore the last vault
   useEffect(() => {
     window.api.vault
       .getCurrent()
@@ -372,7 +372,7 @@ function App(): React.JSX.Element {
       .finally(() => setReady(true))
   }, [showError])
 
-  // 外部修改：更新檔案樹；筆記被外部刪除或移走時關閉它的分頁（內容變更由各分頁自己處理）
+  // External changes: update the file tree; close the tab of a note deleted or moved externally (content changes are handled by each tab)
   useEffect(() => {
     if (!vault) return
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -398,7 +398,7 @@ function App(): React.JSX.Element {
     }
   }, [vault, refreshTree, autosave])
 
-  // 關閉視窗前寫出未儲存的內容
+  // Write out unsaved content before the window closes
   useEffect(() => {
     const onUnload = (): void => void autosave.flush()
     window.addEventListener('beforeunload', onUnload)
@@ -413,7 +413,7 @@ function App(): React.JSX.Element {
     } catch (e) {
       showError(e)
     } finally {
-      // 讓 watcher 對這次操作的回音先過去
+      // Let the watcher's echo of this operation pass first
       setTimeout(() => localOps.current--, 500)
       await refreshTree()
     }
@@ -436,23 +436,23 @@ function App(): React.JSX.Element {
     }
   }
 
-  /** 開啟筆記：取代目前分頁，newTab 時開新分頁；已開著就切過去 */
+  /** Opens a note: replaces the current tab, or opens a new tab with newTab; switches to it if already open */
   const openNote = useCallback(
     async (path: string, newTab = false): Promise<void> => {
-      // 取代分頁時原本的編輯器會被移除，先寫出未儲存的內容
+      // Replacing the tab removes the old editor, so write out unsaved content first
       await autosave.flush()
       setTabs((s) => T.openNote(s, path, newTab))
     },
     [autosave]
   )
 
-  /** 搜尋結果：開啟筆記並捲到命中的段落 */
+  /** Search result: opens the note and scrolls to the matching passage */
   const openAt = async (path: string, newTab: boolean, line?: number): Promise<void> => {
     await openNote(path, newTab)
     if (line) setJump((j) => ({ path, line, n: (j?.n ?? 0) + 1 }))
   }
 
-  /** 總結目前的筆記；編輯器有選取文字時只總結選取的部分 */
+  /** Summarizes the current note; with text selected in the editor, only the selection */
   const summarize = useCallback(async (): Promise<void> => {
     const path = currentNote
     if (!path) return
@@ -465,7 +465,7 @@ function App(): React.JSX.Element {
       return startSummary(path, selection.length > 0)
     })
     try {
-      // main 從索引讀內文，先寫出未儲存的內容
+      // Main reads the body from the index, so write out unsaved content first
       await autosave.flush()
       const id = await window.api.llm.summarize({
         path,
@@ -478,7 +478,7 @@ function App(): React.JSX.Element {
     }
   }, [currentNote, autosave, chooseSideTab, chooseAiMode, summaryLanguage])
 
-  /** 打開右側 AI 分頁的對話並聚焦輸入框 */
+  /** Opens Chat in the right AI tab and focuses the input */
   const openChat = useCallback((): void => {
     setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
     chooseSideTab('ai')
@@ -486,7 +486,7 @@ function App(): React.JSX.Element {
     setChatFocus((n) => n + 1)
   }, [chooseSideTab, chooseAiMode])
 
-  /** 打開右側 AI 分頁的 agent 並聚焦輸入框 */
+  /** Opens the agent in the right AI tab and focuses the input */
   const openAgent = useCallback((): void => {
     setLayout((l) => (l.rightOpen ? l : withSaved({ ...l, rightOpen: true })))
     chooseSideTab('ai')
@@ -498,7 +498,7 @@ function App(): React.JSX.Element {
     const turns = agentHistory(agentSession)
     setAgentSession((s) => startTask(s, task))
     try {
-      // 工具從索引讀取，先寫出未儲存的內容
+      // Tools read from the index, so write out unsaved content first
       await autosave.flush()
       const id = await window.api.llm.agent({ task, history: turns })
       setAgentSession((s) => withTaskId(s, id))
@@ -525,7 +525,7 @@ function App(): React.JSX.Element {
     const t = lastTask(agentSession)
     if (!t?.id) return
     try {
-      // add_tags 會在 main 重新讀檔，先寫出未儲存的內容
+      // add_tags rereads the file in main, so write out unsaved content first
       if (decision.approved) await autosave.flush()
       await window.api.llm.confirm(t.id, step.index, decision)
     } catch (e) {
@@ -537,7 +537,7 @@ function App(): React.JSX.Element {
     const turns = chatHistory(conversation)
     setConversation((c) => askQuestion(c, question))
     try {
-      // main 從索引檢索，先寫出未儲存的內容
+      // Main retrieves from the index, so write out unsaved content first
       await autosave.flush()
       const id = await window.api.llm.ask({ question, history: turns, range })
       setConversation((c) => withAnswerId(c, id))
@@ -576,7 +576,7 @@ function App(): React.JSX.Element {
     keepOpen: boolean
   ): Promise<void> => {
     try {
-      // 先存 key，設定改變時的連線檢查才用得到
+      // Save keys first, so the connection check triggered by the settings change can use them
       for (const [provider, key] of Object.entries(keys) as [CloudProvider, string | null][]) {
         await window.api.llm.setApiKey(provider, key)
       }
@@ -599,7 +599,7 @@ function App(): React.JSX.Element {
       setTimeSettings(await window.api.settings.setTime(next))
       setSemanticSettings(await window.api.settings.setSemantic(semantic))
       setSettingsOpen(false)
-      // 時間邊與 semantic 邊會重算，讓圖譜重新取得資料
+      // Time edges and semantic edges are recomputed, so have the graph fetch its data again
       setIndexVersion((v) => v + 1)
     } catch (e) {
       showError(e)
@@ -614,7 +614,7 @@ function App(): React.JSX.Element {
     [autosave]
   )
 
-  /** [[目標]]：開啟筆記，不存在時在 vault 根目錄建立 */
+  /** [[target]]: opens the note, creating it at the vault root if it doesn't exist */
   const openLink = async (target: string, newTab: boolean): Promise<void> => {
     try {
       const notes = await fetchNotes()
@@ -633,7 +633,7 @@ function App(): React.JSX.Element {
     }
   }
 
-  /** 在檔案樹顯示名稱輸入框，輸入名稱後才建立（見 createItem） */
+  /** Shows a name field in the file tree; the item is created only after a name is entered (see createItem) */
   const startCreate = (item: NewItem | null): void => {
     setRenaming(null)
     setSidebarTab('files')
@@ -647,7 +647,7 @@ function App(): React.JSX.Element {
       const path = newItemPath(tree, item, name)
       if (item.kind === 'folder') return await window.api.notes.createFolder(path)
       await window.api.notes.create(path)
-      // 新筆記開在新分頁，不取代正在看的筆記
+      // New notes open in a new tab without replacing the note being viewed
       setTabs((s) => T.openNote(s, path, true))
     })
 
@@ -678,7 +678,7 @@ function App(): React.JSX.Element {
     })
   }
 
-  // 面板寬度：拖曳時限制在上下限內，且不把編輯器擠得太窄
+  // Panel widths: kept within limits while dragging, without squeezing the editor too narrow
   const resizeLeft = (w: number): void =>
     updateLayout({
       left: clampWidth(w, PANE_LIMITS.left, window.innerWidth, layout.rightOpen ? layout.right : 0)
@@ -696,7 +696,7 @@ function App(): React.JSX.Element {
     []
   )
 
-  // 全域快捷鍵（完整列表見 README 的「快捷鍵」）
+  // Global shortcuts (full list in docs/user-guide/en/shortcuts.md)
   const activeId = tabs.activeId
   useEffect(() => {
     if (!vault) return
@@ -721,10 +721,10 @@ function App(): React.JSX.Element {
         if (activeId) void closeTab(activeId)
       } else return
       e.preventDefault()
-      // 不讓編輯器再處理同一個按鍵（例如 CodeMirror 的 Ctrl/Cmd+G 是「找下一個」）
+      // Don't let the editor handle the same key again (for example CodeMirror's Ctrl/Cmd+G is "find next")
       e.stopPropagation()
     }
-    // capture：在編輯器之前攔截全域快捷鍵
+    // capture: intercept global shortcuts before the editor
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [
@@ -816,7 +816,7 @@ function App(): React.JSX.Element {
                 <SearchIcon size={16} />
                 <span className="label">Search</span>
               </button>
-              {/* 開新分頁的動作只顯示圖示（tooltip 有名稱與快捷鍵） */}
+              {/* Actions that open tabs show only icons (the tooltip has the name and shortcut) */}
               <div className="sidebar-actions">
                 <button onClick={openGraph} title="Graph view (Ctrl+G)" aria-label="Graph view">
                   <GraphIcon size={17} />
@@ -1112,7 +1112,7 @@ function App(): React.JSX.Element {
   )
 }
 
-/** 側欄底部的 AI 狀態（點擊打開右側的 AI 分頁） */
+/** AI status at the bottom of the sidebar (clicking opens the AI tab on the right) */
 function LlmBadge({
   status,
   detail,

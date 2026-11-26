@@ -19,21 +19,21 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 describe('assetResponse', () => {
-  it('提供 vault 內的圖片並帶上 MIME type', async () => {
+  it('serves images inside the vault with their MIME type', async () => {
     const res = await assetResponse(root, assetUrl('attachments/圖 1.png'))
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/png')
     expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([1, 2, 3])
   })
 
-  it('不存在、不是圖片、沒有開啟 vault 時回 404', async () => {
+  it('returns 404 when missing, not an image, or no vault is open', async () => {
     expect((await assetResponse(root, assetUrl('attachments/none.png'))).status).toBe(404)
     expect((await assetResponse(root, assetUrl('note.md'))).status).toBe(404)
     expect((await assetResponse(null, assetUrl('attachments/圖 1.png'))).status).toBe(404)
     expect((await assetResponse(root, 'https://vault/x.png')).status).toBe(404)
   })
 
-  it('拒絕隱藏資料夾與跳出 vault 的路徑', async () => {
+  it('rejects hidden folders and paths that escape the vault', async () => {
     expect((await assetResponse(root, assetUrl('.knowmon/x.png'))).status).toBe(403)
     expect((await assetResponse(root, 'knowmon-asset://vault/..%2F..%2Fx.png')).status).toBe(403)
     expect((await assetResponse(root, 'knowmon-asset://vault/a/../../x.png')).status).toBe(403)

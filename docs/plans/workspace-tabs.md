@@ -1,50 +1,50 @@
-# 工作區：分頁與可調整的面板
+# Workspace: tabs and resizable panels
 
-使用者需求（2026-10-07）：像瀏覽器一樣有分頁，一個分頁可以是筆記或圖譜；檔案樹、編輯器、右側面板的寬度可以拖曳；檔案樹與右側面板可以開關（類似 VS Code）。
+User request (2026-10-07): browser-style tabs, where a tab can be a note or the graph; the widths of the file tree, editor and right panel can be dragged; the file tree and right panel can be toggled (similar to VS Code).
 
-## 已確認的決定（2026-10-07）
+## Confirmed decisions (2026-10-07)
 
-- 在檔案樹、搜尋結果、反向連結、圖譜點選筆記：**取代目前分頁**；`Ctrl/Cmd+點擊`或滑鼠中鍵開新分頁。已經在某個分頁開著的筆記，直接切過去，不重複開。
-- 不做分頁的上一頁／下一頁。
-- 每個 vault 各自記住開著的分頁，重新開啟時還原（存 renderer 的 localStorage，不寫進 vault；已不存在的筆記略過）。
-- 右側面板維持 Backlinks / Local graph 分頁切換，整個面板可開關。
+- Choosing a note in the file tree, search results, backlinks or the graph **replaces the current tab**; `Ctrl/Cmd+click` or middle-click opens a new tab. A note already open in a tab is switched to instead of opened again.
+- No back/forward for tabs.
+- Each vault remembers its open tabs and restores them when reopened (stored in the renderer's localStorage, not in the vault; notes that no longer exist are skipped).
+- The right panel keeps its Backlinks / Local graph tabs, and the whole panel can be toggled.
 
-## 分頁
+## Tabs
 
-- 分頁種類：筆記（`{ kind: 'note', path }`）、全域圖譜（`{ kind: 'graph' }`）。圖譜分頁最多一個（Cytoscape 與座標快取只需要一份），`Ctrl/Cmd+G` 切到它，沒有就開新分頁。
-- 分頁列：顯示標題與關閉按鈕；中鍵關閉；拖曳調整順序；右鍵選單「Close / Close others」；尾端「+」開 Quick switcher，選到的筆記開在新分頁。
-- 快捷鍵：`Ctrl/Cmd+W` 關閉分頁、`Ctrl+Tab` / `Ctrl+Shift+Tab` 切換分頁、`Ctrl/Cmd+T` 開 Quick switcher（新分頁）、Quick switcher 裡 `Ctrl/Cmd+Enter` 開在新分頁。
-- wikilink：`Ctrl/Cmd+點擊` 在目前分頁開啟（維持現狀），`Ctrl/Cmd+Shift+點擊` 開新分頁。
-- 每個筆記分頁有自己的編輯器，第一次切到時才讀檔（還原很多分頁時不會一次讀所有檔案、也不會替每篇記 `open` 事件），之後保持掛載（隱藏），切換分頁不會遺失游標、捲動位置與 undo 歷程。
-- 改名／搬移：所有分頁的路徑跟著更新；刪除：關閉受影響的分頁。外部修改：沿用現有規則（沒有未儲存內容就重新載入，否則在該分頁顯示提示列），套用到每個開著的分頁。
-- 分頁狀態的操作寫成純函式（`src/renderer/src/workspace/tabs.ts`，附測試）：開啟（取代或新分頁）、關閉（關閉後啟用右邊、沒有就左邊）、移動、改名、刪除、序列化／還原驗證。
+- Tab kinds: note (`{ kind: 'note', path }`) and global graph (`{ kind: 'graph' }`). There is at most one graph tab (Cytoscape and the position cache only need one copy); `Ctrl/Cmd+G` switches to it, or opens a new one.
+- Tab bar: shows the title and a close button; middle-click closes; drag to reorder; context menu "Close / Close others"; a "+" at the end opens the Quick switcher, and the chosen note opens in a new tab.
+- Shortcuts: `Ctrl/Cmd+W` closes a tab, `Ctrl+Tab` / `Ctrl+Shift+Tab` switch tabs, `Ctrl/Cmd+T` opens the Quick switcher (new tab), and `Ctrl/Cmd+Enter` in the Quick switcher opens in a new tab.
+- Wikilinks: `Ctrl/Cmd+click` opens in the current tab (as now), `Ctrl/Cmd+Shift+click` opens a new tab.
+- Each note tab has its own editor and reads its file only when first shown (so restoring many tabs doesn't read every file at once or record an `open` event for each), then stays mounted (hidden), so switching tabs keeps the cursor, scroll position and undo history.
+- Rename/move: the paths of all tabs follow; delete: affected tabs are closed. External changes: the existing rules (reload if there's no unsaved content, otherwise show a bar in that tab) apply to every open tab.
+- Tab state operations are pure functions (`src/renderer/src/workspace/tabs.ts`, with tests): open (replace or new tab), close (activate the tab to the right, or the left if none), move, rename, delete, serialize/validate on restore.
 
-### Electron 的 Ctrl+W
+### Electron's Ctrl+W
 
-Electron 預設選單的「Close Window」綁定 `Ctrl/Cmd+W`，會直接關閉視窗。main process 改用自訂的應用程式選單：保留編輯（複製貼上）與開發工具相關項目，拿掉 `Ctrl/Cmd+W` 的快捷鍵，讓 renderer 用來關分頁。不需要改 IPC 合約。
+"Close Window" in Electron's default menu is bound to `Ctrl/Cmd+W` and closes the window outright. The main process uses a custom application menu instead: it keeps the editing (copy/paste) and developer tools items and drops the `Ctrl/Cmd+W` shortcut, so the renderer can use it to close tabs. No IPC contract change is needed.
 
-## 面板
+## Panels
 
-- 版面：左側檔案樹／搜尋 | 分頁＋編輯器 | 右側面板。左右兩條分隔線可拖曳，寬度有上下限（純函式 `clampWidth`，附測試），雙擊分隔線恢復預設寬度。
-- 開關：`Ctrl/Cmd+B` 開關左側欄、`Ctrl/Cmd+Alt+B` 開關右側面板；分頁列右邊也有按鈕。取代原本標題列的「Links」按鈕。
-- 寬度與開關狀態存 localStorage（`knowmon.layout`），所有 vault 共用。
-- 圖譜分頁啟用時右側面板仍可開啟，顯示「沒有開啟的筆記」。
+- Layout: left file tree/search | tabs + editor | right panel. Both dividers can be dragged, with widths bounded above and below (the pure function `clampWidth`, with tests); double-clicking a divider restores the default width.
+- Toggling: `Ctrl/Cmd+B` toggles the left sidebar and `Ctrl/Cmd+Alt+B` the right panel; there are also buttons at the right of the tab bar. These replace the old "Links" button in the title bar.
+- Widths and visibility are stored in localStorage (`knowmon.layout`), shared by all vaults.
+- When the graph tab is active, the right panel can still be opened and shows "no note open".
 
-## 不變的部分
+## Unchanged
 
-- 不改 `src/shared/types.ts` 與 IPC。
-- 自動儲存沿用現有 `createAutosave`（同時只會有一個分頁在輸入，切換分頁前會 flush）。
+- No changes to `src/shared/types.ts` or the IPC.
+- Autosave keeps the existing `createAutosave` (only one tab receives input at a time, and it flushes before switching tabs).
 
-## 測試
+## Tests
 
-- `tabs.ts`：各種開啟情境、關閉後的啟用分頁、重複開啟、圖譜唯一、改名（含資料夾）、刪除、拖曳順序、還原時略過不存在的筆記與壞掉的資料。
-- `clampWidth` 與版面偏好的讀寫。
-- 實際執行 App（CDP 驅動）：開多個分頁、切換後 undo 仍可用、Ctrl+W 只關分頁、拖曳分隔線、開關面板、重新開啟 vault 後還原分頁。
+- `tabs.ts`: every opening scenario, the active tab after closing, opening twice, the single graph tab, renames (including folders), deletes, drag reordering, skipping missing notes and broken data on restore.
+- `clampWidth` and reading/writing layout preferences.
+- Running the real app (driven over CDP): open several tabs, undo still works after switching, Ctrl+W closes only the tab, drag dividers, toggle panels, tabs restored after reopening the vault.
 
-## 進行順序
+## Order of work
 
-1. 分頁狀態純函式 + 測試
-2. 版面（分隔線、開關）+ 測試
-3. 重構 App：分頁列、每個分頁的編輯器、還原
-4. Electron 選單（Ctrl+W）
-5. 實際執行驗證、更新文件
+1. Tab state pure functions + tests
+2. Layout (dividers, toggling) + tests
+3. Refactor App: tab bar, an editor per tab, restoring
+4. Electron menu (Ctrl+W)
+5. Verify in the running app, update the docs

@@ -1,4 +1,4 @@
-// 力導向版面配置（d3-force）。純邏輯，在 Web Worker 裡執行（layout.worker.ts），測試時直接在 Node 跑。
+// Force-directed layout (d3-force). Pure logic, run in a Web Worker (layout.worker.ts) and directly in Node for tests.
 import {
   forceLink,
   forceManyBody,
@@ -15,9 +15,9 @@ export interface LayoutNodeInput {
   id: string
   x: number
   y: number
-  /** 節點半徑，避免重疊 */
+  /** Node radius, to avoid overlap */
   r: number
-  /** 節點下方標籤的寬度（估計值）；連同標籤一起避免重疊。0 或省略表示沒有標籤 */
+  /** Width (estimated) of the label below the node; kept from overlapping along with the node. 0 or omitted means no label */
   labelWidth?: number
 }
 
@@ -32,14 +32,14 @@ interface SimNode extends SimulationNodeDatum {
   box: Footprint
 }
 
-/** alpha 低於這個值就視為收斂、停止計算 */
+/** Below this alpha the layout counts as converged and stops */
 export const ALPHA_MIN = 0.02
 
 export class ForceLayout {
   private readonly sim: Simulation<SimNode, SimulationLinkDatum<SimNode>>
   private readonly nodes: SimNode[]
   private readonly index: Map<string, number>
-  /** 這次收斂後是否已整理過重疊 */
+  /** Whether overlaps have been cleaned up after this convergence */
   private settled = false
 
   constructor(nodes: readonly LayoutNodeInput[], edges: readonly LayoutEdgeInput[], alpha = 1) {
@@ -64,12 +64,12 @@ export class ForceLayout {
           .id((n) => n.id)
           .distance(70)
       )
-      // 參數依實測調整（docs/plans/phase3-graph.md）：斥力夠強、向心力夠弱，標籤才有空間不重疊。
-      // 不設 distanceMax：限制斥力距離會讓大型圖譜中心過度擠壓。theta 越大越快但越不精確。
+      // Parameters tuned by measurement (docs/plans/phase3-graph.md): strong enough repulsion and weak enough centering give labels room not to overlap.
+      // No distanceMax: limiting the repulsion distance squeezes the center of large graphs too much. A larger theta is faster but less accurate.
       .force('charge', forceManyBody<SimNode>().strength(-250).theta(0.9))
-      // 節點連同下方標籤的矩形不重疊
+      // Rectangles of nodes plus their labels don't overlap
       .force('collide', forceRectCollide<SimNode>(1, 3))
-      // 用微弱的 x/y 引力取代 center，讓孤立筆記與小群組不會飄走
+      // Weak x/y attraction instead of center, so isolated notes and small groups don't drift away
       .force('x', forceX<SimNode>(0).strength(0.01))
       .force('y', forceY<SimNode>(0).strength(0.01))
   }
@@ -91,7 +91,7 @@ export class ForceLayout {
     this.settleIfDone()
   }
 
-  /** 在 budgetMs 內盡量多算幾步（至少一步），回傳算了幾步 */
+  /** Computes as many steps as possible within budgetMs (at least one) and returns how many */
   tickFor(budgetMs: number, now: () => number = () => performance.now()): number {
     const start = now()
     let n = 0
@@ -104,8 +104,8 @@ export class ForceLayout {
   }
 
   /**
-   * 收斂時做一次整理：模擬中的碰撞力會被連結與向心力抵銷一部分，
-   * 這裡只做碰撞、直接把仍重疊的節點（含標籤）推開。
+   * A cleanup pass on convergence: the simulation's collision force is partly offset by links and centering,
+   * so this does only collision, pushing apart nodes (with labels) that still overlap.
    */
   private settleIfDone(): void {
     if (!this.done || this.settled) return
@@ -113,7 +113,7 @@ export class ForceLayout {
     resolveOverlaps(this.nodes)
   }
 
-  /** 依 ids 的順序輸出 [x0, y0, x1, y1, ...] */
+  /** Outputs [x0, y0, x1, y1, ...] in the order of ids */
   positions(): Float32Array {
     const out = new Float32Array(this.nodes.length * 2)
     this.nodes.forEach((n, i) => {
@@ -123,7 +123,7 @@ export class ForceLayout {
     return out
   }
 
-  /** 拖曳中：固定節點位置並讓其他節點跟著調整 */
+  /** While dragging: fixes a node's position and lets the others adjust */
   pin(id: string, x: number, y: number): void {
     const n = this.nodes[this.index.get(id) ?? -1]
     if (!n) return

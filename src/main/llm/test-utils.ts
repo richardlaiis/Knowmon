@@ -1,7 +1,8 @@
-// 測試用的假 Ollama：embedding 依字元產生固定向量（字元越相近，向量越相似）
+// A fake Ollama for tests: embeddings are fixed vectors derived from the characters (more similar characters give more similar vectors)
 import {
   OllamaError,
   type ChatMessage,
+  type ChatOptions,
   type ChatResult,
   type OllamaClient,
   type ToolDefinition
@@ -20,15 +21,19 @@ export interface FakeOllama extends OllamaClient {
   installed: string[]
   embedCalls: string[][]
   chatCalls: ChatMessage[][]
-  /** chat 與 chatTools 每次收到的 numCtx（依呼叫次序） */
+  /** numCtx received by each chat and chatTools call (in call order) */
   numCtx: (number | undefined)[]
-  /** chat 的回覆（依呼叫次序），用完後重複最後一個 */
+  /** maxTokens received by each chat and chatTools call (in call order) */
+  maxTokens: (number | undefined)[]
+  /** Whether call n (from 0, counting chat and chatTools together) reports being cut off by the output limit */
+  truncate: (n: number) => boolean
+  /** chat replies (in call order); the last one repeats once they run out */
   replies: string[]
-  /** chatTools 的回覆（依呼叫次序），用完後重複最後一個；沒有時回傳 replies 的文字 */
+  /** chatTools replies (in call order); the last one repeats once they run out; when empty, the text from replies is returned */
   toolReplies: ChatResult[]
-  /** chatTools 每次收到的工具清單 */
+  /** The tool list each chatTools call received */
   toolsOffered: (readonly ToolDefinition[])[]
-  /** 讓 embed 停在這裡，直到呼叫 release() */
+  /** Makes embed wait here until release() is called */
   hold(): void
   release(): void
 }
@@ -43,6 +48,8 @@ export function fakeOllama(): FakeOllama {
     embedCalls: [],
     chatCalls: [],
     numCtx: [],
+    maxTokens: [],
+    truncate: () => false,
     replies: ['- 重點'],
     toolReplies: [],
     toolsOffered: [],
@@ -66,7 +73,7 @@ export function fakeOllama(): FakeOllama {
     async embed(_model, input, signal) {
       fake.embedCalls.push(input)
       if (gate) {
-        // 和真的 fetch 一樣，取消時不等回應
+        // Like a real fetch, don't wait for the response when cancelled
         const aborted = new Promise<void>((r) => signal?.addEventListener('abort', () => r()))
         await Promise.race([gate.promise, aborted])
       }
@@ -77,32 +84,39 @@ export function fakeOllama(): FakeOllama {
     async chat(_model, messages, opts = {}) {
       if (!fake.online) throw offline()
       fake.chatCalls.push(messages)
-      fake.numCtx.push(opts.numCtx)
+      const call = record(opts)
       const reply = fake.replies[Math.min(fake.chatCalls.length - 1, fake.replies.length - 1)]
       for (const ch of reply) {
         if (opts.signal?.aborted) throw new OllamaError('Cancelled', 'aborted')
         opts.onDelta?.(ch)
         await Promise.resolve()
       }
+      if (fake.truncate(call)) opts.onTruncated?.()
       return reply
     },
     async chatTools(_model, messages, tools, opts = {}) {
       if (!fake.online) throw offline()
       fake.toolsOffered.push(tools)
-      fake.numCtx.push(opts.numCtx)
+      const call = record(opts)
       const n = fake.toolsOffered.length - 1
       const reply = fake.toolReplies.length
         ? fake.toolReplies[Math.min(n, fake.toolReplies.length - 1)]
         : { content: '', toolCalls: [] }
-      // 複製一份：迴圈會修改 messages
+      // Copy it: the loop modifies messages
       fake.chatCalls.push(messages.map((m) => ({ ...m })))
       for (const ch of reply.content) {
         if (opts.signal?.aborted) throw new OllamaError('Cancelled', 'aborted')
         opts.onDelta?.(ch)
         await Promise.resolve()
       }
+      if (fake.truncate(call)) opts.onTruncated?.()
       return reply
     }
+  }
+  /** Records the parameters and returns which call this is (from 0) */
+  function record(opts: ChatOptions): number {
+    fake.maxTokens.push(opts.maxTokens)
+    return fake.numCtx.push(opts.numCtx) - 1
   }
   return fake
 }

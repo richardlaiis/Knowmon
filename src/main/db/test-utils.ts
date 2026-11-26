@@ -1,5 +1,5 @@
-// 效能測試的時間上限：本機照設計目標檢查；CI 的共用機器（GitHub Actions 會設 CI=true）
-// 比開發機慢好幾倍且不穩定（Intel Mac runner 約慢 6 倍），放寬 10 倍，只抓數量級的退化
+// Time limits for performance tests: checked against the design targets locally; CI's shared machines (GitHub Actions sets CI=true)
+// are several times slower than a development machine and inconsistent (the Intel Mac runner is about 6× slower), so relax them 10× and only catch order-of-magnitude regressions
 export const PERF_SCALE_CI = 10
 
 export function perfBudget(ms: number, env: NodeJS.ProcessEnv = process.env): number {

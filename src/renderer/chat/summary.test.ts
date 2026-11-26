@@ -2,32 +2,32 @@ import { describe, expect, it } from 'vitest'
 import { applyChunk, failSummary, startSummary, stopSummary, withId } from './summary'
 
 describe('summary state', () => {
-  it('依序套用片段，done 時完成', () => {
+  it('applies chunks in order and finishes on done', () => {
     let s = withId(startSummary('a.md', false), 'x')
-    s = applyChunk(s, { id: 'x', delta: '- 重', done: false })
-    s = applyChunk(s, { id: 'other', delta: '別人的', done: false })
-    s = applyChunk(s, { id: 'x', delta: '點', done: false })
+    s = applyChunk(s, { id: 'x', delta: '- Key', done: false })
+    s = applyChunk(s, { id: 'other', delta: 'other', done: false })
+    s = applyChunk(s, { id: 'x', delta: ' points', done: false })
     s = applyChunk(s, { id: 'x', delta: '', done: true })
-    expect(s).toMatchObject({ text: '- 重點', status: 'done', error: null })
+    expect(s).toMatchObject({ text: '- Key points', status: 'done', error: null })
   })
 
-  it('取得 id 之前收到的片段會在取得 id 時套用', () => {
+  it('chunks received before the id are applied once the id arrives', () => {
     let s = startSummary('a.md', true)
-    s = applyChunk(s, { id: 'x', delta: '早', done: false })
-    s = applyChunk(s, { id: 'y', delta: '舊的', done: false })
+    s = applyChunk(s, { id: 'x', delta: 'early', done: false })
+    s = applyChunk(s, { id: 'y', delta: 'old', done: false })
     s = withId(s, 'x')
-    expect(s).toMatchObject({ id: 'x', text: '早', selection: true, early: [] })
+    expect(s).toMatchObject({ id: 'x', text: 'early', selection: true, early: [] })
   })
 
-  it('錯誤、停止', () => {
+  it('errors and stopping', () => {
     const s = withId(startSummary('a.md', false), 'x')
-    expect(applyChunk(s, { id: 'x', delta: '', done: true, error: '離線' })).toMatchObject({
+    expect(applyChunk(s, { id: 'x', delta: '', done: true, error: 'offline' })).toMatchObject({
       status: 'error',
-      error: '離線'
+      error: 'offline'
     })
-    const stopped = stopSummary(applyChunk(s, { id: 'x', delta: '一', done: false }))
-    expect(applyChunk(stopped, { id: 'x', delta: '二', done: false })).toMatchObject({
-      text: '一',
+    const stopped = stopSummary(applyChunk(s, { id: 'x', delta: 'one', done: false }))
+    expect(applyChunk(stopped, { id: 'x', delta: 'two', done: false })).toMatchObject({
+      text: 'one',
       status: 'stopped'
     })
     expect(failSummary(s, 'boom')).toMatchObject({ status: 'error', error: 'boom' })

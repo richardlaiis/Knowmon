@@ -1,195 +1,198 @@
-# Knowmon 專案交接文件
+# Knowmon project handover
 
 Oct 6, 2026 · @Richard Lai
 
-## 專案概述
+## Project overview
 
-Knowmon 是一個類 Obsidian 的本地筆記軟體，階段 0（骨架）已完成，接下來由 Claude Code 從階段 1 開始實作功能。它與 Obsidian 的差異在三個特色：
+Knowmon is an Obsidian-style local note-taking app. Phase 0 (the skeleton) is complete, and Claude Code takes over implementation from phase 1. It differs from Obsidian in three ways:
 
-1. **雙向連結**：筆記之間用 `[[筆記名稱]]` 互相連結，並有反向連結面板。
-2. **時間脈絡連結**：除了手動連結，系統也會依照編輯時間與事件時間自動建立連結，讓每個 vault 有更完整的知識圖譜。
-3. **本地 LLM agent**：透過 Ollama 接上本地模型，提供檢索、總結、篩選等功能，預設所有資料都不離開使用者的電腦；也可以主動選用雲端 API（OpenAI、Gemini、OpenAI 相容）負責對話。
+1. **Bidirectional links**: notes link to each other with `[[note name]]`, and there is a backlinks panel.
+2. **Time-context links**: besides manual links, the system creates links automatically from editing time and event dates, giving each vault a fuller knowledge graph.
+3. **Local LLM agent**: local models through Ollama provide retrieval, summaries, filtering and more. By default no data leaves the user's computer; users can also opt in to a cloud API (OpenAI, Gemini, OpenAI-compatible) for chat.
 
-## 技術架構與選型
+## Architecture and technology choices
 
-整個專案只使用 TypeScript，分成前端 UI（renderer）與核心服務（main process）兩層，兩者透過 IPC 溝通。
+The whole project is TypeScript only, split into two layers, the UI (renderer) and the core services (main process), which communicate over IPC.
 
-| 用途             | 技術                     | 備註                                                             |
-| ---------------- | ------------------------ | ---------------------------------------------------------------- |
-| 桌面框架         | Electron + electron-vite | React + TypeScript 範本                                          |
-| 編輯器           | CodeMirror 6             | `@codemirror/lang-markdown`                                      |
-| 資料庫           | SQLite（better-sqlite3） | 原生模組，版本不符時執行 `npx electron-builder install-app-deps` |
-| 向量檢索         | sqlite-vec               | SQLite 擴充                                                      |
-| 全文搜尋         | SQLite FTS5              | 必須使用 `trigram` tokenizer 才能搜尋中文                        |
-| 檔案監聽         | chokidar                 | 偵測外部編輯器的修改                                             |
-| Frontmatter 解析 | gray-matter              |                                                                  |
-| 圖譜視覺化       | Cytoscape.js             | 效能不足時可評估改用 sigma.js                                    |
-| 本地 LLM         | Ollama HTTP API          | 對話模型 `qwen3:8b`，embedding 模型 `bge-m3`                     |
-| 雲端對話（可選） | OpenAI 相容 API          | OpenAI、Gemini、自訂；只用內建 fetch，key 以 safeStorage 加密    |
-| 測試             | vitest                   |                                                                  |
+| Purpose               | Technology               | Notes                                                                            |
+| --------------------- | ------------------------ | -------------------------------------------------------------------------------- |
+| Desktop framework     | Electron + electron-vite | React + TypeScript template                                                      |
+| Editor                | CodeMirror 6             | `@codemirror/lang-markdown`                                                      |
+| Database              | SQLite (better-sqlite3)  | Native module; on a version mismatch run `npx electron-builder install-app-deps` |
+| Vector search         | sqlite-vec               | SQLite extension                                                                 |
+| Full-text search      | SQLite FTS5              | Must use the `trigram` tokenizer to search Chinese                               |
+| File watching         | chokidar                 | Detects changes made in external editors                                         |
+| Frontmatter parsing   | gray-matter              |                                                                                  |
+| Graph visualization   | Cytoscape.js             | Consider sigma.js if performance falls short                                     |
+| Local LLM             | Ollama HTTP API          | Chat model `qwen3:8b`, embedding model `bge-m3`                                  |
+| Cloud chat (optional) | OpenAI-compatible API    | OpenAI, Gemini, custom; built-in fetch only, keys encrypted with safeStorage     |
+| Tests                 | vitest                   |                                                                                  |
 
-資料夾職責：
+Folder responsibilities:
 
-- `src/shared/types.ts`：資料型別與 IPC 介面合約，修改前需經過使用者同意。
-- `src/main/vault/`：讀寫檔案、監聽變更。
-- `src/main/indexer/`：解析連結、frontmatter、日期。
-- `src/main/db/`：schema 與查詢。
-- `src/main/llm/`：Ollama client、雲端（OpenAI 相容）client、檢索、agent 工具。
-- `src/renderer/`：`editor/`、`graph/`、`timeline/`、`chat/` 四個 UI 模組。
-- `test-vault/`：測試用筆記，含中文、日期 frontmatter、互相連結、日記格式檔名。
-- `docs/`：`architecture.md`、`roadmap.md`、`testing.md`（測試清單）、`plans/`（每個功能的實作計畫）、`user-guide/`（使用說明）。
+- `src/shared/types.ts`: data types and the IPC interface contract. Changes need the user's approval.
+- `src/main/vault/`: reading and writing files, watching for changes.
+- `src/main/indexer/`: parsing links, frontmatter and dates.
+- `src/main/db/`: schema and queries.
+- `src/main/llm/`: Ollama client, cloud (OpenAI-compatible) client, retrieval, agent tools.
+- `src/renderer/`: four UI modules: `editor/`, `graph/`, `timeline/`, `chat/`.
+- `test-vault/`: the sample vault, about 35 English notes over seven weeks (journal, books, projects, meetings, recipes, a Markdown showcase) plus a small Chinese folder, `中文/`; see `docs/plans/sample-vault-english.md`.
+- `docs/`: `architecture.md`, `roadmap.md`, `testing.md` (test checklist), `plans/` (an implementation plan for each feature), `user-guide/` (the user guide).
 
-## 目前進度
+## Current progress
 
-階段 1–7 已完成，目前進行階段 8（打磨與打包），詳見下方「開發路線圖」。以下是階段 0（骨架與基礎設施）的交接清單，保留作為紀錄：
+Phases 1–7 are complete and phase 8 (polish and packaging) is in progress; see "Development roadmap" below. The handover checklist for phase 0 (skeleton and infrastructure) is kept below for the record:
 
-- [x] 用 electron-vite 建立專案，`npm run dev` 可開出視窗
-- [x] 安裝相依套件：better-sqlite3、sqlite-vec、chokidar、gray-matter、CodeMirror、Cytoscape.js、vitest
-- [x] 建立資料夾結構，每個模組有 `index.ts` 與職責註解
-- [x] 撰寫 `src/shared/types.ts` 初版
-- [x] 撰寫 SQLite schema 初版
-- [x] 撰寫 `CLAUDE.md`
-- [x] 設定 vitest
-- [x] 準備 `test-vault/` 測試筆記
-- [x] 初始化 git
-- [x] 安裝 Ollama 並下載模型：`ollama pull qwen3:8b`、`ollama pull bge-m3`（階段 5 之前完成即可，不影響階段 1–4）
+- [x] Create the project with electron-vite; `npm run dev` opens a window
+- [x] Install dependencies: better-sqlite3, sqlite-vec, chokidar, gray-matter, CodeMirror, Cytoscape.js, vitest
+- [x] Create the folder structure, with an `index.ts` and a comment on its responsibility in each module
+- [x] Write the first version of `src/shared/types.ts`
+- [x] Write the first version of the SQLite schema
+- [x] Write `CLAUDE.md`
+- [x] Set up vitest
+- [x] Prepare the `test-vault/` test notes
+- [x] Initialize git
+- [x] Install Ollama and download the models: `ollama pull qwen3:8b`, `ollama pull bge-m3` (only needed before phase 5; doesn't affect phases 1–4)
 
-`types.ts` 與 schema 是使用者手寫的初版，Claude Code 接手時應先閱讀並確認是否涵蓋本文件「資料模型」一節的內容，有缺漏時先提出，不要直接修改。
+`types.ts` and the schema are first versions written by hand by the user. When Claude Code takes over, it should first read them and check that they cover the "Data model" section of this document. If anything is missing, raise it first instead of changing them directly.
 
-## 核心設計原則
+## Core design principles
 
-以下原則在任何階段都不可違反，有衝突時先停下來詢問使用者。
+These principles must not be broken in any phase. When something conflicts with them, stop and ask the user.
 
-1. **Markdown 檔是唯一真相來源。** SQLite 只是索引，刪掉資料庫後必須能從 vault 完整重建。使用者的筆記內容永遠不能只存在資料庫裡。
-2. **檔案系統與資料庫只在 main process 存取。** renderer 一律透過 `types.ts` 定義的 IPC 介面呼叫。
-3. **從階段 1 起就要記錄 `note_events`。** 檔案系統只保留最後修改時間，過去的編輯歷程無法事後補回，所以即使時間功能在階段 4 才做，紀錄必須先開始。
-4. **索引是增量的。** 用 content hash 判斷檔案是否變動，只重新索引有改變的檔案。
-5. **Ollama 是可選的。** 沒有啟動 Ollama 時，所有非 LLM 功能都必須正常運作，LLM 功能顯示清楚的提示即可。
-6. **Agent 預設唯讀。** 任何會修改或建立筆記的動作，都必須經過使用者確認。
+1. **The Markdown files are the only source of truth.** SQLite is just an index; after the database is deleted it must be fully rebuildable from the vault. The user's note content must never exist only in the database.
+2. **Only the main process accesses the file system and the database.** The renderer always goes through the IPC interface defined in `types.ts`.
+3. **Record `note_events` from phase 1.** The file system only keeps the last modification time, and past editing history can't be recovered later, so recording must start early even though the time features come in phase 4.
+4. **Indexing is incremental.** A content hash decides whether a file changed, and only changed files are re-indexed.
+5. **Ollama is optional.** Without a running Ollama, every non-LLM feature must work normally; LLM features just show a clear message.
+6. **The agent is read-only by default.** Any action that modifies or creates a note needs the user's confirmation.
 
-## 資料模型
+## Data model
 
-圖譜的核心是「邊有類型與權重」，這是本專案與 Obsidian 最大的差異。目標 schema 如下，實際 `types.ts` 與 schema 若有出入，以使用者確認後的版本為準。
+The heart of the graph is "edges have types and weights", which is the project's biggest difference from Obsidian. The target schema is below; where the actual `types.ts` and schema differ, the version the user approved wins.
 
 ```sql
 notes(id, path, title, created_at, modified_at, event_date, content_hash)
 note_events(note_id, ts, kind)        -- kind: create / edit / open
-links(src, dst, type, weight, meta)   -- 邊有類型與權重
-chunks(id, note_id, text)             -- 供 LLM 檢索的文字塊
+links(src, dst, type, weight, meta)   -- edges have a type and a weight
+chunks(id, note_id, text)             -- text chunks for LLM retrieval
 notes_fts USING fts5(title, body, tokenize='trigram')
--- 向量表由 sqlite-vec 建立，對應 chunks.id
+-- the vector table is created by sqlite-vec and maps to chunks.id
 ```
 
-筆記有兩種時間：`created_at` / `modified_at` 是「何時寫的」，`event_date` 是「內容講的事何時發生」，來源為 frontmatter 的 `date:` 或日記檔名。兩者都要保存，讓圖譜能切換兩種時間視角。
+Notes have two kinds of time: `created_at` / `modified_at` is when it was written, and `event_date` is when the events in the content happened, taken from `date:` in the frontmatter or a journal-style file name. Both are kept so the graph can switch between the two perspectives.
 
-| 連結類型       | 產生方式                                           | 實作階段 |
-| -------------- | -------------------------------------------------- | -------- |
-| `wikilink`     | 使用者在內文寫 `[[ ]]`                             | 2        |
-| `same_session` | 在同一段工作時間內被編輯（預設 30 分鐘，需可調整） | 4        |
-| `same_day`     | `event_date` 相同或接近                            | 4        |
-| `sequence`     | 同一主題下時間上的前後篇                           | 4        |
-| `semantic`     | embedding 相似度高於門檻                           | 5        |
+| Link type      | How it's created                                                    | Phase |
+| -------------- | ------------------------------------------------------------------- | ----- |
+| `wikilink`     | The user writes `[[ ]]` in the body                                 | 2     |
+| `same_session` | Edited in the same work session (30 minutes by default, adjustable) | 4     |
+| `same_day`     | Same or close `event_date`                                          | 4     |
+| `sequence`     | Previous and next notes in time on the same topic                   | 4     |
+| `semantic`     | Embedding similarity above a threshold                              | 5     |
 
-## 開發路線圖
+## Development roadmap
 
-階段依相依關係排序，每個階段結束時都要有一個使用者能實際使用的版本。每個任務是一個 Claude Code session 的工作量，完成後勾選並 commit。
+Phases are ordered by dependency, and each phase ends with a version the user can actually use. Each task is one Claude Code session of work; check it off and commit when done.
 
-### 階段 1：Vault 讀寫與編輯器
+### Phase 1: Vault reading/writing and the editor
 
-完成標準：能打開資料夾、編輯並儲存 Markdown，外部修改會同步到 App。
+Done when: you can open a folder, edit and save Markdown, and external changes sync into the app.
 
-- [x] 選擇 vault 資料夾，並記住上次開啟的 vault（啟動時不自動開啟，選擇對話框從上次的位置開始）
-- [x] 檔案樹（新增、重新命名、刪除筆記）
-- [x] CodeMirror 6 編輯器，開啟與儲存筆記
-- [x] chokidar 監聽外部修改並更新畫面
-- [x] 記錄 `note_events`（create / edit / open）
+- [x] Choose a vault folder and remember the last opened vault (not opened automatically on startup; the folder dialog starts at the last location)
+- [x] File tree (create, rename, delete notes)
+- [x] CodeMirror 6 editor, opening and saving notes
+- [x] chokidar watches for external changes and updates the view
+- [x] Record `note_events` (create / edit / open)
 
-### 階段 2：索引、連結、搜尋
+### Phase 2: Indexing, links, search
 
-完成標準：反向連結與中文搜尋正常，刪掉資料庫後能完整重建。這是整個專案的地基，值得花最多時間。
+Done when: backlinks and Chinese search work, and the database can be fully rebuilt after deletion. This is the foundation of the whole project and deserves the most time.
 
-- [x] 解析器：frontmatter、`[[連結]]`、日期（純函式，必須有測試）
-- [x] 寫入資料庫，以 content hash 做增量索引
-- [x] FTS5 trigram 中文全文搜尋
-- [x] 反向連結 API 與面板
-- [x] 輸入 `[[` 時的筆記名稱自動補全
-- [x] 快速切換筆記（Quick switcher）
+- [x] Parser: frontmatter, `[[links]]`, dates (pure functions, must have tests)
+- [x] Write to the database, with incremental indexing by content hash
+- [x] FTS5 trigram full-text search for Chinese
+- [x] Backlinks API and panel
+- [x] Note name autocompletion when typing `[[`
+- [x] Quick switcher
 
-### 階段 3：圖譜視圖
+### Phase 3: Graph view
 
-完成標準：全域圖與單篇局部圖可互動，1000 篇筆記時不卡頓。
+Done when: the global graph and the per-note local graph are interactive and stay smooth with 1000 notes.
 
-- [x] 全域圖譜（先只顯示 `wikilink` 邊）
-- [x] 互動：縮放、點擊開啟筆記、hover 高亮鄰居
-- [x] 單篇局部圖，可調整顯示深度
-- [x] 用大型測試 vault 做效能測試（結果見 `docs/plans/phase3-graph.md`：1000 篇時縮放、平移、排版順暢，hover 約 21 fps；超過約 1000 篇時評估 sigma.js）
+- [x] Global graph (only `wikilink` edges at first)
+- [x] Interaction: zoom, click to open a note, highlight neighbors on hover
+- [x] Per-note local graph with adjustable depth
+- [x] Performance test with a large test vault (results in `docs/plans/phase3-graph.md`: zooming, panning and layout are smooth at 1000 notes, hover at about 21 fps; consider sigma.js beyond about 1000 notes)
 
-### 階段 4：時間層
+### Phase 4: Time layer
 
-完成標準：時間軸視圖可用，圖譜能依時間範圍與邊類型篩選。
+Done when: the timeline view works and the graph can be filtered by time range and edge type.
 
-- [x] 從 `note_events` 推導 `same_session` 邊
-- [x] 從 `event_date` 推導 `same_day` 與 `sequence` 邊（`sequence` 的主題 = 同一資料夾）
-- [x] 時間軸視圖
-- [x] 圖譜時間滑桿與邊類型篩選
-- [x] 時間參數（session 長度等）做成可調整的設定（存在 `<vault>/.knowmon/settings.json`，計畫見 `docs/plans/phase4-time.md`）
+- [x] Derive `same_session` edges from `note_events`
+- [x] Derive `same_day` and `sequence` edges from `event_date` (the `sequence` topic = the same folder)
+- [x] Timeline view
+- [x] Graph time slider and edge-type filters
+- [x] Make the time parameters (session length and so on) configurable (stored in `<vault>/.knowmon/settings.json`; plan in `docs/plans/phase4-time.md`)
 
-### 階段 5：LLM 基礎能力
+### Phase 5: Basic LLM capabilities
 
-開始前需完成 Ollama 安裝。完成標準：向量檢索可用，能總結單篇筆記。計畫與實作決定見 `docs/plans/phase5-llm.md`。
+Ollama must be installed first. Done when: vector retrieval works and a single note can be summarized. Plan and implementation decisions in `docs/plans/phase5-llm.md`.
 
-- [x] Ollama client 與連線檢查（未啟動時優雅降級）
-- [x] 筆記切塊與 embedding
-- [x] 向量搜尋與混合檢索（全文 + 向量 + 圖譜鄰居 + 時間篩選）
-- [x] 單次功能：總結筆記、總結選取文字
-- [x] `semantic` 邊加入圖譜
+- [x] Ollama client and connection check (graceful degradation when it isn't running)
+- [x] Note chunking and embedding
+- [x] Vector search and hybrid retrieval (full text + vectors + graph neighbors + time filter)
+- [x] One-off features: summarize a note, summarize the selection
+- [x] Add `semantic` edges to the graph
 
-### 階段 6：問答（RAG）
+### Phase 6: Q&A (RAG)
 
-完成標準：對話面板能回答問題，並附上可點擊的來源筆記。
+Done when: the chat panel answers questions with clickable source notes.
 
-- [x] 對話面板 UI
-- [x] RAG 回答附來源連結
-- [x] 支援時間範圍篩選（例如「上個月的筆記」）
+- [x] Chat panel UI
+- [x] RAG answers with source links
+- [x] Time range filtering (for example "notes from last month")
 
-### 階段 7：Agent
+### Phase 7: Agent
 
-完成標準：能執行多步驟檢索與整理，所有寫入動作都需確認。計畫與實作決定見 `docs/plans/phase7-agent.md`。
+Done when: it can run multi-step retrieval and organizing, and every write needs confirmation. Plan and implementation decisions in `docs/plans/phase7-agent.md`.
 
-- [x] 唯讀工具：`search_notes`、`get_note`、`get_neighbors`、`list_notes_in_range`
-- [x] 多步驟執行與過程顯示
-- [x] 寫入工具（建立摘要筆記、加標籤），附使用者確認流程
+- [x] Read-only tools: `search_notes`, `get_note`, `get_neighbors`, `list_notes_in_range`
+- [x] Multi-step execution with visible progress
+- [x] Write tools (create a summary note, add tags) with a user confirmation flow
 
-### 階段 8：打磨與打包
+### Phase 8: Polish and packaging
 
-完成標準：三個平台都有可安裝、功能完整（含 AI）的安裝檔，設定集中在一個地方。打包的計畫與實作決定見 `docs/plans/phase8-packaging.md`。
+Done when: all three platforms have installable, fully functional (including AI) installers, and settings live in one place. Packaging plan and implementation decisions in `docs/plans/phase8-packaging.md`.
 
-- [x] Linux 試打包：deb 與 AppImage 可安裝，打包版的向量功能（sqlite-vec）正常、設定沿用開發版（2026-10-20）
-- [x] 表格即時渲染：游標不在表格時顯示成表格，進入時顯示原始碼（2026-11-11，見 `docs/plans/table-rendering.md`）
+- [x] Linux trial packaging: deb and AppImage install, vector features (sqlite-vec) work in the packaged build, and settings carry over from the development build (2026-10-20)
+- [x] Live table rendering: tables render as tables when the cursor is outside them and show the source when it enters (2026-11-11, see `docs/plans/table-rendering.md`)
 - [x] LaTeX math rendering (KaTeX): `$…$` and `$$…$$` in the editor and table cells, also `\(…\)` / `\[…\]` in AI replies (2026-11-25, see `docs/plans/latex-rendering.md`)
-- [x] Logo 與介面圖示：正式應用程式圖示（取代 Electron 預設）、歡迎頁與空白頁、側欄／分頁／檔案樹圖示（2026-11-13，見 `docs/plans/ui-logo-icons.md`）
-- [x] 雲端對話模型：OpenAI、Gemini、OpenAI 相容 API（只負責對話，embedding 仍走 Ollama；見 `docs/plans/cloud-providers.md`）
-- [ ] 設定頁：整合時間與 Semantic 參數、AI 設定、主題與介面偏好
-- [ ] 效能優化：先以 `scripts/gen-vault.mjs` 量測 1000／3000 篇，再決定目標（已知弱點：圖譜 hover、首次建立索引）
-- [ ] 產出安裝檔：Windows 與 macOS 打包（需在各自的作業系統或 CI 上建置）、授權（LICENSE）、版本號，並更新使用說明的安裝頁
-  - [x] CI（三平台測試）與推 tag 打包成草稿 Release、Linux 加入 rpm、MIT LICENSE、版本 0.1.0、安裝說明改成以下載安裝檔為主（2026-11-17，見 `docs/plans/release-ci.md`、`docs/releasing.md`）
-  - [ ] Windows 與 macOS 安裝檔在實機上驗證（目前標示為實驗性）
+- [x] Logo and UI icons: a proper app icon (replacing the Electron default), welcome and empty pages, sidebar/tab/file tree icons (2026-11-13, see `docs/plans/ui-logo-icons.md`)
+- [x] Cloud chat models: OpenAI, Gemini, OpenAI-compatible APIs (chat only; embeddings still use Ollama; see `docs/plans/cloud-providers.md`)
+- [x] Configurable context length and max output: one pair for Ollama and one for cloud providers; the context also scales the character budgets sent to the model (2026-11-26, see `docs/plans/configurable-llm-limits.md`)
+- [x] English documentation: docs, plans, code comments and test titles translated to English; the zh-TW user guide removed (2026-11-26, see `docs/plans/english-translation.md`)
+- [x] Richer English sample vault (~35 notes plus a Chinese folder) and English test data where the language doesn't matter (2026-11-26, see `docs/plans/sample-vault-english.md`)
+- [ ] Settings page: combine the time and Semantic parameters, AI settings, theme and interface preferences
+- [ ] Performance: first measure 1000 and 3000 notes with `scripts/gen-vault.mjs`, then set targets (known weak spots: graph hover, first-time indexing)
+- [ ] Installers: Windows and macOS packaging (must build on each OS or in CI), license (LICENSE), version number, and update the installation page of the user guide
+  - [x] CI (tests on three platforms) and tag-triggered packaging into a draft Release, rpm added for Linux, MIT LICENSE, version 0.1.0, installation guide reworked around downloading installers (2026-11-17, see `docs/plans/release-ci.md` and `docs/releasing.md`)
+  - [ ] Verify the Windows and macOS installers on real machines (currently marked experimental)
 
-## 下一步
+## Next steps
 
-階段 8 剩下的任務，每個任務一個 session，先在 plan mode 寫計畫（存到 `docs/plans/`），經使用者同意後再實作：
+The remaining phase 8 tasks, one session each. Write a plan in plan mode first (saved to `docs/plans/`) and implement after the user approves it:
 
-1. **設定頁**：設定頁做成分頁或對話框、快捷鍵、這次是否新增設定項目，需要先由使用者決定。新增設定若要修改 `src/shared/types.ts`，照規則先詢問。
-2. **效能優化**：先量測，與使用者確認目標規模後再調整；換用 sigma.js 屬於大改動，需使用者同意。
-3. **打包收尾**：Windows／macOS 安裝檔的實機驗證（AI、圖片、垃圾桶、檔名）；是否購買程式碼簽章與 Apple 公證；`toolsets.appimage`（static runtime）仍是 electron-builder 的 beta 選項，升級 electron-builder 時再確認。
+1. **Settings page**: the user needs to decide whether it's a tab or a dialog, its shortcut, and whether to add new settings this time. If new settings require changing `src/shared/types.ts`, ask first as the rules say.
+2. **Performance**: measure first, and confirm the target scale with the user before tuning; switching to sigma.js is a big change and needs the user's approval.
+3. **Packaging wrap-up**: verify the Windows/macOS installers on real machines (AI, images, trash, file names); decide whether to buy code signing and Apple notarization; `toolsets.appimage` (static runtime) is still a beta option in electron-builder, so re-check it when upgrading electron-builder.
 
-## 協作方式
+## How we work together
 
-使用者負責架構決策與環境操作，Claude Code 負責在既定架構內實作功能。
+The user makes architecture decisions and handles the environment; Claude Code implements features within the established architecture.
 
-1. **一個 session 只做一個任務。** 任務完成、測試通過後 commit，再開新 session。
-2. **先計畫再實作。** 每個任務先在 plan mode 寫出計畫並存到 `docs/plans/`，使用者同意後才動手。
-3. **自我驗證。** 新功能必須附 vitest 測試，完成前自己執行測試與型別檢查，不能只回報「完成了」。
-4. **修改合約前先詢問。** 變更 `types.ts`、資料庫 schema、或新增相依套件，都要先說明理由並取得同意。
-5. **不確定就問。** 遇到與本文件「核心設計原則」衝突的情況，停下來詢問，不要自行取捨。
-6. **更新進度。** 每完成一個任務，在 `docs/roadmap.md` 勾選對應項目；有新的設計決定時，記錄到 `docs/architecture.md`。
+1. **One task per session.** When a task is done and its tests pass, commit, then start a new session.
+2. **Plan before implementing.** For every task, write a plan in plan mode and save it to `docs/plans/`; start only after the user approves.
+3. **Verify your own work.** New features must come with vitest tests. Run the tests and type check yourself before finishing; don't just report "done".
+4. **Ask before changing a contract.** Changing `types.ts` or the database schema, or adding a dependency, needs a stated reason and approval first.
+5. **When unsure, ask.** If something conflicts with the "Core design principles" in this document, stop and ask; don't make the trade-off yourself.
+6. **Keep progress up to date.** After each task, check off the matching item in `docs/roadmap.md`; record new design decisions in `docs/architecture.md`.

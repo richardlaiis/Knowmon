@@ -1,8 +1,8 @@
-// 把多張 PNG 組成 macOS 的 .icns（不需要 iconutil，Linux 也能產生）
-// 格式：'icns' + 總長度（big-endian uint32），接著每個區塊是 4 字元 type + 區塊長度（含 8 bytes 標頭）+ PNG 資料
+// Assembles several PNGs into a macOS .icns (no need for iconutil, so it works on Linux too)
+// Format: 'icns' + total length (big-endian uint32), then each chunk is a 4-character type + chunk length (including the 8-byte header) + PNG data
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 
-/** 各尺寸對應的 ICNS type（PNG 內容） */
+/** The ICNS type for each size (PNG content) */
 export const ICNS_TYPES = { 128: 'ic07', 256: 'ic08', 512: 'ic09', 1024: 'ic10' }
 
 /** @param {{ type: string, data: Uint8Array }[]} entries */

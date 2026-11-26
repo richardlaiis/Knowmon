@@ -1,6 +1,7 @@
-// 與真的 Ollama 連線的整合測試，只在 OLLAMA_IT=1 時執行：
+// Integration tests against a real Ollama, run only with OLLAMA_IT=1:
 //   OLLAMA_IT=1 npx vitest run src/main/llm/ollama.integration.test.ts
-// 需要先 ollama pull bge-m3 與 qwen3:8b。
+// Needs ollama pull bge-m3 and qwen3:8b first. To use another installed chat model:
+//   OLLAMA_IT=1 OLLAMA_CHAT_MODEL=qwen3.5:2b npx vitest run src/main/llm/ollama.integration.test.ts
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -14,7 +15,12 @@ import { createOllama } from './ollama'
 import { LlmService } from './service'
 
 const enabled = process.env.OLLAMA_IT === '1'
-const { baseUrl, embedModel, chatModel } = DEFAULT_LLM_SETTINGS
+const { baseUrl, embedModel } = DEFAULT_LLM_SETTINGS
+const chatModel = process.env.OLLAMA_CHAT_MODEL || DEFAULT_LLM_SETTINGS.chatModel
+/** Settings for every service in these tests (only the chat model can differ from the defaults) */
+const loadSettings = (): unknown => ({ chatModel })
+/** A fixed "now" so time phrases such as 上週 ("last week") always mean the same dates in the sample vault */
+const now = (): number => new Date(2026, 10, 26, 12).getTime()
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0
@@ -28,12 +34,12 @@ function cosine(a: number[], b: number[]): number {
   return dot / Math.sqrt(na * nb)
 }
 
-describe.skipIf(!enabled)('Ollama（實際連線）', () => {
+describe.skipIf(!enabled)('Ollama (real connection)', () => {
   const client = createOllama(baseUrl)
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'knowmon-it-'))
   afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }))
 
-  it('bge-m3：意思相近的句子比無關的句子相似', async () => {
+  it('bge-m3: sentences with similar meaning are more similar than unrelated ones', async () => {
     const [run, jog, cook, en] = await client.embed(embedModel, [
       '今天早上去河濱公園跑步五公里',
       '清晨慢跑了五公里，覺得很舒服',
@@ -44,13 +50,13 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
     const related = cosine(run, jog)
     const unrelated = cosine(run, cook)
     console.log(
-      `bge-m3 相似度：跑步/慢跑 ${related.toFixed(3)}，跑步/料理 ${unrelated.toFixed(3)}，跑步/英文 ${cosine(run, en).toFixed(3)}`
+      `bge-m3 similarity: running/jogging ${related.toFixed(3)}, running/cooking ${unrelated.toFixed(3)}, running/English ${cosine(run, en).toFixed(3)}`
     )
     expect(related).toBeGreaterThan(unrelated + 0.1)
     expect(cosine(run, en)).toBeGreaterThan(unrelated)
   }, 120_000)
 
-  it('test-vault：背景 embedding、semantic 邊、混合檢索、總結', async () => {
+  it('test-vault: background embedding, semantic edges, hybrid retrieval, summaries', async () => {
     const root = path.join(tmp, 'vault')
     fs.cpSync(path.resolve(__dirname, '../../../test-vault'), root, {
       recursive: true,
@@ -59,7 +65,8 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
     const vault = await Vault.open(root)
     const chunks: SummaryChunk[] = []
     const service = new LlmService({
-      loadSettings: () => null,
+      loadSettings,
+      now,
       saveSettings: () => {},
       onStatus: () => {},
       onSummary: (c) => chunks.push(c),
@@ -68,7 +75,7 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
     })
     try {
       await service.attach(vault)
-      const end = Date.now() + 120_000
+      const end = Date.now() + 300_000
       for (;;) {
         const s = service.status()
         if (!s.busy && s.embedded === s.total) break
@@ -79,43 +86,57 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
 
       const edges = (await vault.graph()).edges.filter((e) => e.type === 'semantic')
       console.log(
-        `semantic 邊（門檻 ${vault.getSemanticSettings().semanticThreshold}）：\n` +
+        `Semantic edges (threshold ${vault.getSemanticSettings().semanticThreshold}):\n` +
           edges.map((e) => `  ${e.weight.toFixed(3)} ${e.source} – ${e.target}`).join('\n')
       )
 
-      const r = await service.retrieve('培養好習慣的方法')
-      console.log(
-        '檢索「培養好習慣的方法」：\n' +
-          r.hits.map((h) => `  ${h.score.toFixed(4)} ${h.path} [${h.via.join(',')}]`).join('\n')
-      )
-      expect(r.vector).toBe(true)
-      expect(r.hits.length).toBeGreaterThan(0)
-
-      const note = (await vault.list()).find((n) => n.path.includes('原子習慣')) ?? vault.list()[0]
-      const t0 = Date.now()
-      const id = service.summarize({ path: note.path })
-      while (!chunks.some((c) => c.id === id && c.done)) {
-        if (Date.now() - t0 > 180_000) throw new Error('summary timeout')
-        await new Promise((r) => setTimeout(r, 200))
+      const search = async (query: string): Promise<string[]> => {
+        const r = await service.retrieve(query)
+        console.log(
+          `Retrieval for "${query}":\n` +
+            r.hits.map((h) => `  ${h.score.toFixed(4)} ${h.path} [${h.via.join(',')}]`).join('\n')
+        )
+        expect(r.vector).toBe(true)
+        return r.hits.map((h) => h.path)
       }
-      const done = chunks.find((c) => c.id === id && c.done)!
-      expect(done.error).toBeUndefined()
-      const text = chunks
-        .filter((c) => c.id === id)
-        .map((c) => c.delta)
-        .join('')
-      console.log(
-        `總結「${note.title}」（${((Date.now() - t0) / 1000).toFixed(1)}s，${chatModel}）：\n${text}`
-      )
-      expect(text.trim().length).toBeGreaterThan(0)
-      expect(text).not.toContain('<think>')
+      expect((await search('how to build better habits'))[0]).toBe('Books/Atomic Habits.md')
+      // A Chinese query finds both the English book note and the Chinese one (cross-lingual vectors)
+      const zh = (await search('培養好習慣的方法')).slice(0, 5)
+      expect(zh).toContain('Books/Atomic Habits.md')
+      expect(zh).toContain('中文/原子習慣讀書心得.md')
+
+      const summarize = async (path: string, language?: 'en' | 'zh-TW'): Promise<string> => {
+        const t0 = Date.now()
+        const id = service.summarize({ path, language })
+        while (!chunks.some((c) => c.id === id && c.done)) {
+          if (Date.now() - t0 > 600_000) throw new Error('summary timeout')
+          await new Promise((r) => setTimeout(r, 200))
+        }
+        const done = chunks.find((c) => c.id === id && c.done)!
+        expect(done.error).toBeUndefined()
+        const text = chunks
+          .filter((c) => c.id === id)
+          .map((c) => c.delta)
+          .join('')
+        console.log(
+          `Summary of ${path} (${language ?? 'zh-TW'}, ${((Date.now() - t0) / 1000).toFixed(1)}s, ${chatModel}):\n${text}`
+        )
+        expect(text.trim().length).toBeGreaterThan(0)
+        expect(text).not.toContain('<think>')
+        return text
+      }
+      await summarize('Books/Deep Work.md', 'en')
+      // Over the direct-summary limit, so it's summarized in parts and then combined
+      await summarize('Projects/Knowmon/Design notes.md', 'en')
+      // Traditional Chinese summary of a Chinese note
+      expect(await summarize('中文/原子習慣讀書心得.md')).toMatch(/[\u4e00-\u9fff]/)
     } finally {
       await service.dispose()
       await vault.close()
     }
-  }, 300_000)
+  }, 1_200_000)
 
-  it('test-vault：問答附引用、時間範圍、無相關筆記時不編造', async () => {
+  it('test-vault: Q&A with citations, time ranges, no making things up when nothing is relevant', async () => {
     const root = path.join(tmp, 'vault-ask')
     fs.cpSync(path.resolve(__dirname, '../../../test-vault'), root, {
       recursive: true,
@@ -124,7 +145,8 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
     const vault = await Vault.open(root)
     const answers: AnswerChunk[] = []
     const service = new LlmService({
-      loadSettings: () => null,
+      loadSettings,
+      now,
       saveSettings: () => {},
       onStatus: () => {},
       onSummary: () => {},
@@ -144,15 +166,15 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       const text = mine.map((c) => c.delta).join('')
       const first = mine[0]
       console.log(
-        `問「${question}」（${((Date.now() - t0) / 1000).toFixed(1)}s）\n` +
-          `  範圍 ${JSON.stringify(first.range)}，來源：${first.sources?.map((s) => `[${s.n}] ${s.path}`).join('、')}\n` +
+        `Asked "${question}" (${((Date.now() - t0) / 1000).toFixed(1)}s)\n` +
+          `  range ${JSON.stringify(first.range)}, sources: ${first.sources?.map((s) => `[${s.n}] ${s.path}`).join(', ')}\n` +
           text
       )
       return { text, done: mine.at(-1)!, first }
     }
     try {
       await service.attach(vault)
-      const end = Date.now() + 120_000
+      const end = Date.now() + 300_000
       for (;;) {
         const s = service.status()
         if (!s.busy && s.embedded === s.total) break
@@ -160,32 +182,34 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
         await new Promise((r) => setTimeout(r, 200))
       }
 
-      const general = await ask('深度工作的重點是什麼？')
+      const general = await ask('What are the key ideas of Deep Work?')
       expect(general.done.error).toBeUndefined()
-      expect(general.first.sources?.some((s) => s.path.includes('深度工作'))).toBe(true)
+      expect(general.first.sources?.some((s) => s.path === 'Books/Deep Work.md')).toBe(true)
       expect(general.done.cited?.length).toBeGreaterThan(0)
       const n = general.first.sources!.length
       expect(general.done.cited!.every((c) => c >= 1 && c <= n)).toBe(true)
 
-      const dated = await ask('2026-10-04 到 2026-10-06 之間做了什麼？')
-      expect(dated.first.range).toEqual({ from: '2026-10-04', to: '2026-10-06' })
+      const dated = await ask('What did I do from 2026-10-14 to 2026-10-21?')
+      expect(dated.first.range).toEqual({ from: '2026-10-14', to: '2026-10-21' })
       expect(
-        dated.first.sources?.every((s) => s.date >= '2026-10-04' && s.date <= '2026-10-06')
+        dated.first.sources?.every((s) => s.date >= '2026-10-14' && s.date <= '2026-10-21')
       ).toBe(true)
 
-      const english = await ask('What are the key ideas of Atomic Habits?')
-      expect(english.done.error).toBeUndefined()
-      expect(english.text).toMatch(/[A-Za-z]{4,}/)
+      // A Chinese question with a relative time phrase: last week = 2026-11-16 – 2026-11-22
+      const chinese = await ask('上週跑了幾公里？')
+      expect(chinese.done.error).toBeUndefined()
+      expect(chinese.first.range).toEqual({ from: '2026-11-16', to: '2026-11-22' })
+      expect(chinese.text).toMatch(/[\u4e00-\u9fff]/)
 
-      // 無相關筆記：只記錄輸出，人工檢查是否編造
-      await ask('薛丁格方程式怎麼推導？')
+      // Nothing relevant: just log the output and check by hand for anything made up
+      await ask('How is the Schrödinger equation derived?')
     } finally {
       await service.dispose()
       await vault.close()
     }
   }, 600_000)
 
-  it('test-vault：agent 多步驟檢索、建立筆記與加標籤都要確認', async () => {
+  it('test-vault: agent multi-step retrieval, with confirmation for creating notes and adding tags', async () => {
     const root = path.join(tmp, 'vault-agent')
     fs.cpSync(path.resolve(__dirname, '../../../test-vault'), root, {
       recursive: true,
@@ -193,10 +217,11 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
     })
     const vault = await Vault.open(root)
     const chunks: AgentChunk[] = []
-    // 自動回覆確認：依序取用 decisions
+    // Answer confirmations automatically, taking decisions in order
     let decisions: boolean[] = []
     const service: LlmService = new LlmService({
-      loadSettings: () => null,
+      loadSettings,
+      now,
       saveSettings: () => {},
       onStatus: () => {},
       onSummary: () => {},
@@ -219,7 +244,7 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
         const steps = [...byIndex.values()]
         const text = mine.map((c) => c.delta).join('')
         console.log(
-          `Agent「${task}」（${((Date.now() - t0) / 1000).toFixed(1)}s）\n` +
+          `Agent "${task}" (${((Date.now() - t0) / 1000).toFixed(1)}s)\n` +
             steps
               .map((s) => `  [${s.status}] ${s.tool} ${JSON.stringify(s.args)} → ${s.label}`)
               .join('\n') +
@@ -244,7 +269,7 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
     }
     try {
       await service.attach(vault)
-      const end = Date.now() + 120_000
+      const end = Date.now() + 300_000
       for (;;) {
         const s = service.status()
         if (!s.busy && s.embedded === s.total) break
@@ -252,7 +277,9 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
         await new Promise((r) => setTimeout(r, 200))
       }
 
-      const read = await run('2026-10-04 到 2026-10-06 之間寫了哪些筆記？它們各自連到哪些筆記？')
+      const read = await run(
+        'Which notes did I write from 2026-11-02 to 2026-11-09, and what does each of them link to?'
+      )
       const tools = read.steps.map((s) => s.tool)
       expect(tools.some((t) => t === 'list_notes_in_range' || t === 'search_notes')).toBe(true)
       expect(tools).toContain('get_neighbors')
@@ -261,7 +288,7 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
 
       const before = new Set(vault.list().map((n) => n.path))
       const task =
-        '把「原子習慣」和「深度工作」兩篇筆記的重點整理成一篇比較筆記，存在「整理」資料夾'
+        'Write a note comparing the key ideas of Atomic Habits and Deep Work, and save it in the Summaries folder'
       decisions = [false]
       const rejected = await run(task)
       expect(rejected.steps.some((s) => s.tool === 'create_note' && s.status === 'rejected')).toBe(
@@ -277,14 +304,14 @@ describe.skipIf(!enabled)('Ollama（實際連線）', () => {
       expect(proposal.kind).toBe('create_note')
       if (proposal.kind === 'create_note') {
         expect(fs.readFileSync(path.join(root, proposal.path), 'utf8')).toBe(proposal.content)
-        console.log(`建立的筆記 ${proposal.path}：\n${proposal.content}`)
+        console.log(`Created ${proposal.path}:\n${proposal.content}`)
       }
 
       decisions = [true]
-      const tagged = await run('幫 2026-10-04 這篇日記加上「回顧」標籤')
+      const tagged = await run('Add the tag "milestone" to my 2026-11-02 journal entry')
       expect(tagged.steps.some((s) => s.tool === 'add_tags' && s.status === 'applied')).toBe(true)
-      const diary = fs.readFileSync(path.join(root, '日記/2026-10-04.md'), 'utf8')
-      expect(matter(diary, {}).data.tags).toContain('回顧')
+      const journal = fs.readFileSync(path.join(root, 'Journal/2026-11-02.md'), 'utf8')
+      expect(matter(journal, {}).data.tags).toContain('milestone')
     } finally {
       await service.dispose()
       await vault.close()

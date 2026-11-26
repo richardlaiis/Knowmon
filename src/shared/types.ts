@@ -1,5 +1,5 @@
-// 資料型別與 IPC 介面合約。修改前需經過使用者同意。
-// 所有 path 都是相對於 vault 根目錄的 posix 路徑（例如 "日記/2026-10-06.md"）。
+// Data types and the IPC interface contract. Changes need the user's approval.
+// Every path is a posix path relative to the vault root (for example "日記/2026-10-06.md").
 
 export type NoteEventKind = 'create' | 'edit' | 'open'
 
@@ -19,7 +19,7 @@ export interface NoteEvent {
   kind: NoteEventKind
 }
 
-/** 筆記清單用的精簡資料（自動補全、Quick switcher、點擊連結） */
+/** Compact data for note lists (autocompletion, Quick switcher, clicking links) */
 export interface NoteSummary {
   path: string
   title: string
@@ -27,17 +27,17 @@ export interface NoteSummary {
   modifiedAt: number
 }
 
-/** 一段文字，match = true 表示搜尋命中或連結本身（renderer 以高亮顯示） */
+/** A piece of text; match = true marks a search hit or the link itself (highlighted by the renderer) */
 export interface TextSegment {
   text: string
   match: boolean
 }
 
 export interface Backlink {
-  path: string // 來源筆記
+  path: string // source note
   title: string
   line: number // 1-based
-  context: TextSegment[] // 該行文字，連結部分 match = true
+  context: TextSegment[] // the line's text, with match = true on the link
 }
 
 export interface SearchHit {
@@ -46,31 +46,31 @@ export interface SearchHit {
   snippet: TextSegment[]
 }
 
-/** 圖譜邊的類型 */
+/** Graph edge types */
 export type LinkType = 'wikilink' | 'same_session' | 'same_day' | 'sequence' | 'semantic'
 
 export interface GraphNode {
   path: string
   title: string
   eventDate: string | null
-  /** 有 create / edit 事件的日期（本地時區 YYYY-MM-DD，遞增），圖譜「寫作時間」篩選用 */
+  /** Dates with create / edit events (local time zone YYYY-MM-DD, ascending), for the graph's "written time" filter */
   activeDays: string[]
 }
 
 export interface GraphEdge {
-  source: string // 筆記路徑
+  source: string // note path
   target: string
   type: LinkType
   weight: number
 }
 
-/** 圖譜資料：只含已存在的筆記，尚未建立的 wikilink 目標不列入。同一對筆記可能有多種類型的邊。 */
+/** Graph data: only notes that exist; wikilink targets not yet created are left out. A pair of notes may have edges of several types. */
 export interface GraphData {
   nodes: GraphNode[]
   edges: GraphEdge[]
 }
 
-/** 時間軸「寫作時間」模式用的事件 */
+/** Events for the timeline's "written time" mode */
 export interface ActivityEvent {
   path: string
   title: string
@@ -78,75 +78,87 @@ export interface ActivityEvent {
   kind: 'create' | 'edit'
 }
 
-/** 時間邊的參數，存在 <vault>/.knowmon/settings.json */
+/** Time edge parameters, stored in <vault>/.knowmon/settings.json */
 export interface TimeSettings {
-  /** 兩次編輯間隔超過這個分鐘數就算新的 session */
+  /** A gap between edits longer than this many minutes starts a new session */
   sessionGapMinutes: number
-  /** 一個 session 編輯超過這麼多篇時視為批次操作，不產生 same_session 邊 */
+  /** A session editing more notes than this is treated as a batch operation and produces no same_session edges */
   sessionMaxNotes: number
-  /** event_date 相差幾天以內算 same_day（0 = 同一天） */
+  /** event_dates at most this many days apart count as same_day (0 = the same day) */
   sameDayWindowDays: number
 }
 
-/** semantic 邊的參數，存在 <vault>/.knowmon/settings.json */
+/** Semantic edge parameters, stored in <vault>/.knowmon/settings.json */
 export interface SemanticSettings {
-  /** 相似度（0–1）門檻 */
+  /** Similarity (0–1) threshold */
   semanticThreshold: number
-  /** 每篇最多連到幾篇 */
+  /** Maximum number of notes each note links to */
   semanticMaxPerNote: number
 }
 
-/** 雲端對話服務（只負責對話；embedding 一律走 Ollama） */
+/** Cloud chat providers (chat only; embeddings always use Ollama) */
 export type CloudProvider = 'openai' | 'gemini' | 'custom'
 export type ChatProvider = 'ollama' | CloudProvider
 
-/** Ollama 連線與模型、雲端對話服務，存在 App 的 userData/settings.json（跟著機器走） */
+/** Ollama connection and models, plus the cloud chat provider; stored in the app's userData/settings.json (per machine) */
 export interface LlmSettings {
-  /** Ollama 位址（embedding；provider = ollama 時也用於對話） */
+  /** Ollama address (embeddings; also chat when provider = ollama) */
   baseUrl: string
-  /** Ollama 的對話模型 */
+  /** Ollama chat model */
   chatModel: string
   embedModel: string
-  /** 對話使用的服務，預設 'ollama' */
+  /** The provider used for chat, default 'ollama' */
   provider: ChatProvider
-  /** 各雲端服務選用的模型 id */
+  /** The model id chosen for each cloud provider */
   cloudModels: Partial<Record<CloudProvider, string>>
-  /** provider = custom 時的 API 位址（https，或 loopback 的 http） */
+  /** The API address when provider = custom (https, or loopback http) */
   customBaseUrl: string
+  /** Used when provider = ollama */
+  ollamaLimits: ChatLimits
+  /** Shared by the cloud providers (OpenAI, Gemini, custom) */
+  cloudLimits: ChatLimits
+}
+
+/** Context length and output limit for chat */
+export interface ChatLimits {
+  /** Context length (tokens). Sent to Ollama as num_ctx; also scales the character budgets for note content */
+  contextTokens: number
+  /** Maximum tokens per reply; null = model default */
+  maxOutputTokens: number | null
 }
 
 export interface LlmStatus {
-  /** 目前的對話服務可用（總結、問答、Agent） */
+  /** The current chat provider is available (summaries, Q&A, Agent) */
   online: boolean
-  /** Ollama 在線（embedding、語意搜尋、semantic 邊） */
+  /** Ollama is online (embeddings, semantic search, semantic edges) */
   ollamaOnline: boolean
-  /** 會擋住對話的問題（離線、API key 錯誤、模型未下載等），給使用者看 */
+  /** Problems that block chat (offline, bad API key, model not downloaded and so on), shown to the user */
   error: string | null
-  /** 只影響 embedding 的問題（雲端模式下 Ollama 離線等），以提示顯示 */
+  /** Problems that only affect embeddings (such as Ollama offline in cloud mode), shown as a notice */
   embedError: string | null
-  /** Ollama 已下載的模型 */
+  /** Models downloaded in Ollama */
   models: string[]
-  /** 目前雲端服務可用的模型 id（列不出來時為空，仍可手動輸入） */
+  /** Model ids available from the current cloud provider (empty when they can't be listed; manual entry still works) */
   cloudModels: string[]
-  /** 哪些雲端服務已存 API key（key 本身永遠不傳到 renderer） */
+  /** Which cloud providers have a saved API key (the key itself is never sent to the renderer) */
   apiKeys: Record<CloudProvider, boolean>
-  /** false：OS 沒有 keyring，API key 只是混淆後存檔 */
+  /** false: the OS has no keyring, so API keys are only obfuscated on disk */
   keyEncrypted: boolean
   settings: LlmSettings
-  /** embedding 進度：已完成的筆記數 / 有內容的筆記數 */
+  /** Embedding progress: notes done / notes with content */
   embedded: number
   total: number
-  /** 背景正在 embedding */
+  /** Embedding is running in the background */
   busy: boolean
 }
 
 export interface RetrieveOptions {
-  /** 預設 20 */
+  /** Default 20 */
   limit?: number
-  /** YYYY-MM-DD，含兩端；依 event_date，沒有的話用最後修改日 */
+  /** YYYY-MM-DD, inclusive at both ends; by event_date, or the last modified date when there is none */
   from?: string
   to?: string
-  /** 加入前幾名的圖譜鄰居，預設 true */
+  /** Add graph neighbors of the top results, default true */
   expand?: boolean
 }
 
@@ -154,24 +166,24 @@ export interface RetrieveHit {
   path: string
   title: string
   score: number
-  /** 最相關的段落起始行（1-based） */
+  /** Starting line of the most relevant passage (1-based) */
   line: number
   snippet: TextSegment[]
-  /** 這篇由哪些來源命中 */
+  /** Which sources matched this note */
   via: ('fulltext' | 'vector' | 'graph')[]
 }
 
 export interface RetrieveResult {
   hits: RetrieveHit[]
-  /** false 表示這次沒有用到向量（Ollama 離線或尚未建好） */
+  /** false means no vectors were used this time (Ollama offline or not built yet) */
   vector: boolean
 }
 
 export interface SummaryRequest {
   path: string
-  /** 有值時只總結這段選取文字（path 提供標題與上下文） */
+  /** When set, only this selected text is summarized (path provides the title and context) */
   selection?: string
-  /** 總結使用的語言，預設 'zh-TW' */
+  /** Summary language, default 'zh-TW' */
   language?: SummaryLanguage
 }
 
@@ -184,7 +196,7 @@ export interface SummaryChunk {
   error?: string
 }
 
-/** 日期範圍（YYYY-MM-DD，含兩端） */
+/** Date range (YYYY-MM-DD, inclusive at both ends) */
 export interface DateRange {
   from: string
   to: string
@@ -197,21 +209,21 @@ export interface ChatTurn {
 
 export interface AskRequest {
   question: string
-  /** 之前的問答（舊 → 新），只作為對話脈絡 */
+  /** Earlier Q&A (oldest → newest), used only as conversation context */
   history?: ChatTurn[]
-  /** 時間範圍。undefined = 從問題中解析；null = 使用者取消了範圍，不篩選 */
+  /** Time range. undefined = parse it from the question; null = the user removed the range, no filter */
   range?: DateRange | null
 }
 
 export interface AskSource {
-  /** 回答中的引用編號 [n]（1-based） */
+  /** Citation number [n] in the answer (1-based) */
   n: number
   path: string
   title: string
-  /** 段落起始行（1-based） */
+  /** Starting line of the passage (1-based) */
   line: number
   snippet: TextSegment[]
-  /** event_date，沒有的話用最後修改日 */
+  /** event_date, or the last modified date when there is none */
   date: string
 }
 
@@ -220,13 +232,13 @@ export interface AnswerChunk {
   delta: string
   done: boolean
   error?: string
-  /** 檢索完成時推送一次（第一個片段之前） */
+  /** Pushed once when retrieval finishes (before the first chunk) */
   sources?: AskSource[]
-  /** 實際套用的時間範圍，與 sources 一起推送；null = 未篩選 */
+  /** The time range actually applied, pushed with sources; null = not filtered */
   range?: DateRange | null
-  /** false = 這次沒有用到向量，與 sources 一起推送 */
+  /** false = no vectors were used this time, pushed with sources */
   vector?: boolean
-  /** done 時帶上：回答中實際引用的編號 */
+  /** Sent with done: the numbers actually cited in the answer */
   cited?: number[]
 }
 
@@ -235,11 +247,11 @@ export type AgentToolName =
 
 export interface AgentRequest {
   task: string
-  /** 之前的任務與最終回答（舊 → 新），只作為脈絡 */
+  /** Earlier tasks and final answers (oldest → newest), used only as context */
   history?: ChatTurn[]
 }
 
-/** 寫入工具的提案，等待使用者確認 */
+/** A write tool's proposal, waiting for the user's confirmation */
 export type AgentProposal =
   | { kind: 'create_note'; path: string; content: string; missingLinks: string[] }
   | {
@@ -247,39 +259,39 @@ export type AgentProposal =
       path: string
       title: string
       tags: string[]
-      /** 修改前後的 frontmatter（沒有 frontmatter 時 before 為空字串） */
+      /** The frontmatter before and after the change (before is an empty string when there is no frontmatter) */
       before: string
       after: string
     }
 
 export interface AgentStep {
-  /** 第幾步（0-based），confirm 時用 */
+  /** Step number (0-based), used by confirm */
   index: number
   tool: AgentToolName
   args: Record<string, unknown>
   status: 'running' | 'done' | 'error' | 'confirm' | 'applied' | 'rejected'
-  /** 給使用者看的一行說明 */
+  /** A one-line description for the user */
   label: string
-  /** 結果中的筆記（可點擊） */
+  /** Notes in the result (clickable) */
   notes: { path: string; title: string }[]
   error?: string
-  /** status = 'confirm' 時帶上；applied / rejected 時保留最後的版本 */
+  /** Present when status = 'confirm'; applied / rejected keep the last version */
   proposal?: AgentProposal
 }
 
 export interface AgentChunk {
   id: string
-  /** 模型輸出的文字（工具呼叫之間的說明，或最終回答） */
+  /** Text from the model (explanations between tool calls, or the final answer) */
   delta: string
   done: boolean
   error?: string
-  /** 新增或更新的步驟（同 index 取代） */
+  /** A new or updated step (replacing the one with the same index) */
   step?: AgentStep
 }
 
 export interface AgentDecision {
   approved: boolean
-  /** 使用者修改後的提案（只能改 create_note 的 path / content、add_tags 的 tags） */
+  /** The proposal as edited by the user (only create_note's path / content and add_tags' tags can change) */
   edited?: AgentProposal
 }
 
@@ -297,19 +309,19 @@ export interface VaultChange {
 
 export interface KnowmonAPI {
   vault: {
-    pick(): Promise<string | null> // 對話框選資料夾
-    getCurrent(): Promise<string | null> // 上次開啟的 vault
+    pick(): Promise<string | null> // folder picker dialog
+    getCurrent(): Promise<string | null> // the last opened vault
     tree(): Promise<TreeNode>
     onChange(cb: (c: VaultChange) => void): () => void
   }
   notes: {
-    read(path: string): Promise<string> // 會記 open 事件
+    read(path: string): Promise<string> // records an open event
     write(path: string, content: string): Promise<void>
     create(path: string): Promise<void>
     createFolder(path: string): Promise<void>
     /**
-     * 存入貼上或拖進筆記的圖片（vault 根目錄的 attachments/），同名時自動加編號、絕不覆蓋。
-     * 回傳實際存放的 vault 相對路徑。（2026-10-20 經使用者同意加入）
+     * Saves an image pasted or dropped into a note (in attachments/ at the vault root), adding a number on a name clash and never overwriting.
+     * Returns the vault-relative path it was saved to. (Added with the user's approval, 2026-10-20.)
      */
     saveAttachment(notePath: string, fileName: string, data: Uint8Array): Promise<string>
     rename(from: string, to: string): Promise<void>
@@ -326,37 +338,37 @@ export interface KnowmonAPI {
     get(): Promise<GraphData>
   }
   timeline: {
-    /** [from, to) 之間的 create / edit 事件，依時間排序 */
+    /** create / edit events in [from, to), sorted by time */
     activity(from: number, to: number): Promise<ActivityEvent[]>
   }
   settings: {
     getTime(): Promise<TimeSettings>
-    /** 寫入並回傳實際套用（限制範圍後）的值；時間邊會重算 */
+    /** Writes and returns the values actually applied (after clamping); time edges are recomputed */
     setTime(s: Partial<TimeSettings>): Promise<TimeSettings>
     getSemantic(): Promise<SemanticSettings>
-    /** 寫入並回傳實際套用（限制範圍後）的值；semantic 邊會重算 */
+    /** Writes and returns the values actually applied (after clamping); semantic edges are recomputed */
     setSemantic(s: Partial<SemanticSettings>): Promise<SemanticSettings>
   }
   llm: {
     status(): Promise<LlmStatus>
-    /** 重新檢查連線並恢復 embedding */
+    /** Re-checks the connection and resumes embedding */
     retry(): Promise<LlmStatus>
     onStatus(cb: (s: LlmStatus) => void): () => void
     setSettings(s: Partial<LlmSettings>): Promise<LlmStatus>
-    /** 儲存雲端服務的 API key（null 或空字串 = 刪除）；key 只能寫入、不能讀回 */
+    /** Saves a cloud provider's API key (null or an empty string = delete); keys are write-only */
     setApiKey(provider: CloudProvider, key: string | null): Promise<LlmStatus>
     retrieve(query: string, opts?: RetrieveOptions): Promise<RetrieveResult>
-    /** 開始串流總結，回傳 request id；片段經 onSummary 推送 */
+    /** Starts a streaming summary and returns a request id; chunks are pushed through onSummary */
     summarize(req: SummaryRequest): Promise<string>
     cancel(id: string): Promise<void>
     onSummary(cb: (c: SummaryChunk) => void): () => void
-    /** 開始串流回答，回傳 request id；片段經 onAnswer 推送。取消沿用 cancel(id) */
+    /** Starts streaming an answer and returns a request id; chunks are pushed through onAnswer. Cancel with cancel(id) */
     ask(req: AskRequest): Promise<string>
     onAnswer(cb: (c: AnswerChunk) => void): () => void
-    /** 開始執行 agent 任務，回傳 request id；過程經 onAgent 推送。取消沿用 cancel(id) */
+    /** Starts an agent task and returns a request id; progress is pushed through onAgent. Cancel with cancel(id) */
     agent(req: AgentRequest): Promise<string>
     onAgent(cb: (c: AgentChunk) => void): () => void
-    /** 回覆寫入提案（AgentStep.status = 'confirm'） */
+    /** Answers a write proposal (AgentStep.status = 'confirm') */
     confirm(id: string, step: number, decision: AgentDecision): Promise<void>
   }
 }

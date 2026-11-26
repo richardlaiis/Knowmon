@@ -1,13 +1,13 @@
-// App 層級設定（上次開啟的 vault、Ollama 連線與模型、雲端服務），存在 userData/settings.json
+// App-level settings (last opened vault, Ollama connection and models, cloud providers), stored in userData/settings.json
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CloudProvider, LlmSettings } from '../shared/types'
 
 export interface Settings {
   lastVault: string | null
-  /** 未設定的欄位用預設值（shared/llm.ts） */
+  /** Missing fields use the defaults (shared/llm.ts) */
   llm?: Partial<LlmSettings>
-  /** 雲端服務的 API key：safeStorage 加密後的 base64（llm/secrets.ts） */
+  /** Cloud provider API keys: base64 after safeStorage encryption (llm/secrets.ts) */
   llmKeys?: Partial<Record<CloudProvider, string>>
 }
 

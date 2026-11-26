@@ -1,4 +1,4 @@
-// 由筆記與編輯事件推導時間邊（same_session、same_day、sequence）。純函式，不碰 DB。
+// Derives time edges (same_session, same_day, sequence) from notes and edit events. Pure functions, no DB access.
 import { dayNumber, sessionize } from '../../shared/time'
 import type { TimeSettings } from '../../shared/types'
 
@@ -34,14 +34,14 @@ export function deriveTimeLinks(
   ]
 }
 
-/** 無方向的邊：路徑字典序較小的一端當 src，同一對筆記只會有一列 */
+/** Undirected edges: the path that sorts first is src, so a pair of notes has only one row */
 function undirected(a: TimeNote, b: TimeNote): [number, number] {
   return a.path < b.path ? [a.id, b.id] : [b.id, a.id]
 }
 
 /**
- * 同一個 session 內被編輯的筆記兩兩相連，權重為共同出現的 session 數。
- * edits 必須依時間排序；編輯超過 maxNotes 篇的 session 視為批次操作，略過。
+ * Notes edited in the same session are all linked to each other, weighted by the number of shared sessions.
+ * edits must be sorted by time; a session editing more than maxNotes notes is treated as a batch operation and skipped.
  */
 export function sessionLinks(
   notes: readonly TimeNote[],
@@ -67,7 +67,7 @@ export function sessionLinks(
   return [...weights.values()]
 }
 
-/** event_date 相差 windowDays 天以內的筆記相連，權重 1 / (1 + 相差天數) */
+/** Links notes whose event_dates are at most windowDays days apart, weighted 1 / (1 + days apart) */
 export function sameDayLinks(notes: readonly TimeNote[], windowDays: number): TimeLink[] {
   const dated = notes
     .filter((n) => n.eventDate !== null)
@@ -83,7 +83,7 @@ export function sameDayLinks(notes: readonly TimeNote[], windowDays: number): Ti
   return out
 }
 
-/** 同一資料夾（含 vault 根目錄）中有 event_date 的筆記，依日期（同日依路徑）排序，前一篇連到下一篇 */
+/** Within a folder (including the vault root), notes with an event_date are sorted by date (by path within a day), and each links to the next */
 export function sequenceLinks(notes: readonly TimeNote[]): TimeLink[] {
   const folders = new Map<string, TimeNote[]>()
   for (const n of notes) {

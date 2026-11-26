@@ -1,5 +1,5 @@
-// Agent 迴圈：模型回覆工具呼叫 → 執行（寫入工具先等使用者確認）→ 結果加回對話 → 下一步，
-// 直到模型直接回答或達到步數上限。chat、工具、確認都由呼叫者注入。
+// The agent loop: the model replies with tool calls → they run (write tools wait for the user's confirmation first) → results are added to the conversation → next step,
+// until the model answers directly or the step limit is reached. Chat, tools and confirmation are all injected by the caller.
 import { linkKey } from '../../../shared/links'
 import { localDay } from '../../../shared/time'
 import type {
@@ -12,27 +12,28 @@ import type {
   SummaryLanguage
 } from '../../../shared/types'
 import { historyMessages } from '../ask'
+import type { ChatBudget } from '../budget'
 import { OllamaError, type ChatMessage, type ChatResult, type ToolDefinition } from '../ollama'
 import { createLinkFilter } from '../summarize'
 import { callLabel, isToolName, type ToolOutcome } from './tools'
 
-// 在 CPU 上讀入 prompt 只有約 17 tokens/s（中文約一字一 token），工具結果的長度直接決定任務時間。
-/** 最多呼叫幾次工具；用完後要求模型直接回答 */
+// On a CPU, reading the prompt runs at only about 17 tokens/s (Chinese is about one token per character), so the length of tool results directly sets the task time.
+/** Maximum number of tool calls; after that the model is asked to answer directly */
 export const AGENT_MAX_STEPS = 5
-/** 每個工具結果最多幾個字 */
+/** Maximum characters per tool result */
 export const TOOL_RESULT_MAX = 1_500
 /**
- * 所有工具結果加起來的字數預算。新的結果截到剩下的預算（至少 TOOL_RESULT_MIN），
- * 用完後不再提供工具。舊結果一律不改寫：改了前面的訊息，Ollama 的 prompt 快取就失效，整段要重新讀入。
+ * Character budget for all tool results combined. New results are cut to the remaining budget (at least TOOL_RESULT_MIN),
+ * and tools stop being offered once it's used up. Old results are never rewritten: changing an earlier message invalidates Ollama's prompt cache and everything must be read again.
  */
 export const AGENT_CONTEXT_MAX = 6_000
-/** 預算快用完時，每個結果仍至少保留幾個字 */
+/** Minimum characters kept per result when the budget is nearly used up */
 export const TOOL_RESULT_MIN = 300
-/** 之前的任務與回答：最多幾則、每則幾個字 */
+/** Earlier tasks and answers: at most this many messages, this many characters each */
 export const AGENT_HISTORY_MESSAGES = 4
 export const AGENT_HISTORY_CHARS = 600
 
-/** tools 為 null 時不提供工具（要求模型直接回答） */
+/** When tools is null, no tools are offered (asking the model to answer directly) */
 export type ToolChat = (
   messages: ChatMessage[],
   tools: readonly ToolDefinition[] | null,
@@ -48,15 +49,17 @@ export interface AgentTools {
 export interface AgentLoopOptions {
   chat: ToolChat
   tools: AgentTools
-  /** 推送文字片段或步驟 */
+  /** Pushes a text chunk or a step */
   emit: (c: Omit<AgentChunk, 'id' | 'done'>) => void
-  /** 等待使用者確認寫入提案；取消時應回傳 approved: false */
+  /** Waits for the user to confirm a write proposal; should return approved: false when cancelled */
   confirm: (step: AgentStep) => Promise<AgentDecision>
   signal: AbortSignal
   maxSteps?: number
+  /** Character budget for tool results; defaults to AGENT_CONTEXT_MAX and TOOL_RESULT_MAX */
+  budget?: Pick<ChatBudget, 'agentContext' | 'toolResult'>
 }
 
-// 實測：只說「使用者拒絕了」時，qwen3:8b 仍回答「已建立」
+// Tested: when told only that "the user rejected it", qwen3:8b still answered that the note was created
 export const REJECTED =
   'REJECTED: the user declined this change, so it was NOT made and nothing was written. In your reply, say clearly that this change was not made; never say it was done. Do not try it again unless the user asks.'
 export const REPEATED =
@@ -71,7 +74,7 @@ const WEEKDAYS: Record<SummaryLanguage, string[]> = {
   en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 }
 
-// 不寫 [[...]] 範例（小模型會原樣抄進回答）
+// No [[...]] examples (small models copy them verbatim into the answer)
 function systemPrompt(language: SummaryLanguage, now: number): string {
   const today = `${localDay(now)}（${WEEKDAYS[language][new Date(now).getDay()]}）`
   if (language === 'zh-TW') {
@@ -117,7 +120,7 @@ export function agentMessages(
   ]
 }
 
-/** 參數順序不同也算同一個呼叫 */
+/** The same call regardless of argument order */
 function callKey(name: string, args: Record<string, unknown>): string {
   const sorted = (v: unknown): unknown =>
     v && typeof v === 'object' && !Array.isArray(v)
@@ -138,8 +141,8 @@ const aborted = (): OllamaError => new OllamaError('Cancelled', 'aborted')
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 /**
- * 執行任務。messages 只會在後面加入工具呼叫與結果，已有的訊息不改（保住 Ollama 的 prompt 快取）。
- * 最終回答中的 [[連結]] 只保留工具結果中出現過的筆記與連結。
+ * Runs a task. Tool calls and results are only appended to messages; existing messages are never changed (to keep Ollama's prompt cache).
+ * [[links]] in the final answer keep only notes and links that appeared in tool results.
  */
 export async function runAgent(
   opts: AgentLoopOptions,
@@ -148,12 +151,14 @@ export async function runAgent(
 ): Promise<void> {
   const { chat, tools, emit, signal } = opts
   const max = opts.maxSteps ?? AGENT_MAX_STEPS
+  const contextMax = opts.budget?.agentContext ?? AGENT_CONTEXT_MAX
+  const resultMax = opts.budget?.toolResult ?? TOOL_RESULT_MAX
   const allowed = new Map<string, string>()
   const allow = (targets: readonly string[]): void => {
     for (const t of targets) allowed.set(linkKey(t), t)
   }
   const seen = new Set<string>()
-  /** 工具結果已用掉的字數 */
+  /** Characters of tool results used so far */
   let used = 0
   let steps = 0
 
@@ -209,13 +214,13 @@ export async function runAgent(
         })
         return applied.text
       } catch (e) {
-        // 寫入失敗（例如等待期間有人建立了同名筆記）：保留提案讓使用者看到寫了什麼
+        // The write failed (for example someone created a note with the same name while waiting): keep the proposal so the user sees what was to be written
         step({ ...waiting, status: 'error', error: errorMessage(e) })
         return `Error: ${errorMessage(e)}`
       }
     } catch (e) {
       if (signal.aborted) throw aborted()
-      // 同一個呼叫出錯後，模型修正參數前不必擋下重試
+      // After a call fails, don't block retries until the model corrects its arguments
       seen.delete(key)
       step({ ...base, status: 'error', error: errorMessage(e) })
       return `Error: ${errorMessage(e)}`
@@ -224,7 +229,7 @@ export async function runAgent(
 
   let index = 0
   for (;;) {
-    const offer = steps < max && used < AGENT_CONTEXT_MAX
+    const offer = steps < max && used < contextMax
     const filter = createLinkFilter([...allowed.values()])
     const res = await chat(messages, offer ? tools.definitions : null, (d) => {
       const t = filter.push(d)
@@ -239,7 +244,7 @@ export async function runAgent(
     messages.push({
       role: 'assistant',
       content: res.content,
-      // 雲端 API 的 id 與 thought signature 要原樣帶回（Ollama client 送出前會去掉）
+      // Cloud API ids and thought signatures must go back verbatim (the Ollama client strips them before sending)
       tool_calls: calls.map((c) => ({
         ...(c.id ? { id: c.id } : {}),
         ...(c.extra !== undefined ? { extra: c.extra } : {}),
@@ -257,7 +262,7 @@ export async function runAgent(
         text = await execute(index++, call.name, call.arguments)
       }
       steps++
-      const room = Math.max(TOOL_RESULT_MIN, Math.min(TOOL_RESULT_MAX, AGENT_CONTEXT_MAX - used))
+      const room = Math.max(TOOL_RESULT_MIN, Math.min(resultMax, contextMax - used))
       const content = clipResult(text, room)
       used += content.length
       messages.push({
@@ -267,7 +272,7 @@ export async function runAgent(
         content
       })
     }
-    if (steps >= max || used >= AGENT_CONTEXT_MAX) {
+    if (steps >= max || used >= contextMax) {
       messages.push({ role: 'user', content: LIMIT[language] })
     }
   }

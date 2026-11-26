@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { parseMarkdown } from './parseMarkdown'
 
 describe('parseMarkdown', () => {
-  it('條列與行內格式', () => {
-    expect(parseMarkdown('- **重點**：說明 *斜體* 與 `code`\n- 第二點')).toEqual([
+  it('lists and inline formatting', () => {
+    expect(
+      parseMarkdown('- **Key point**: explanation *italic* and `code`\n- Second point')
+    ).toEqual([
       {
         t: 'list',
         ordered: false,
@@ -13,52 +15,54 @@ describe('parseMarkdown', () => {
             {
               t: 'p',
               children: [
-                { t: 'strong', children: [{ t: 'text', text: '重點' }] },
-                { t: 'text', text: '：說明 ' },
-                { t: 'em', children: [{ t: 'text', text: '斜體' }] },
-                { t: 'text', text: ' 與 ' },
+                { t: 'strong', children: [{ t: 'text', text: 'Key point' }] },
+                { t: 'text', text: ': explanation ' },
+                { t: 'em', children: [{ t: 'text', text: 'italic' }] },
+                { t: 'text', text: ' and ' },
                 { t: 'code', text: 'code' }
               ]
             }
           ],
-          [{ t: 'p', children: [{ t: 'text', text: '第二點' }] }]
+          [{ t: 'p', children: [{ t: 'text', text: 'Second point' }] }]
         ]
       }
     ])
   })
 
-  it('wikilink 與別名', () => {
-    expect(parseMarkdown('參考 [[深度工作]] 與 [[讀書/原子習慣#第二章|習慣]]。')).toEqual([
+  it('wikilinks and aliases', () => {
+    expect(
+      parseMarkdown('See [[Deep Work]] and [[Books/Atomic Habits#Chapter 2|habits]].')
+    ).toEqual([
       {
         t: 'p',
         children: [
-          { t: 'text', text: '參考 ' },
-          { t: 'wikilink', target: '深度工作', label: '深度工作' },
-          { t: 'text', text: ' 與 ' },
-          { t: 'wikilink', target: '讀書/原子習慣', label: '習慣' },
-          { t: 'text', text: '。' }
+          { t: 'text', text: 'See ' },
+          { t: 'wikilink', target: 'Deep Work', label: 'Deep Work' },
+          { t: 'text', text: ' and ' },
+          { t: 'wikilink', target: 'Books/Atomic Habits', label: 'habits' },
+          { t: 'text', text: '.' }
         ]
       }
     ])
   })
 
-  it('標題、有序清單起始數字、巢狀清單', () => {
-    const md = '## 總覽\n\n3. 一\n4. 二\n   - 子項'
+  it('headings, ordered list start numbers, nested lists', () => {
+    const md = '## Overview\n\n3. One\n4. Two\n   - Sub-item'
     expect(parseMarkdown(md)).toEqual([
-      { t: 'h', level: 2, children: [{ t: 'text', text: '總覽' }] },
+      { t: 'h', level: 2, children: [{ t: 'text', text: 'Overview' }] },
       {
         t: 'list',
         ordered: true,
         start: 3,
         items: [
-          [{ t: 'p', children: [{ t: 'text', text: '一' }] }],
+          [{ t: 'p', children: [{ t: 'text', text: 'One' }] }],
           [
-            { t: 'p', children: [{ t: 'text', text: '二' }] },
+            { t: 'p', children: [{ t: 'text', text: 'Two' }] },
             {
               t: 'list',
               ordered: false,
               start: 1,
-              items: [[{ t: 'p', children: [{ t: 'text', text: '子項' }] }]]
+              items: [[{ t: 'p', children: [{ t: 'text', text: 'Sub-item' }] }]]
             }
           ]
         ]
@@ -66,56 +70,56 @@ describe('parseMarkdown', () => {
     ])
   })
 
-  it('外部連結只允許 http(s) 與 mailto', () => {
-    expect(parseMarkdown('[網站](https://a.b) [壞](javascript:alert(1))')).toEqual([
+  it('external links only allow http(s) and mailto', () => {
+    expect(parseMarkdown('[site](https://a.b) [bad](javascript:alert(1))')).toEqual([
       {
         t: 'p',
         children: [
-          { t: 'link', href: 'https://a.b', children: [{ t: 'text', text: '網站' }] },
-          { t: 'text', text: ' 壞' }
+          { t: 'link', href: 'https://a.b', children: [{ t: 'text', text: 'site' }] },
+          { t: 'text', text: ' bad' }
         ]
       }
     ])
   })
 
-  it('程式碼區塊、引用、分隔線', () => {
-    expect(parseMarkdown('```js\nlet a = 1\n```\n\n> 引言\n\n---')).toEqual([
+  it('code blocks, quotes, horizontal rules', () => {
+    expect(parseMarkdown('```js\nlet a = 1\n```\n\n> A quote\n\n---')).toEqual([
       { t: 'code', text: 'let a = 1' },
-      { t: 'quote', children: [{ t: 'p', children: [{ t: 'text', text: '引言' }] }] },
+      { t: 'quote', children: [{ t: 'p', children: [{ t: 'text', text: 'A quote' }] }] },
       { t: 'hr' }
     ])
   })
 
-  it('串流到一半的語法以文字顯示', () => {
-    expect(parseMarkdown('- **未完')).toEqual([
+  it('half-streamed syntax is shown as text', () => {
+    expect(parseMarkdown('- **unfinished')).toEqual([
       {
         t: 'list',
         ordered: false,
         start: 1,
-        items: [[{ t: 'p', children: [{ t: 'text', text: '**未完' }] }]]
+        items: [[{ t: 'p', children: [{ t: 'text', text: '**unfinished' }] }]]
       }
     ])
-    expect(parseMarkdown('看 [[深度')).toEqual([
-      { t: 'p', children: [{ t: 'text', text: '看 [[深度' }] }
+    expect(parseMarkdown('See [[Deep')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: 'See [[Deep' }] }
     ])
   })
 
-  it('數學式：$…$、$$…$$、\\(…\\)、\\[…\\]；金額不算', () => {
+  it('math: $…$, $$…$$, \\(…\\), \\[…\\]; amounts of money are not math', () => {
     expect(
-      parseMarkdown('質能 $E=mc^2$，總和 $$\\sum x$$ 與 \\(a\\)、\\[b\\]；花了 $5 和 $10')
+      parseMarkdown('Energy $E=mc^2$, sum $$\\sum x$$ and \\(a\\), \\[b\\]; spent $5 and $10')
     ).toEqual([
       {
         t: 'p',
         children: [
-          { t: 'text', text: '質能 ' },
+          { t: 'text', text: 'Energy ' },
           { t: 'math', tex: 'E=mc^2', display: false },
-          { t: 'text', text: '，總和 ' },
+          { t: 'text', text: ', sum ' },
           { t: 'math', tex: '\\sum x', display: true },
-          { t: 'text', text: ' 與 ' },
+          { t: 'text', text: ' and ' },
           { t: 'math', tex: 'a', display: false },
-          { t: 'text', text: '、' },
+          { t: 'text', text: ', ' },
           { t: 'math', tex: 'b', display: true },
-          { t: 'text', text: '；花了 $5 和 $10' }
+          { t: 'text', text: '; spent $5 and $10' }
         ]
       }
     ])
@@ -130,39 +134,39 @@ describe('parseMarkdown', () => {
     ])
   })
 
-  it('數學區塊：$$ 與 \\[，引用裡的也可以；串流中沒收尾的顯示原文', () => {
-    expect(parseMarkdown('公式：\n$$\na^2\n$$\n\n\\[\nb\n\\]\n\n> $$ c $$')).toEqual([
-      { t: 'p', children: [{ t: 'text', text: '公式：' }] },
+  it('math blocks: $$ and \\[, also inside quotes; unclosed ones show the source while streaming', () => {
+    expect(parseMarkdown('Formula:\n$$\na^2\n$$\n\n\\[\nb\n\\]\n\n> $$ c $$')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: 'Formula:' }] },
       { t: 'math', tex: 'a^2' },
       { t: 'math', tex: 'b' },
       { t: 'quote', children: [{ t: 'math', tex: 'c' }] }
     ])
-    expect(parseMarkdown('結果是\n\n$$\n\\frac{1}{')).toEqual([
-      { t: 'p', children: [{ t: 'text', text: '結果是' }] },
+    expect(parseMarkdown('The result is\n\n$$\n\\frac{1}{')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: 'The result is' }] },
       { t: 'p', children: [{ t: 'text', text: '$$\n\\frac{1}{' }] }
     ])
   })
 
-  it('段落內換行變成空白，HTML 以原文顯示', () => {
-    expect(parseMarkdown('第一行\n第二行 <b>x</b>')).toEqual([
+  it('line breaks inside a paragraph become spaces, and HTML is shown as source', () => {
+    expect(parseMarkdown('First line\nsecond line <b>x</b>')).toEqual([
       {
         t: 'p',
-        children: [{ t: 'text', text: '第一行 第二行 <b>x</b>' }]
+        children: [{ t: 'text', text: 'First line second line <b>x</b>' }]
       }
     ])
   })
 
-  it('citations 開啟時 [n] 解析成引用，程式碼與 wikilink 內不解析', () => {
-    expect(parseMarkdown('跑了五公里 [1][2]，見 [[筆記]]。', { citations: true })).toEqual([
+  it('with citations on, [n] parses as a citation, but not inside code or wikilinks', () => {
+    expect(parseMarkdown('Ran 5 km [1][2], see [[Note]].', { citations: true })).toEqual([
       {
         t: 'p',
         children: [
-          { t: 'text', text: '跑了五公里 ' },
+          { t: 'text', text: 'Ran 5 km ' },
           { t: 'cite', n: 1 },
           { t: 'cite', n: 2 },
-          { t: 'text', text: '，見 ' },
-          { t: 'wikilink', target: '筆記', label: '筆記' },
-          { t: 'text', text: '。' }
+          { t: 'text', text: ', see ' },
+          { t: 'wikilink', target: 'Note', label: 'Note' },
+          { t: 'text', text: '.' }
         ]
       }
     ])
@@ -175,9 +179,9 @@ describe('parseMarkdown', () => {
         ]
       }
     ])
-    // 總結（未開啟）時 [1] 照舊當成沒有網址的連結，只顯示文字
-    expect(parseMarkdown('結果 [1]')).toEqual([
-      { t: 'p', children: [{ t: 'text', text: '結果 1' }] }
+    // For summaries (option off), [1] is still a link without a URL and shows only its text
+    expect(parseMarkdown('Result [1]')).toEqual([
+      { t: 'p', children: [{ t: 'text', text: 'Result 1' }] }
     ])
   })
 })

@@ -6,7 +6,7 @@ export interface BacklinkGroup {
   items: Backlink[]
 }
 
-/** 依來源筆記分組，保留原本的順序 */
+/** Groups by source note, keeping the original order */
 export function groupBacklinks(links: readonly Backlink[]): BacklinkGroup[] {
   const groups = new Map<string, BacklinkGroup>()
   for (const l of links) {

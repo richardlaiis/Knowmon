@@ -39,5 +39,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vitest run
-      # 打包前的建置也在各平台跑一次：macOS／Windows 不分大小寫等問題只有建置時才會出現
+      # Run the pre-packaging build on each platform too: problems such as case-insensitivity on macOS/Windows only show up during the build
       - run: npx electron-vite build

@@ -3,7 +3,7 @@
   --font-editor: 18px;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Noto Sans Mono CJK TC', ui-monospace, monospace;
 
-  /* 淺色：米白底、黑字 */
+  /* Light: off-white background, black text */
   --bg: #faf6ee;
   --bg-side: #f2ecdf;
   --fg: #111111;
@@ -24,13 +24,13 @@
   --active-line: rgb(0 0 0 / 0.035);
   --selection: #e4dcc8;
 
-  /* 圖譜的時間邊 */
+  /* Time edges in the graph */
   --edge-session: #c2410c;
   --edge-day: #0f7b5f;
   --edge-sequence: #2b59c3;
   --edge-semantic: #b0306a;
 
-  /* 程式碼語法顏色 */
+  /* Code syntax colors */
   --hl-keyword: #8a3ffc;
   --hl-string: #2e7d32;
   --hl-comment: #948b7d;
@@ -43,7 +43,7 @@
   color-scheme: light;
 }
 
-/* 深色：比 Nord 再深一點的 Polar Night 底色、白字，強調色用 Frost，程式碼用 Nord 配色 */
+/* Dark: a Polar Night background a bit darker than Nord, white text, Frost accents and Nord code colors */
 :root[data-theme='dark'] {
   --bg: #20242c;
   --bg-side: #1a1d24;
@@ -99,7 +99,8 @@ body {
   font-family:
     system-ui,
     -apple-system,
-    /* 明確指定 CJK 字型；否則單獨的全形標點（、。）會被系統 fallback 成窄字形 */ 'Noto Sans CJK TC',
+    /* Name the CJK font explicitly; otherwise a lone full-width punctuation mark (、。) gets a narrow glyph from the system fallback */
+    'Noto Sans CJK TC',
     'Noto Sans TC',
     'PingFang TC',
     'Microsoft JhengHei',
@@ -135,7 +136,7 @@ button:focus-visible {
   outline-offset: 1px;
 }
 
-/* 介面圖示（components/icons.tsx）在 flex 容器裡不被壓縮 */
+/* UI icons (components/icons.tsx) don't shrink in flex containers */
 button svg,
 .tree-icon svg,
 .tab svg {
@@ -149,7 +150,7 @@ button svg,
 
 .sidebar {
   flex-shrink: 0;
-  /* 讓分頁按鈕依側欄寬度決定是否顯示文字（@container） */
+  /* Lets tab buttons show or hide their text by sidebar width (@container) */
   container-type: inline-size;
   background: var(--bg-side);
   border-right: 1px solid var(--border);
@@ -233,7 +234,7 @@ button svg,
   opacity: 0.45;
 }
 
-/* 拖曳時，會放進去的資料夾（或整個根目錄）加上底色 */
+/* While dragging, the folder (or the whole root) a drop would go into gets a background */
 .file-tree li.drop-target,
 .file-tree.drop-target {
   background: var(--drop);
@@ -360,7 +361,7 @@ button svg,
 
 .editor .cm-editor .cm-content {
   caret-color: var(--fg);
-  /* --- 等符號維持原樣，不被字型連字成破折號 */
+  /* Keep --- and similar as is, without the font ligating them into dashes */
   font-variant-ligatures: none;
 }
 
@@ -445,14 +446,14 @@ button svg,
   margin: 0;
 }
 
-/* 歡迎頁（尚未選 vault） */
+/* Welcome page (no vault chosen yet) */
 .welcome {
   gap: 10px;
   padding: 0 24px;
   text-align: center;
 }
 
-/* Logo 的圓角與 build/icon.svg 相同（rx 104 / 448），深色主題下靠細邊框和背景分開 */
+/* The logo's corner radius matches build/icon.svg (rx 104 / 448); in the dark theme a thin border separates it from the background */
 .welcome-logo,
 .no-tabs .empty-logo,
 .vault-name svg {
@@ -485,7 +486,7 @@ button svg,
   margin-top: 12px;
 }
 
-/* 沒有分頁時的空白頁 */
+/* Empty page when no tabs are open */
 .no-tabs {
   gap: 12px;
   padding: 0 24px;
@@ -538,7 +539,7 @@ kbd {
   border-radius: 5px;
 }
 
-/* ---- 側欄分頁、搜尋、反向連結、Quick switcher ---- */
+/* ---- Sidebar tabs, search, backlinks, Quick switcher ---- */
 
 .sidebar-tabs {
   display: flex;
@@ -579,7 +580,7 @@ kbd {
   padding: 4px 6px;
 }
 
-/* 側欄很窄時分頁只留圖示（按鈕有 title 與 aria-label） */
+/* When the sidebar is very narrow, tabs keep only their icons (buttons have title and aria-label) */
 @container (max-width: 240px) {
   .sidebar-tabs .label {
     display: none;
@@ -738,7 +739,7 @@ kbd {
   flex-direction: column;
 }
 
-/* ---- 分頁與可調整的面板（src/renderer/src/workspace/） ---- */
+/* ---- Tabs and resizable panels (src/renderer/src/workspace/) ---- */
 
 .tab-bar {
   display: flex;
@@ -774,7 +775,7 @@ kbd {
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  /* 分頁太多時可水平捲動；不顯示捲軸，也不要因為目前分頁蓋住下框線而出現垂直捲軸 */
+  /* Scroll horizontally when there are too many tabs; no scrollbar, and no vertical scrollbar from the current tab covering the bottom border */
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -805,7 +806,7 @@ kbd {
   background: var(--bg);
   color: var(--fg);
   border-color: var(--border);
-  /* 蓋住分頁列的下框線，看起來和內容區相連 */
+  /* Cover the tab bar's bottom border so it looks connected to the content */
   margin-bottom: -1px;
   padding-bottom: 7px;
 }
@@ -909,7 +910,7 @@ body.resizing .splitter {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-/* 拖曳分隔線時避免選取文字、游標維持調整寬度的樣式 */
+/* While dragging a divider, avoid selecting text and keep the resize cursor */
 body.resizing {
   cursor: col-resize;
   user-select: none;
@@ -920,7 +921,7 @@ body.resizing canvas {
   pointer-events: none;
 }
 
-/* ---- 圖譜（src/renderer/graph/） ---- */
+/* ---- Graph (src/renderer/graph/) ---- */
 
 .graph {
   flex: 1;
@@ -961,7 +962,7 @@ body.resizing canvas {
 .graph-canvas {
   flex: 1;
   min-height: 0;
-  /* Cytoscape 的 canvas 以整數像素取高度，容器高度有小數時會溢出 1px，讓整頁出現捲軸 */
+  /* Cytoscape's canvas takes its height in whole pixels, so a fractional container height overflows by 1px and gives the page a scrollbar */
   overflow: hidden;
 }
 
@@ -981,7 +982,7 @@ body.resizing canvas {
   background: none;
 }
 
-/* 邊類型的開關 */
+/* Edge type toggles */
 .edge-types {
   display: flex;
   flex-wrap: wrap;
@@ -1024,7 +1025,7 @@ body.resizing canvas {
   border-top-color: var(--edge-semantic);
 }
 
-/* 時間範圍：兩個重疊的 range input，只有把手接收滑鼠 */
+/* Time range: two overlapping range inputs, where only the handles receive the mouse */
 .time-bar .range-label {
   font-variant-numeric: tabular-nums;
   color: var(--fg);
@@ -1162,7 +1163,7 @@ body.resizing canvas {
   cursor: default;
 }
 
-/* 自動補全選單（@codemirror/autocomplete）跟著主題 */
+/* The autocompletion menu (@codemirror/autocomplete) follows the theme */
 .cm-tooltip.cm-tooltip-autocomplete {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1187,7 +1188,7 @@ body.resizing canvas {
   color: var(--muted);
 }
 
-/* ---- Markdown 即時渲染（src/renderer/editor/livePreview.ts） ---- */
+/* ---- Live Markdown rendering (src/renderer/editor/livePreview.ts) ---- */
 
 .cm-editor .cm-line.cm-lp-h1 {
   font-size: 1.75em;
@@ -1255,7 +1256,7 @@ body.resizing canvas {
   border-bottom-right-radius: 6px;
 }
 
-/* 游標不在程式碼區塊裡時，圍欄行只在右上角顯示語言（行高不變，行號才對得齊） */
+/* When the cursor isn't in a code block, fence lines only show the language at the top right (same line height, so line numbers stay aligned) */
 .cm-editor .cm-line.cm-lp-fence-hidden {
   text-align: right;
   padding-right: 12px;
@@ -1302,7 +1303,7 @@ body.resizing canvas {
   vertical-align: middle;
 }
 
-/* 筆記中的圖片（只支援 vault 內的相對路徑） */
+/* Images in notes (only relative paths inside the vault) */
 .cm-editor .cm-lp-image {
   display: inline-block;
   max-width: 100%;
@@ -1320,7 +1321,7 @@ body.resizing canvas {
   font-size: 0.88em;
 }
 
-/* 數學式（KaTeX，editor/math.ts、mathRender.ts） */
+/* Math (KaTeX, editor/math.ts, mathRender.ts) */
 .cm-editor .cm-lp-math-block,
 .cm-editor .cm-lp-math-preview {
   overflow-x: auto;
@@ -1332,18 +1333,18 @@ body.resizing canvas {
   margin: 0.4em 0;
 }
 
-/* 游標在 $$ 區塊裡時，原始碼下方的預覽 */
+/* The preview below the source when the cursor is inside a $$ block */
 .cm-editor .cm-lp-math-preview {
   margin: 2px 0 4px;
   border-radius: 6px;
   background: var(--code-bg);
 }
 
-/* 引用或清單裡的 $$ 區塊：保留前面的 > 與縮排 */
+/* $$ blocks in quotes or lists: keep the > and indentation before them */
 .cm-editor .cm-lp-math-nested {
   display: inline-block;
   max-width: 100%;
-  /* KaTeX 的字形會超出量好的寬度 1–2px，留空間才不會出現捲軸 */
+  /* KaTeX glyphs overflow their measured width by 1–2px, so leave room to avoid a scrollbar */
   padding: 0 4px;
   box-sizing: border-box;
   overflow-x: auto;
@@ -1355,7 +1356,7 @@ body.resizing canvas {
   margin: 0.2em 0;
 }
 
-/* 段落與表格裡的 $$x$$（編輯器與 AI 回答）：顯示樣式但不換行 */
+/* $$x$$ in paragraphs and tables (editor and AI answers): display style without line breaks */
 .cm-editor .cm-lp-math-inline .katex-display,
 .cm-editor .cm-lp-table .katex-display,
 .md-math .katex-display {
@@ -1373,7 +1374,7 @@ body.resizing canvas {
   margin: 0.3em 0;
 }
 
-/* TeX 有錯：顯示原文，滑鼠移上去看錯誤訊息 */
+/* TeX errors: show the source, with the error message on hover */
 .math-error {
   color: var(--danger);
   font-family: var(--font-mono);
@@ -1381,7 +1382,7 @@ body.resizing canvas {
   white-space: pre-wrap;
 }
 
-/* frontmatter：維持原文、不套用標題等樣式 */
+/* Frontmatter: kept as written, without heading or other styles */
 .cm-editor .cm-line.cm-lp-frontmatter {
   font-family: var(--font-mono);
   font-size: 0.85em;
@@ -1395,7 +1396,7 @@ body.resizing canvas {
   text-decoration: none !important;
 }
 
-/* ---- 時間軸（src/renderer/timeline/） ---- */
+/* ---- Timeline (src/renderer/timeline/) ---- */
 
 .timeline {
   flex: 1;
@@ -1415,7 +1416,7 @@ body.resizing canvas {
   color: var(--fg);
 }
 
-/* 每月數量的長條圖，點擊捲到該月 */
+/* Monthly count bar chart; clicking scrolls to that month */
 .timeline-histogram {
   display: flex;
   align-items: flex-end;
@@ -1560,7 +1561,7 @@ body.resizing canvas {
   margin-top: 20px;
 }
 
-/* ---- 設定對話框 ---- */
+/* ---- Settings dialogs ---- */
 
 .dialog {
   width: min(440px, 90vw);
@@ -1627,7 +1628,7 @@ body.resizing canvas {
   gap: 8px;
 }
 
-/* ---- AI：狀態、總結、混合搜尋 ---- */
+/* ---- AI: status, summaries, hybrid search ---- */
 
 .status-dot {
   flex-shrink: 0;
@@ -1661,7 +1662,7 @@ body.resizing canvas {
   }
 }
 
-/* 側欄底部：設定（齒輪）+ AI 狀態 */
+/* Bottom of the sidebar: settings (gear) + AI status */
 .sidebar-footer {
   display: flex;
   align-items: center;
@@ -1690,7 +1691,7 @@ body.resizing canvas {
   color: var(--fg);
 }
 
-/* 選單往上展開，貼齊齒輪按鈕 */
+/* The menu opens upward, aligned with the gear button */
 .context-menu.settings-menu {
   position: absolute;
   left: 0;
@@ -1786,7 +1787,7 @@ body.resizing canvas {
 }
 
 .ai-summary-title {
-  /* 自己一行，下面是語言切換與按鈕 */
+  /* On its own line, with the language switch and buttons below */
   flex: 1 0 100%;
   min-width: 0;
   font-weight: 600;
@@ -1932,7 +1933,7 @@ body.resizing canvas {
   padding: 1px 4px;
 }
 
-/* 標題太長時只截斷標題，來源標籤保持完整 */
+/* When the title is too long, cut only the title and keep the source label whole */
 .result-title:has(.via) {
   display: flex;
   align-items: center;
@@ -1980,7 +1981,7 @@ body.resizing canvas {
   padding: 3px 6px;
 }
 
-/* ---- AI 分頁：對話（問答） ---- */
+/* ---- AI tab: chat (Q&A) ---- */
 
 .ai-mode {
   align-self: flex-start;
@@ -2195,7 +2196,7 @@ body.resizing canvas {
   cursor: default;
 }
 
-/* ---- AI 分頁：Agent ---- */
+/* ---- AI tab: Agent ---- */
 
 .attention-dot {
   display: inline-block;
@@ -2465,9 +2466,9 @@ body.resizing canvas {
   padding: 2px 12px;
 }
 
-/* 表格（tables.ts）：游標不在表格裡時顯示，過寬時水平捲動 */
+/* Tables (tables.ts): shown when the cursor isn't in the table, scrolling horizontally when too wide */
 .cm-editor .cm-lp-table-wrap {
-  /* 寬表格不把 .cm-content 撐開，只在自己裡面捲動 */
+  /* Wide tables don't widen .cm-content; they scroll inside themselves */
   contain: inline-size;
   overflow-x: auto;
   padding: 6px 0;
@@ -2477,7 +2478,7 @@ body.resizing canvas {
 .cm-editor .cm-lp-table {
   border-collapse: collapse;
   line-height: 1.5;
-  /* 欄位多時保持自然寬度、改成水平捲動，不把每格擠成一字一行 */
+  /* With many columns, keep natural widths and scroll horizontally instead of squeezing each cell to one character per line */
   width: max-content;
 }
 
@@ -2495,7 +2496,7 @@ body.resizing canvas {
   background: var(--bg-side);
 }
 
-/* ---- AI 設定：雲端服務的確認 ---- */
+/* ---- AI settings: cloud provider consent ---- */
 
 .dialog .consent {
   display: flex;

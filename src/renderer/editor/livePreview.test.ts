@@ -11,7 +11,7 @@ import {
 } from './livePreview'
 import { ImageWidget, notePath } from './images'
 
-/** 用 ‸ 標示游標位置建立 state，並確保整份文件都已解析 */
+/** Builds a state with ‸ marking the cursor, making sure the whole document is parsed */
 function stateOf(src: string, path = 'note.md'): EditorState {
   const cursor = src.indexOf('‸')
   const doc = cursor >= 0 ? src.slice(0, cursor) + src.slice(cursor + 1) : src
@@ -31,7 +31,7 @@ interface Deco {
   attrs?: Record<string, string>
 }
 
-/** 把裝飾轉成容易比對的形式；hide/widget 的 text 是被取代的原文 */
+/** Turns decorations into an easy-to-compare form; the text of hide/widget is the replaced source */
 function decos(src: string): Deco[] {
   const state = stateOf(src)
   const out: Deco[] = []
@@ -61,22 +61,22 @@ const lineClasses = (src: string): string[] =>
     .filter((d) => d.kind === 'line')
     .map((d) => `${d.text} => ${d.cls}`)
 
-describe('標題', () => {
-  it('游標不在該行時隱藏 # 並套用標題樣式', () => {
-    expect(hidden('# 標題\n\n內文‸')).toEqual(['# '])
-    expect(lineClasses('# 標題\n\n內文‸')).toEqual(['# 標題 => cm-lp-h1'])
-    expect(lineClasses('### 三級\n\n‸')).toEqual(['### 三級 => cm-lp-h3'])
+describe('headings', () => {
+  it('hides # and applies the heading style when the cursor is not on the line', () => {
+    expect(hidden('# Title\n\nBody‸')).toEqual(['# '])
+    expect(lineClasses('# Title\n\nBody‸')).toEqual(['# Title => cm-lp-h1'])
+    expect(lineClasses('### Level three\n\n‸')).toEqual(['### Level three => cm-lp-h3'])
   })
 
-  it('游標在該行時顯示原始語法，但保留標題大小', () => {
-    expect(hidden('# 標‸題')).toEqual([])
-    expect(lineClasses('# 標‸題')).toEqual(['# 標題 => cm-lp-h1'])
+  it('shows the raw syntax when the cursor is on the line, keeping the heading size', () => {
+    expect(hidden('# Tit‸le')).toEqual([])
+    expect(lineClasses('# Tit‸le')).toEqual(['# Title => cm-lp-h1'])
   })
 })
 
-describe('行內樣式', () => {
-  it('粗體、斜體、刪除線、行內程式碼在游標離開後隱藏標記', () => {
-    expect(hidden('**粗** *斜* ~~刪~~ `碼`\n\n‸')).toEqual([
+describe('inline styles', () => {
+  it('hides the marks of bold, italic, strikethrough and inline code once the cursor leaves', () => {
+    expect(hidden('**bold** *italic* ~~struck~~ `code`\n\n‸')).toEqual([
       '**',
       '**',
       '*',
@@ -88,47 +88,51 @@ describe('行內樣式', () => {
     ])
   })
 
-  it('游標在元素內時只顯示該元素的標記', () => {
-    expect(hidden('**粗‸** *斜*')).toEqual(['*', '*'])
+  it('shows only the marks of the element the cursor is in', () => {
+    expect(hidden('**bo‸ld** *italic*')).toEqual(['*', '*'])
   })
 
-  it('行內程式碼內容加上 code 樣式', () => {
+  it('adds the code style to inline code content', () => {
     const code = decos('`a + b`\n\n‸').find((d) => d.cls === 'cm-lp-code')
     expect(code?.text).toBe('a + b')
   })
 })
 
-describe('連結', () => {
-  it('隱藏 [ ](url)，連結文字帶有網址', () => {
-    const src = '看 [文件](https://example.com) 這裡\n\n‸'
+describe('links', () => {
+  it('hides [ ](url), and the link text carries the URL', () => {
+    const src = 'See [the docs](https://example.com) here\n\n‸'
     expect(hidden(src)).toEqual(['[', '](https://example.com)'])
     const link = decos(src).find((d) => d.cls === 'cm-lp-link')
-    expect(link?.text).toBe('文件')
+    expect(link?.text).toBe('the docs')
     expect(link?.attrs?.['data-url']).toBe('https://example.com')
   })
 
-  it('游標在連結內時顯示完整語法', () => {
-    expect(hidden('[文‸件](https://example.com)')).toEqual([])
+  it('shows the full syntax when the cursor is inside the link', () => {
+    expect(hidden('[the ‸docs](https://example.com)')).toEqual([])
   })
 
-  it('[[wikilink]] 與 [[目標|別名]]', () => {
-    expect(hidden('[[歡迎]] 與 [[深度工作|這本書]]\n\n‸')).toEqual([
+  it('[[wikilink]] and [[target|alias]]', () => {
+    expect(hidden('[[Welcome]] and [[Deep Work|this book]]\n\n‸')).toEqual([
       '[[',
       ']]',
-      '[[深度工作|',
+      '[[Deep Work|',
       ']]'
     ])
-    const links = decos('[[深度工作|這本書]]\n\n‸').filter((d) => d.cls === 'cm-lp-wikilink')
-    expect(links.map((l) => [l.text, l.attrs?.['data-target']])).toEqual([['這本書', '深度工作']])
+    const links = decos('[[Deep Work|this book]]\n\n‸').filter((d) => d.cls === 'cm-lp-wikilink')
+    expect(links.map((l) => [l.text, l.attrs?.['data-target']])).toEqual([
+      ['this book', 'Deep Work']
+    ])
   })
 
-  it('程式碼裡的 [[ ]] 不當作連結', () => {
+  it('[[ ]] inside code is not a link', () => {
     expect(
-      decos('`[[不是連結]]`\n\n```\n[[也不是]]\n```\n‸').some((d) => d.cls === 'cm-lp-wikilink')
+      decos('`[[not a link]]`\n\n```\n[[not one either]]\n```\n‸').some(
+        (d) => d.cls === 'cm-lp-wikilink'
+      )
     ).toBe(false)
   })
 
-  it('只允許開啟 http(s) 與 mailto', () => {
+  it('only allows opening http(s) and mailto', () => {
     expect(isOpenableUrl('https://a.b')).toBe(true)
     expect(isOpenableUrl('mailto:a@b.c')).toBe(true)
     expect(isOpenableUrl('file:///etc/passwd')).toBe(false)
@@ -136,59 +140,59 @@ describe('連結', () => {
   })
 })
 
-describe('區塊', () => {
-  it('清單符號換成圓點，待辦清單換成核取方塊', () => {
-    const d = decos('- 一\n- [ ] 待辦\n- [x] 完成\n\n‸')
+describe('blocks', () => {
+  it('list markers become bullets, and task lists become checkboxes', () => {
+    const d = decos('- One\n- [ ] To do\n- [x] Done\n\n‸')
     expect(d.filter((x) => x.kind === 'widget').map((x) => x.text)).toEqual(['-', '[ ]', '[x]'])
-    // 待辦項目的 - 直接隱藏，不顯示圓點
+    // The - of a task item is simply hidden, without a bullet
     expect(d.filter((x) => x.kind === 'hide').map((x) => x.text)).toEqual(['- ', '- '])
-    expect(d.find((x) => x.cls === 'cm-lp-task-done')?.text).toBe(' 完成')
+    expect(d.find((x) => x.cls === 'cm-lp-task-done')?.text).toBe(' Done')
   })
 
-  it('引用隱藏 > 並套用引用樣式', () => {
-    expect(hidden('> 引言\n\n‸')).toEqual(['> '])
-    expect(lineClasses('> 引言\n\n‸')).toEqual(['> 引言 => cm-lp-quote'])
+  it('quotes hide > and apply the quote style', () => {
+    expect(hidden('> A quote\n\n‸')).toEqual(['> '])
+    expect(lineClasses('> A quote\n\n‸')).toEqual(['> A quote => cm-lp-quote'])
   })
 
-  it('分隔線換成橫線，游標在該行時顯示原文', () => {
+  it('horizontal rules become a line, showing the source when the cursor is on the line', () => {
     expect(
-      decos('上\n\n---\n\n下‸')
+      decos('Above\n\n---\n\nBelow‸')
         .filter((d) => d.kind === 'widget')
         .map((d) => d.text)
     ).toEqual(['---'])
-    expect(decos('上\n\n---‸\n\n下').filter((d) => d.kind === 'widget')).toEqual([])
+    expect(decos('Above\n\n---‸\n\nBelow').filter((d) => d.kind === 'widget')).toEqual([])
   })
 
-  it('程式碼區塊：游標在外面時圍欄換成語言標籤，內容不被 Markdown 渲染', () => {
-    const src = '```js\n# 不是標題\n**x**\n```\n\n‸'
+  it('code blocks: with the cursor outside, fences become a language label and the content is not rendered as Markdown', () => {
+    const src = '```js\n# not a heading\n**x**\n```\n\n‸'
     const d = decos(src)
     expect(d.filter((x) => x.kind === 'widget').map((x) => x.text)).toEqual(['```js'])
     expect(d.filter((x) => x.kind === 'hide').map((x) => x.text)).toEqual(['```'])
     expect(lineClasses(src)).toEqual([
       '```js => cm-lp-codeblock cm-lp-codeblock-first cm-lp-fence-hidden',
-      '# 不是標題 => cm-lp-codeblock',
+      '# not a heading => cm-lp-codeblock',
       '**x** => cm-lp-codeblock',
       '``` => cm-lp-codeblock cm-lp-codeblock-last cm-lp-fence-hidden'
     ])
   })
 
-  it('程式碼區塊：游標在裡面時顯示圍欄原文', () => {
+  it('code blocks: with the cursor inside, the fences show as written', () => {
     const src = '```js\nconst a‸ = 1\n```'
     expect(decos(src).filter((x) => x.kind === 'widget' || x.kind === 'hide')).toEqual([])
     expect(lineClasses(src)[0]).toBe('```js => cm-lp-codeblock cm-lp-codeblock-first cm-lp-fence')
   })
 
-  it('~~~ 圍欄與沒有結尾的區塊', () => {
+  it('~~~ fences and unclosed blocks', () => {
     expect(
       decos('~~~ts\nx\n~~~\n\n‸')
         .filter((x) => x.kind === 'widget')
         .map((x) => x.text)
     ).toEqual(['~~~ts'])
-    // 沒有結尾圍欄：只換掉開頭，不會隱藏內容
+    // No closing fence: only the opening is replaced, and the content isn't hidden
     expect(hidden('```\nx\n\n\n‸')).toEqual([])
   })
 
-  it('常見語言都能對應到語法上色', () => {
+  it('common languages map to syntax highlighting', () => {
     for (const name of [
       'ts',
       'typescript',
@@ -212,36 +216,36 @@ describe('區塊', () => {
     }
     expect(findCodeLanguage('py')?.name).toBe('Python')
     expect(findCodeLanguage('ts title="a.ts"')?.name).toBe('TypeScript')
-    expect(findCodeLanguage('不存在的語言')).toBeNull()
+    expect(findCodeLanguage('no-such-language')).toBeNull()
     expect(findCodeLanguage('')).toBeNull()
   })
 })
 
 describe('frontmatter', () => {
-  const src = '---\ntitle: 筆記\ndate: 2026-10-06\n---\n# 標題\n‸'
+  const src = '---\ntitle: Note\ndate: 2026-10-06\n---\n# Title\n‸'
 
-  it('偵測文件開頭的 frontmatter', () => {
+  it('detects frontmatter at the start of the document', () => {
     expect(frontmatterEnd(Text.of(src.replace('‸', '').split('\n')))).toBe(
-      '---\ntitle: 筆記\ndate: 2026-10-06\n---'.length
+      '---\ntitle: Note\ndate: 2026-10-06\n---'.length
     )
-    expect(frontmatterEnd(Text.of(['# 沒有', '---']))).toBe(0)
+    expect(frontmatterEnd(Text.of(['# None', '---']))).toBe(0)
     expect(frontmatterEnd(Text.of(['---', '', '---']))).toBe(8)
   })
 
-  it('frontmatter 不被當成標題渲染，之後的內容照常渲染', () => {
+  it('frontmatter is not rendered as a heading, and the content after it renders normally', () => {
     expect(lineClasses(src)).toEqual([
       '--- => cm-lp-frontmatter',
-      'title: 筆記 => cm-lp-frontmatter',
+      'title: Note => cm-lp-frontmatter',
       'date: 2026-10-06 => cm-lp-frontmatter',
       '--- => cm-lp-frontmatter',
-      '# 標題 => cm-lp-h1'
+      '# Title => cm-lp-h1'
     ])
     expect(hidden(src)).toEqual(['# '])
   })
 })
 
 describe('toggleTask', () => {
-  it('切換 [ ] 與 [x]', () => {
+  it('toggles [ ] and [x]', () => {
     const doc = Text.of(['- [ ] a', '- [X] b'])
     expect(toggleTask(doc, 2)).toEqual({ from: 3, to: 4, insert: 'x' })
     expect(toggleTask(doc, 10)).toEqual({ from: 11, to: 12, insert: ' ' })
@@ -249,8 +253,8 @@ describe('toggleTask', () => {
   })
 })
 
-describe('圖片', () => {
-  /** 圖片 widget：path 為 vault 相對路徑，replaced 為被取代的原文（游標在上面時是空字串） */
+describe('images', () => {
+  /** Image widget: path is the vault-relative path, replaced is the replaced source (an empty string when the cursor is on it) */
   function images(src: string, path?: string): { path: string; alt: string; replaced: string }[] {
     const state = stateOf(src, path)
     const out: { path: string; alt: string; replaced: string }[] = []
@@ -263,25 +267,25 @@ describe('圖片', () => {
     return out
   }
 
-  it('游標不在上面時整段換成圖片', () => {
-    expect(images('前面 ![架構](img/a.png) 後面\n‸')).toEqual([
-      { path: 'img/a.png', alt: '架構', replaced: '![架構](img/a.png)' }
+  it('replaces the whole syntax with the image when the cursor is not on it', () => {
+    expect(images('Before ![Diagram](img/a.png) after\n‸')).toEqual([
+      { path: 'img/a.png', alt: 'Diagram', replaced: '![Diagram](img/a.png)' }
     ])
   })
 
-  it('游標在上面時保留原始語法，圖片接在後面', () => {
-    expect(images('![架‸構](a.png)')).toEqual([{ path: 'a.png', alt: '架構', replaced: '' }])
+  it('keeps the raw syntax with the image after it when the cursor is on it', () => {
+    expect(images('![Dia‸gram](a.png)')).toEqual([{ path: 'a.png', alt: 'Diagram', replaced: '' }])
   })
 
-  it('相對路徑以筆記所在資料夾為基準，支援 <> 與 %20', () => {
-    expect(images('![](../attachments/x.png)\n‸', '日記/a.md')[0].path).toBe('attachments/x.png')
-    expect(images('![](<Pasted image 1.png>)\n‸', '日記/a.md')[0].path).toBe(
-      '日記/Pasted image 1.png'
+  it("relative paths are based on the note's folder, supporting <> and %20", () => {
+    expect(images('![](../attachments/x.png)\n‸', 'Journal/a.md')[0].path).toBe('attachments/x.png')
+    expect(images('![](<Pasted image 1.png>)\n‸', 'Journal/a.md')[0].path).toBe(
+      'Journal/Pasted image 1.png'
     )
-    expect(images('![](a%20b.png "標題")\n‸')[0].path).toBe('a b.png')
+    expect(images('![](a%20b.png "Title")\n‸')[0].path).toBe('a b.png')
   })
 
-  it('網址、絕對路徑、跳出 vault、![[x]]、程式碼裡的都不渲染', () => {
+  it('URLs, absolute paths, paths escaping the vault, ![[x]] and images in code are not rendered', () => {
     expect(images('![](https://example.com/a.png)\n‸')).toEqual([])
     expect(images('![](/home/a.png)\n‸')).toEqual([])
     expect(images('![](../a.png)\n‸', 'a.md')).toEqual([])

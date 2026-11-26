@@ -1,5 +1,5 @@
-// 問答（RAG）：從問題解析時間範圍與關鍵字、檢索筆記、組出附編號來源的 context，
-// 串流回答並過濾引用。回答以 [n] 引用來源；來源以外的編號與 [[連結]] 會被拿掉。
+// Q&A (RAG): parse the time range and keywords from the question, retrieve notes, build a context with numbered sources,
+// then stream the answer and filter its citations. Answers cite sources as [n]; numbers outside the sources and [[links]] are removed.
 import { withoutTimeRange, parseTimeRange } from '../../shared/timeRange'
 import type {
   AskSource,
@@ -15,27 +15,27 @@ import type { ChatMessage } from './ollama'
 import { noteDay } from './retrieve'
 import { createLinkFilter, linkTargets, type Chat } from './summarize'
 
-/** 最多引用幾篇筆記 */
+/** Maximum number of notes cited */
 export const ASK_SOURCES = 8
-/** 所有來源內文加起來的字數上限（qwen3:8b 的預設 context 約 4K–8K tokens） */
+/** Character limit for all source text combined (the value at context 8192; scaled per settings, see budget.ts) */
 export const ASK_CONTEXT_MAX = 8_000
-/** 單一 chunk 最多取幾個字（超長的程式碼區塊） */
+/** Maximum characters taken from a single chunk (for overlong code blocks) */
 export const ASK_CHUNK_MAX = 2_000
-/** 附上最近幾則問答作為脈絡（3 輪） */
+/** Number of recent Q&A messages included as context (3 rounds) */
 export const HISTORY_MESSAGES = 6
-/** 每則歷史訊息最多幾個字 */
+/** Maximum characters per history message */
 export const HISTORY_CHARS = 1_000
 const SNIPPET_MAX = 160
 
-/** 問題中的漢字多於英文單字時用中文回答 */
+/** Answer in Chinese when the question has more CJK characters than English words */
 export function detectLanguage(text: string): SummaryLanguage {
   const han = (text.match(/\p{Script=Han}/gu) ?? []).length
   const words = (text.match(/[A-Za-z]+/g) ?? []).length
   return han > 0 && han >= words ? 'zh-TW' : 'en'
 }
 
-// 關鍵字：問句中的虛詞與疑問詞切掉，剩下的片段 OR 搜尋。長的先比對（「是什麼」先於「什麼」）。
-// 單字只放幾乎不會出現在詞中的語氣詞（「了」「是」「有」會切壞「了解」「是否」「有效」）。
+// Keywords: cut out function words and question words, then OR-search the remaining pieces. Longer ones match first (「是什麼」 before 「什麼」).
+// Single characters only include particles that almost never appear inside words (「了」, 「是」 and 「有」 would break 「了解」, 「是否」 and 「有效」).
 const ZH_STOP = [
   '為什麼',
   '为什么',
@@ -118,11 +118,11 @@ const EN_STOP = new Set(
   ).split(' ')
 )
 
-/** 問句中可以拿去全文搜尋的關鍵字（去重，依出現順序） */
+/** Keywords from a question that can be used for full-text search (deduped, in order of appearance) */
 export function keywords(text: string): string[] {
   let s = text
     .replace(/[\p{P}\p{S}]+/gu, ' ')
-    // 「第二點」「第 3 章」指的是之前的回答或筆記的結構，不是內容
+    // 「第二點」 ("the second point") and 「第 3 章」 ("chapter 3") refer to the structure of an earlier answer or note, not its content
     .replace(/第\s*[\d一二三四五六七八九十]+\s*[點点個个項项條条章節节段部]/g, ' ')
     .replace(/(^|\s)(?:那麼|那么|那)(?!些|裡|里|個|个)/g, ' ')
   for (const w of ZH_STOP) s = s.split(w).join(' ')
@@ -138,21 +138,21 @@ export function keywords(text: string): string[] {
 }
 
 export interface AskQuery {
-  /** 實際套用的時間範圍；null = 不篩選 */
+  /** The time range actually applied; null = no filter */
   range: DateRange | null
-  /** 全文搜尋的關鍵字（OR） */
+  /** Keywords for full-text search (OR) */
   keywords: string[]
-  /** 送去 embedding 的文字 */
+  /** Text sent for embedding */
   vectorText: string
 }
 
-/** 追問的語氣：「那…」「還有…」「…呢？」「what about…」 */
+/** Follow-up phrasing: 「那…」, 「還有…」, 「…呢？」, "what about…" */
 const FOLLOW_UP =
   /^\s*(?:那|還有|还有|然後|然后|另外|所以|and\b|so\b|what about\b|how about\b|why\b)|呢\s*[？?]?\s*$/i
 
 /**
- * 決定檢索方式。range 為 undefined 時從問題解析；時間片語不當作關鍵字。
- * 追問（沒有關鍵字，或語氣像追問）時向量查詢加上前一個問題；沒有關鍵字時沿用前一個問題的關鍵字。
+ * Decides how to retrieve. When range is undefined it's parsed from the question; time phrases aren't keywords.
+ * For follow-ups (no keywords, or phrased like a follow-up), the vector query adds the previous question; with no keywords, the previous question's keywords are reused.
  */
 export function planQuery(
   question: string,
@@ -176,7 +176,7 @@ export function planQuery(
   }
 }
 
-/** 時間範圍內的筆記（新 → 舊），問題只有時間、沒有可檢索的內容時使用 */
+/** Notes in the time range (newest first), used when the question has only a time and nothing to retrieve */
 export function notesInRange(db: DB, range: DateRange, limit = ASK_SOURCES): RetrieveHit[] {
   const rows = db
     .prepare(
@@ -210,24 +210,25 @@ export function notesInRange(db: DB, range: DateRange, limit = ASK_SOURCES): Ret
     })
 }
 
-/** 送進提示詞的來源：AskSource 加上內文 */
+/** A source for the prompt: AskSource plus its text */
 export interface ContextSource extends AskSource {
   text: string
 }
 
-/** 推送給 renderer 的部分（不含內文） */
+/** The part pushed to the renderer (without the text) */
 export function toAskSource(s: ContextSource): AskSource {
   return { n: s.n, path: s.path, title: s.title, line: s.line, snippet: s.snippet, date: s.date }
 }
 
 /**
- * 每篇取最相關的段落（RetrieveHit.line 所在的 chunk），再依名次輪流補前後的 chunk，
- * 直到總字數達到 max。超過上限時排名靠後的筆記不列入。
+ * Takes each note's most relevant passage (the chunk containing RetrieveHit.line), then adds neighboring chunks round-robin by rank
+ * until the total reaches max. Lower-ranked notes that don't fit are left out. Each chunk is cut to chunkMax characters.
  */
 export function gatherSources(
   db: DB,
   hits: readonly RetrieveHit[],
-  max = ASK_CONTEXT_MAX
+  max = ASK_CONTEXT_MAX,
+  chunkMax = ASK_CHUNK_MAX
 ): ContextSource[] {
   interface Item {
     hit: RetrieveHit
@@ -243,7 +244,7 @@ export function gatherSources(
     if (!note) continue
     const chunks = listChunks(db, note.id).map((c) => ({
       line: c.line,
-      text: c.text.length > ASK_CHUNK_MAX ? c.text.slice(0, ASK_CHUNK_MAX) + '…' : c.text
+      text: c.text.length > chunkMax ? c.text.slice(0, chunkMax) + '…' : c.text
     }))
     if (chunks.length === 0) continue
     let main = 0
@@ -255,7 +256,7 @@ export function gatherSources(
     total += len
     items.push({ hit, date: noteDay(note), chunks, main, picked: new Set([main]) })
   }
-  // 輪流補鄰近的 chunk（後一塊優先），每輪每篇最多補一塊
+  // Add neighboring chunks round-robin (the next chunk first), at most one per note per round
   for (let added = true; added;) {
     added = false
     for (const it of items) {
@@ -270,7 +271,7 @@ export function gatherSources(
     }
   }
   return items.map((it, i) => {
-    // 補進來的 chunk 都與已選的相鄰，所以是連續的一段
+    // Added chunks are all adjacent to selected ones, so the passage is contiguous
     const picked = [...it.picked].sort((a, b) => a - b)
     const parts = picked.map((idx) => it.chunks[idx].text.trim())
     return {
@@ -285,7 +286,7 @@ export function gatherSources(
   })
 }
 
-// 提示詞裡只有 [n] 的範例；不寫 [[...]] 範例（小模型會原樣抄進回答）
+// The prompt only has [n] examples; no [[...]] examples (small models copy them verbatim into the answer)
 const SYSTEM: Record<SummaryLanguage, string> = {
   'zh-TW': [
     '你是使用者的筆記助理，根據提供的「來源」（使用者自己的筆記）回答問題。',
@@ -318,19 +319,25 @@ const ASK = {
     sources: 'Sources:',
     range: (r: DateRange) => `Time range: ${r.from} – ${r.to}`,
     question: (q: string) => `Question: ${q}`,
-    // 來源是中文時模型容易跟著用中文
+    // With Chinese sources the model tends to answer in Chinese
     reminder: 'Answer in English and cite sources as [n].',
     none: 'No relevant notes were found.',
     noneInRange: (r: DateRange) => `No relevant notes were found between ${r.from} and ${r.to}.`
   }
 } satisfies Record<SummaryLanguage, unknown>
 
-/** 找不到來源時直接回覆的文字（不呼叫模型，避免編造） */
+/** Fixed reply when no sources are found (the model isn't called, to avoid making things up) */
 export function noSourcesMessage(language: SummaryLanguage, range: DateRange | null): string {
   return range ? ASK[language].noneInRange(range) : ASK[language].none
 }
 
-/** 歷史訊息：去掉舊的引用編號（對應的是之前的來源），過長的截斷 */
+/** Notice appended when an answer is cut off by the output limit */
+export const TRUNCATED_NOTICE: Record<SummaryLanguage, string> = {
+  'zh-TW': '\n\n_（回覆達到輸出上限而中斷，可在 AI 設定中調高。）_',
+  en: '\n\n_(Reply stopped at the max output limit. You can raise it in AI settings.)_'
+}
+
+/** History messages: strip old citation numbers (they referred to earlier sources) and truncation notices, and cut long ones */
 export function historyMessages(
   history: readonly ChatTurn[],
   maxMessages = HISTORY_MESSAGES,
@@ -340,7 +347,10 @@ export function historyMessages(
     .filter((t) => (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
     .slice(-maxMessages)
     .map((t) => {
-      const text = t.content.replace(/\[\d+\]/g, '').trim()
+      let text = t.content
+      for (const notice of Object.values(TRUNCATED_NOTICE))
+        text = text.split(notice.trim()).join('')
+      text = text.replace(/\[\d+\]/g, '').trim()
       return {
         role: t.role,
         content: text.length > maxChars ? text.slice(0, maxChars) + '…' : text
@@ -374,8 +384,8 @@ export function askMessages(
 }
 
 /**
- * 串流過濾引用：[1, 2]、[1][2]、【1】統一寫成 [1][2]，超出 1…count 的編號拿掉。
- * [[ 開頭的是 wikilink，原樣輸出。可能是引用開頭的部分先暫存，等到 ] 才判斷。
+ * Filters citations while streaming: [1, 2], [1][2] and 【1】 are normalized to [1][2], and numbers outside 1…count are removed.
+ * Anything starting with [[ is a wikilink and passes through unchanged. Text that may be the start of a citation is held until ] arrives.
  */
 export function createCitationFilter(count: number): {
   push(delta: string): string
@@ -412,7 +422,7 @@ export function createCitationFilter(count: number): {
         pending = pending.slice(m[0].length)
         continue
       }
-      // 還沒收到 ]：可能是引用的一部分，等下一個片段
+      // No ] yet: this may be part of a citation, so wait for the next chunk
       if (!final && /^[[【][\d\s,，、]*$/.test(pending)) return out
       out += pending[0]
       pending = pending.slice(1)
@@ -431,8 +441,8 @@ export function createCitationFilter(count: number): {
 }
 
 /**
- * 串流回答。引用經 createCitationFilter、連結經 createLinkFilter 過濾（只保留來源中出現過的
- * 連結與來源標題），回傳值與 onDelta 都是過濾後的內容。
+ * Streams the answer. Citations go through createCitationFilter and links through createLinkFilter (keeping only links that appear
+ * in the sources and the source titles); the return value and onDelta both carry the filtered content.
  */
 export async function answer(
   chat: Chat,

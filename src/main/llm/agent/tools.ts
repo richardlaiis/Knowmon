@@ -1,6 +1,6 @@
-// Agent 的工具：四個唯讀工具直接執行；寫入工具（create_note、add_tags）只產生提案，
-// 使用者確認後才由 applyProposal 寫入。回給模型的是精簡的純文字（小模型讀 JSON 比較不穩定）。
-// 筆記寫成「標題 (path: …, date: …)」：用「標題 | 路徑」時模型會照抄成 [[標題 | 路徑]]。
+// Agent tools: the four read-only tools run directly; write tools (create_note, add_tags) only produce proposals,
+// written by applyProposal after the user confirms. The model gets compact plain text (small models read JSON less reliably).
+// Notes are written as "title (path: …, date: …)": with "title | path", the model copies it as [[title | path]].
 import { existsSync } from 'node:fs'
 import { createLinkResolver } from '../../../shared/links'
 import { parseTimeRange, withoutTimeRange } from '../../../shared/timeRange'
@@ -22,19 +22,21 @@ import { noteDay, retrieve } from '../retrieve'
 import { linkTargets } from '../summarize'
 import { addTags, existingTags, normalizeTag } from './tags'
 
-/** get_note 每次最多回傳幾個字的內文（加上標頭後仍在 TOOL_RESULT_MAX 內） */
+/** Maximum body characters get_note returns at a time (still within TOOL_RESULT_MAX with the header; scaled per settings, see budget.ts) */
 export const NOTE_CHARS = 1_200
-/** 搜尋與列表結果中，每篇摘要最多幾個字 */
+/** Maximum snippet characters per note in search and list results */
 export const HIT_SNIPPET_CHARS = 80
-/** get_neighbors 每一類最多列幾篇 */
+/** Maximum notes listed per type by get_neighbors */
 export const NEIGHBORS_PER_TYPE = 10
 
 export interface ToolContext {
   vault: Vault
-  /** 查詢向量；離線或向量尚未建好時為 null（檢索退回全文） */
+  /** The query vector; null when offline or vectors aren't built yet (retrieval falls back to full text) */
   queryVector: (text: string) => Promise<number[] | null>
-  /** 解析「上週」等時間片語用的現在時間 */
+  /** The current time for parsing time phrases such as 「上週」 "last week" */
   now: number
+  /** Characters per get_note page; defaults to NOTE_CHARS */
+  noteChars?: number
 }
 
 export interface NoteRef {
@@ -43,18 +45,18 @@ export interface NoteRef {
 }
 
 export interface ToolOutcome {
-  /** 回給模型的文字 */
+  /** Text returned to the model */
   text: string
-  /** 給使用者看的一行說明 */
+  /** A one-line description for the user */
   label: string
   notes: NoteRef[]
-  /** 寫入工具：等待使用者確認的提案 */
+  /** Write tools: the proposal waiting for the user's confirmation */
   proposal?: AgentProposal
-  /** 回答中允許保留的其他 [[連結]]（讀到的筆記內文中的連結） */
+  /** Other [[links]] allowed to remain in the answer (links in the note text that was read) */
   links?: string[]
 }
 
-/** 參數不合法、筆記不存在等：訊息回給模型讓它修正 */
+/** Invalid arguments, missing notes and so on: the message goes back to the model so it can correct itself */
 export class ToolError extends Error {}
 
 export const WRITE_TOOLS: ReadonlySet<AgentToolName> = new Set(['create_note', 'add_tags'])
@@ -150,7 +152,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 export const isToolName = (name: string): name is AgentToolName =>
   TOOL_DEFINITIONS.some((t) => t.function.name === name)
 
-// ---- 參數 ----
+// ---- Arguments ----
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v))
 
@@ -159,7 +161,7 @@ function int(v: unknown, def: number, min: number, max: number): number {
   return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.floor(n))) : def
 }
 
-/** 字串陣列；模型有時給逗號分隔的字串 */
+/** An array of strings; models sometimes send a comma-separated string */
 function strings(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(str).filter(Boolean)
   return str(v)
@@ -175,7 +177,7 @@ function parsePeriod(period: string, now: number): DateRange {
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
-/** 筆記的路徑或標題（可帶 [[ ]] 與 .md）→ 筆記 */
+/** A note's path or title (optionally with [[ ]] and .md) → the note */
 function resolveNote(ctx: ToolContext, input: unknown): NoteRef & { date: string } {
   const raw = str(input)
     .trim()
@@ -191,7 +193,7 @@ function resolveNote(ctx: ToolContext, input: unknown): NoteRef & { date: string
   return { path: note.path, title: note.title, date: noteDay(note) }
 }
 
-// ---- 輸出 ----
+// ---- Output ----
 
 const fmtRange = (r: DateRange): string => (r.from === r.to ? r.from : `${r.from} – ${r.to}`)
 const plain = (segments: readonly TextSegment[]): string =>
@@ -218,9 +220,9 @@ function hitList(ctx: ToolContext, hits: readonly RetrieveHit[]): string {
 const refs = (hits: readonly { path: string; title: string }[]): NoteRef[] =>
   hits.map((h) => ({ path: h.path, title: h.title }))
 
-// ---- 工具 ----
+// ---- Tools ----
 
-/** 執行中的步驟顯示的說明（結果出來前，或出錯時） */
+/** Description shown for a running step (before results arrive, or on error) */
 export function callLabel(name: AgentToolName, args: Record<string, unknown>): string {
   const a = (k: string): string => str(args[k]).trim()
   switch (name) {
@@ -269,7 +271,7 @@ async function searchNotesTool(
   const limit = int(args.limit, 5, 1, 10)
   let range = period ? parsePeriod(period, ctx.now) : null
   let text = query
-  // 模型常把時間寫在 query 裡（「上週 深度工作」）
+  // Models often put the time in query (「上週 深度工作」, "last week deep work")
   if (!range) {
     const m = parseTimeRange(query, ctx.now)
     if (m) {
@@ -299,11 +301,11 @@ async function searchNotesTool(
 async function getNoteTool(ctx: ToolContext, args: Record<string, unknown>): Promise<ToolOutcome> {
   const note = resolveNote(ctx, args.path)
   const parsed = parseNote(note.path, await ctx.vault.peek(note.path))
-  // frontmatter 換成的空行不需要
+  // The blank lines that replaced the frontmatter aren't needed
   const body = parsed.body.replace(/^\s*\n/, '')
   const tags = existingTags(parsed.frontmatter)
   const offset = int(args.offset, 0, 0, Math.max(0, body.length))
-  const end = Math.min(body.length, offset + NOTE_CHARS)
+  const end = Math.min(body.length, offset + (ctx.noteChars ?? NOTE_CHARS))
   const header = [
     `Title: ${note.title}`,
     `Path: ${note.path}`,
@@ -333,7 +335,7 @@ async function getNeighborsTool(
     NEIGHBOR_TYPES.includes(t as LinkType)
   )
   const types = new Set(asked.length ? asked : NEIGHBOR_TYPES)
-  // graph() 會先重算過期的時間邊與 semantic 邊
+  // graph() first recomputes stale time edges and semantic edges
   const graph = await ctx.vault.graph()
   const titles = new Map(graph.nodes.map((n) => [n.path, n.title]))
 
@@ -374,7 +376,7 @@ async function getNeighborsTool(
       lines.push(`- ${title} (path: ${i.path}${detail})`)
     }
   }
-  // 連到尚未建立的筆記
+  // Links to notes that don't exist yet
   if (types.has('wikilink')) {
     const id = getNoteByPath(ctx.vault.db, note.path)!.id
     const missing = listLinks(ctx.vault.db, 'wikilink')
@@ -412,9 +414,9 @@ function listInRangeTool(ctx: ToolContext, args: Record<string, unknown>): ToolO
   }
 }
 
-// ---- 寫入工具：提案 ----
+// ---- Write tools: proposals ----
 
-/** 新筆記的路徑：補 .md、拒絕跳出 vault 與隱藏資料夾、已存在的不覆蓋 */
+/** Path for a new note: append .md, reject escaping the vault and hidden folders, never overwrite an existing note */
 export function newNotePath(ctx: ToolContext, input: unknown): string {
   let p = str(input).trim().replace(/\\/g, '/').replace(/^\/+/, '')
   if (!p) throw new ToolError('The path is empty.')
@@ -430,7 +432,7 @@ export function newNotePath(ctx: ToolContext, input: unknown): string {
   return p
 }
 
-/** 內容中指向不存在筆記的連結（預覽時標示） */
+/** Links in the content pointing to missing notes (marked in the preview) */
 function missingLinks(ctx: ToolContext, content: string): string[] {
   const resolve = createLinkResolver(listAllNotes(ctx.vault.db).map((n) => n.path))
   return linkTargets(content).filter((t) => resolve(t) === null)
@@ -484,11 +486,11 @@ async function proposeTags(ctx: ToolContext, args: Record<string, unknown>): Pro
   }
 }
 
-// ---- 寫入工具：使用者確認後 ----
+// ---- Write tools: after the user confirms ----
 
 /**
- * 寫入提案。edited 是使用者修改過的版本（只採用 create_note 的 path / content、
- * add_tags 的 tags）。add_tags 在寫入當下重新讀檔再套用，不會蓋掉等待期間的修改。
+ * Writes a proposal. edited is the user's modified version (only create_note's path / content and
+ * add_tags' tags are used). add_tags rereads the file at write time, so edits made while waiting aren't overwritten.
  */
 export async function applyProposal(
   ctx: ToolContext,

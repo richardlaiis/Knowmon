@@ -1,5 +1,5 @@
-// OpenAI 相容的 Chat Completions client（OpenAI、Gemini 的 OpenAI 相容端點、OpenRouter、LM Studio…）。
-// 只用 Node 內建的 fetch；fetch 可注入以便測試。只負責對話，embedding 一律走 Ollama。
+// Client for OpenAI-compatible Chat Completions (OpenAI, Gemini's OpenAI-compatible endpoint, OpenRouter, LM Studio…).
+// Uses only Node's built-in fetch, which can be injected for tests. Chat only; embeddings always use Ollama.
 // https://platform.openai.com/docs/api-reference/chat
 // https://ai.google.dev/gemini-api/docs/openai
 import {
@@ -12,18 +12,25 @@ import {
   type ToolDefinition
 } from './ollama'
 
-/** 列出模型（也用來檢查 key 與連線）的逾時 */
+/** Timeout for listing models (also used to check the key and connection) */
 export const CLOUD_CHECK_TIMEOUT_MS = 5_000
 
 export interface OpenAiCompatibleOptions {
   baseUrl: string
   apiKey: string
-  /** 錯誤訊息中的服務名稱（例如 OpenAI） */
+  /** Provider name used in error messages (for example OpenAI) */
   label: string
+  /**
+   * Name of the output limit parameter: newer OpenAI models only accept max_completion_tokens,
+   * while most compatible providers only recognize max_tokens. Defaults to max_tokens; when rejected, resend once with the other name.
+   */
+  maxTokensParam?: MaxTokensParam
   fetchImpl?: typeof fetch
 }
 
-/** 明顯不是對話用的模型（模型清單只當作建議，使用者仍可手動輸入） */
+export type MaxTokensParam = 'max_tokens' | 'max_completion_tokens'
+
+/** Models that are clearly not for chat (the model list is only a suggestion; users can still type a model) */
 const NOT_CHAT =
   /embed|tts|whisper|dall-e|moderation|image|audio|realtime|transcribe|davinci|babbage|imagen|veo|aqa/i
 
@@ -72,7 +79,10 @@ export function createOpenAiCompatible(o: OpenAiCompatibleOptions): ChatClient {
     tools: readonly ToolDefinition[] | undefined,
     opts: ChatOptions
   ): Promise<ChatResult> {
-    const send = (temperature: boolean): Promise<Response> =>
+    let temperature = opts.temperature !== undefined
+    let tokenParam: MaxTokensParam = o.maxTokensParam ?? 'max_tokens'
+    let tokenError: LlmError | null = null
+    const send = (): Promise<Response> =>
       request(
         '/chat/completions',
         {
@@ -80,25 +90,35 @@ export function createOpenAiCompatible(o: OpenAiCompatibleOptions): ChatClient {
           messages: toOpenAiMessages(messages),
           stream: true,
           ...(tools && tools.length > 0 ? { tools } : {}),
-          ...(temperature && opts.temperature !== undefined
-            ? { temperature: opts.temperature }
-            : {})
+          ...(temperature ? { temperature: opts.temperature } : {}),
+          ...(opts.maxTokens === undefined ? {} : { [tokenParam]: opts.maxTokens })
         },
         { signal: opts.signal, model }
       )
-    let res: Response
-    try {
-      res = await send(true)
-    } catch (e) {
-      // 推理模型（o 系列、gpt-5 等）只接受預設的 temperature：不帶參數重送
-      if (
-        !(e instanceof LlmError && e.kind === 'http' && /temperature/i.test(e.message)) ||
-        opts.temperature === undefined
-      ) {
-        throw e
+    // Each parameter is adjusted at most once, so at most three requests are sent
+    const open = async (): Promise<Response> => {
+      for (;;) {
+        try {
+          return await send()
+        } catch (e) {
+          if (!(e instanceof LlmError && e.kind === 'http')) throw e
+          // Reasoning models (the o series, gpt-5 and so on) only accept the default temperature: resend without it
+          if (temperature && /temperature/i.test(e.message)) {
+            temperature = false
+            continue
+          }
+          if (opts.maxTokens !== undefined && /max_(completion_)?tokens/i.test(e.message)) {
+            // Still rejected after switching names: report the first error (usually the value exceeds the model's limit)
+            if (tokenError) throw tokenError
+            tokenError = e
+            tokenParam = tokenParam === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens'
+            continue
+          }
+          throw e
+        }
       }
-      res = await send(false)
     }
+    const res = await open()
 
     let content = ''
     const calls = new Map<number, { id?: string; name: string; args: string; extra?: unknown }>()
@@ -106,10 +126,14 @@ export function createOpenAiCompatible(o: OpenAiCompatibleOptions): ChatClient {
       await readSse(res.body, (data) => {
         const obj = JSON.parse(data) as {
           error?: unknown
-          choices?: { delta?: { content?: unknown; tool_calls?: unknown[] } }[]
+          choices?: {
+            delta?: { content?: unknown; tool_calls?: unknown[] }
+            finish_reason?: unknown
+          }[]
         }
         if (obj.error) throw new LlmError(`${o.label} error: ${errorMessage(obj.error)}`, 'http')
         const delta = obj.choices?.[0]?.delta
+        if (obj.choices?.[0]?.finish_reason === 'length') opts.onTruncated?.()
         if (typeof delta?.content === 'string' && delta.content) {
           content += delta.content
           opts.onDelta?.(delta.content)
@@ -121,7 +145,7 @@ export function createOpenAiCompatible(o: OpenAiCompatibleOptions): ChatClient {
             function?: { name?: unknown; arguments?: unknown }
             extra_content?: unknown
           }
-          // 沒有 index 的服務一次給完整的呼叫：各自當成新的一個
+          // Providers without an index send whole calls at once: treat each as a new one
           const index = typeof c.index === 'number' ? c.index : 1_000_000 + calls.size
           const call = calls.get(index) ?? { name: '', args: '' }
           if (typeof c.id === 'string' && c.id) call.id = c.id
@@ -188,8 +212,8 @@ interface OpenAiMessage {
 }
 
 /**
- * 內部的訊息格式（Ollama 風格：arguments 是物件、tool 訊息帶 tool_name）轉成 OpenAI 格式。
- * 工具呼叫沒有 id 時（不回傳 id 的服務）依位置產生固定的 id，之後的 tool 訊息依序對應。
+ * Converts the internal message format (Ollama style: arguments as an object, tool messages with tool_name) to OpenAI's.
+ * Tool calls without an id (from providers that don't return ids) get a stable id by position, matched by later tool messages in order.
  */
 export function toOpenAiMessages(messages: ChatMessage[]): OpenAiMessage[] {
   let pending: string[] = []
@@ -213,7 +237,7 @@ export function toOpenAiMessages(messages: ChatMessage[]): OpenAiMessage[] {
   })
 }
 
-/** 逐一取出 SSE 的 data（多行 data 以換行連接）；[DONE] 不回傳 */
+/** Yields each SSE data payload (multi-line data joined with newlines); [DONE] isn't returned */
 export async function readSse(
   body: ReadableStream<Uint8Array> | null,
   onData: (data: string) => void
@@ -232,7 +256,7 @@ export async function readSse(
     const l = raw.endsWith('\r') ? raw.slice(0, -1) : raw
     if (l === '') return dispatch()
     if (l.startsWith('data:')) data.push(l.slice(l.startsWith('data: ') ? 6 : 5))
-    // 其他欄位（event:、id:、註解）不需要
+    // Other fields (event:, id:, comments) aren't needed
   }
   const reader = body.getReader()
   for (;;) {
@@ -260,7 +284,7 @@ function parseArgs(s: string): Record<string, unknown> {
   }
 }
 
-/** OpenAI：{ error: { message } }；Gemini 有時是 [{ error: { message } }] */
+/** OpenAI: { error: { message } }; Gemini sometimes sends [{ error: { message } }] */
 function errorText(body: string): string {
   try {
     let v = JSON.parse(body)

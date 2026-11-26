@@ -1,11 +1,11 @@
-// 模糊比對（Quick switcher 與 [[ 自動補全共用，純函式）
+// Fuzzy matching (shared by the Quick switcher and [[ autocompletion; pure functions)
 import type { NoteSummary } from '../../../shared/types'
 
 const BOUNDARY = /[\s/\\\-_.()[\]]/
 
 /**
- * query 的字元依序出現在 text 中就算符合（不分大小寫，忽略 query 的空白），分數越高越好；不符合回傳 null。
- * 連續字串命中 > 字首/分隔符號後命中 > 零散命中；text 越短越好。
+ * A match when the query's characters appear in order in text (case-insensitive, ignoring spaces in the query); higher scores are better, and null means no match.
+ * Consecutive matches > matches at word starts/after separators > scattered matches; shorter text is better.
  */
 export function fuzzyScore(query: string, text: string): number | null {
   const q = query.toLowerCase().replace(/\s+/g, '')
@@ -35,8 +35,8 @@ export function fuzzyScore(query: string, text: string): number | null {
 }
 
 /**
- * 依 query 排序筆記：標題比路徑優先；query 為空時最近開啟的在前，其餘依修改時間。
- * recent 是最近開啟的路徑，越前面越近。
+ * Sorts notes by query: titles take precedence over paths; with an empty query, recently opened notes come first, then by modification time.
+ * recent holds recently opened paths, most recent first.
  */
 export function rankNotes(
   notes: readonly NoteSummary[],

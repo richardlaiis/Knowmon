@@ -1,4 +1,4 @@
-// chokidar 只當作「有東西變了」的觸發器，實際變更由 Vault.reconcile 比對得出
+// chokidar is used only as a "something changed" trigger; the actual changes come from Vault.reconcile
 import { watch } from 'chokidar'
 import type { VaultChange } from '../../shared/types'
 import { isIgnored, toRel } from './paths'
@@ -8,8 +8,8 @@ export interface Watcher {
 }
 
 /**
- * 監聽 vault，變動停止 debounceMs 後呼叫 onSettled。
- * 資料夾的新增/刪除不會出現在 reconcile 結果裡，所以直接一併傳出。
+ * Watches the vault and calls onSettled once changes have stopped for debounceMs.
+ * Folder additions/deletions don't show up in reconcile's results, so they're passed along directly.
  */
 export function watchVault(
   root: string,

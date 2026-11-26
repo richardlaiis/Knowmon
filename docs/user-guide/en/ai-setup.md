@@ -77,6 +77,19 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 - Bigger models give better results but run slower. On CPU only, `qwen3:8b` takes about 15–30 seconds to summarize a note and 1–4 minutes for an Agent task; a GPU is much faster.
 - On a modest machine, try a smaller model (such as `qwen3:4b`) at some cost in quality.
 
+### Context length and max output
+
+Each chat provider has two more settings. Ollama keeps its own pair, and the cloud providers share one pair, so switching providers doesn't undo your changes.
+
+| Setting        | Default       | Description                                                                                                                                            |
+| -------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Context length | 8192 tokens   | How much the model can read at once. It also sets how much note text Knowmon sends: 32768 sends about 4× more sources and Agent tool results than 8192 |
+| Max output     | Model default | The longest reply the model may write. Leave it blank for no limit                                                                                     |
+
+- **Ollama:** a larger context needs more memory, and on a CPU reading more text takes longer. Changing it reloads the model once. The model can't use more context than it was trained for.
+- **Cloud:** set the context to your model's context window or lower. More text per request costs more.
+- When a reply stops at the max output, it ends with a note saying so. For reasoning models the limit includes thinking, so a very small limit can leave the answer empty.
+
 ## Status and troubleshooting
 
 | Sidebar shows       | Meaning                       | What to do                                                            |

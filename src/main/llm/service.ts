@@ -1,8 +1,9 @@
-// LLM 服務：Ollama 連線狀態、背景 embedding、混合檢索、總結、問答。
-// Ollama 是可選的：連不上時狀態為離線、每隔一段時間重試，其餘功能照常。
-// 對話（總結、問答、Agent）可以改用雲端服務（OpenAI 相容 API）；embedding 一律走 Ollama。
+// LLM service: Ollama connection status, background embedding, hybrid retrieval, summaries, Q&A.
+// Ollama is optional: when it can't be reached, the status is offline and it retries periodically, and everything else works.
+// Chat (summaries, Q&A, Agent) can use a cloud provider (OpenAI-compatible API) instead; embeddings always use Ollama.
 import crypto from 'node:crypto'
 import {
+  activeChatLimits,
   activeChatModel,
   cleanLlmSettings,
   cloudBaseUrl,
@@ -51,58 +52,54 @@ import {
   gatherSources,
   noSourcesMessage,
   notesInRange,
-  planQuery
+  planQuery,
+  TRUNCATED_NOTICE
 } from './ask'
+import { chatBudget, type ChatBudget } from './budget'
 import { retrieve } from './retrieve'
 import { summarize, type Chat } from './summarize'
 
 export const RETRY_MS = 30_000
-/**
- * 所有對話（總結、問答、agent）共用的 context 長度（tokens）。
- * Ollama 的預設是 4096，問答的來源與 agent 的工具結果會被截掉開頭；
- * 而且 num_ctx 不同時 Ollama 會重新載入模型（約 10 秒）、清掉 prompt 快取，所以統一用同一個值。
- */
-export const CHAT_NUM_CTX = 8_192
 
 export interface LlmServiceOptions {
-  /** 讀取已存的設定（未設定的欄位用預設值） */
+  /** Reads the saved settings (missing fields use the defaults) */
   loadSettings: () => unknown
   saveSettings: (s: LlmSettings) => void
   onStatus: (s: LlmStatus) => void
   onSummary: (c: SummaryChunk) => void
   onAnswer: (c: AnswerChunk) => void
   onAgent: (c: AgentChunk) => void
-  /** 測試時注入假的 Ollama */
+  /** A fake Ollama injected in tests */
   createClient?: (baseUrl: string) => OllamaClient
-  /** 雲端服務的 client；測試時注入假的 */
+  /** Cloud provider client; a fake is injected in tests */
   createCloudClient?: (o: {
     provider: CloudProvider
     baseUrl: string
     apiKey: string
   }) => ChatClient
-  /** API key 的儲存；不給時只存在記憶體 */
+  /** Storage for API keys; memory only when not provided */
   keys?: KeyStore
   retryMs?: number
-  /** 解析「上個月」等時間片語用的現在時間（測試用） */
+  /** The current time for parsing time phrases such as 「上個月」 "last month" (for tests) */
   now?: () => number
 }
 
 export class LlmService {
   private settings: LlmSettings
   private client: OllamaClient
-  /** Ollama 在線（embedding；provider = ollama 時也是對話） */
+  /** Ollama is online (embeddings; also chat when provider = ollama) */
   private ollamaOnline = false
-  /** Ollama 的問題（離線、模型未下載） */
+  /** Ollama problems (offline, model not downloaded) */
   private error: string | null = null
   private models: string[] = []
   private readonly keys: KeyStore
-  /** 雲端對話的 client；設定或 key 改變時清掉，下次用到時重建 */
+  /** Cloud chat client; cleared when settings or keys change and rebuilt on next use */
   private cloud: ChatClient | null = null
   private cloudOnline = false
   private cloudError: string | null = null
   private cloudModels: string[] = []
   private cloudRetryTimer: ReturnType<typeof setTimeout> | null = null
-  /** 每次檢查雲端服務都遞增；設定在檢查途中改變時，舊的結果不採用 */
+  /** Incremented on every cloud check; results are discarded if settings changed mid-check */
   private cloudCheck = 0
   private vault: Vault | null = null
   private embedder: Embedder | null = null
@@ -110,7 +107,7 @@ export class LlmService {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private checking: Promise<void> | null = null
   private readonly requests = new Map<string, AbortController>()
-  /** 等待使用者確認的寫入提案：`${request id}:${step}` → 回覆 */
+  /** Write proposals waiting for the user's confirmation: `${request id}:${step}` → reply */
   private readonly confirmations = new Map<string, (d: AgentDecision) => void>()
   private disposed = false
 
@@ -120,12 +117,12 @@ export class LlmService {
     this.keys = opts.keys ?? memoryKeyStore()
   }
 
-  /** 換 vault（null = 關閉）。舊的 Embedder 會先停下來。 */
+  /** Switches vaults (null = close). The old Embedder is stopped first. */
   async attach(vault: Vault | null): Promise<void> {
     await this.detach()
     this.vault = vault
     if (!vault) return this.emit()
-    // 離線時不喚醒，等重試成功後再一起處理
+    // Don't wake it while offline; it catches up once a retry succeeds
     this.offChunks = vault.onChunksChanged(() => {
       if (this.ollamaOnline) this.embedder?.wake()
     })
@@ -146,7 +143,7 @@ export class LlmService {
     return {
       online: cloud ? this.cloudOnline : this.ollamaOnline,
       ollamaOnline: this.ollamaOnline,
-      // 雲端模式下 Ollama 只負責 embedding，它的問題不擋對話
+      // In cloud mode Ollama only handles embeddings, so its problems don't block chat
       error: cloud ? this.cloudError : ollamaProblem,
       embedError: !cloud
         ? null
@@ -168,7 +165,7 @@ export class LlmService {
     }
   }
 
-  /** 重新檢查連線並恢復 embedding */
+  /** Re-checks the connection and resumes embedding */
   async retry(): Promise<LlmStatus> {
     await this.check()
     return this.status()
@@ -188,7 +185,7 @@ export class LlmService {
       this.cloud = null
     }
     if (next.embedModel !== prev.embedModel && this.vault) {
-      // 換 embedding 模型：所有向量重算
+      // The embedding model changed: recompute every vector
       await this.embedder?.stop()
       this.embedder = this.makeEmbedder(this.vault)
       this.vault.markSemanticDirty()
@@ -197,12 +194,12 @@ export class LlmService {
     return this.status()
   }
 
-  /** 儲存雲端服務的 API key（null 或空字串 = 刪除），重新檢查目前的服務 */
+  /** Saves a cloud provider's API key (null or an empty string = delete) and re-checks the current provider */
   async setApiKey(provider: CloudProvider, key: string | null): Promise<LlmStatus> {
     if (!isCloudProvider(provider)) throw new Error('Unknown provider.')
     const k = typeof key === 'string' ? key.trim() : ''
     if (k.length > API_KEY_MAX) throw new Error('The API key is too long.')
-    // 會放進 HTTP header：只允許可見的 ASCII 字元
+    // It goes into an HTTP header: only visible ASCII characters are allowed
     if (k && !/^[\x21-\x7e]+$/.test(k)) throw new Error('The API key contains invalid characters.')
     this.keys.set(provider, k || null)
     if (provider === this.settings.provider) {
@@ -217,7 +214,7 @@ export class LlmService {
     return retrieve(vault.db, query, await this.queryVector(vault, query), opts)
   }
 
-  /** 開始串流總結，回傳 request id；結果經 onSummary 推送 */
+  /** Starts a streaming summary and returns a request id; results are pushed through onSummary */
   summarize(req: SummaryRequest): string {
     const vault = this.requireVault()
     const path = normalizeRel(String(req.path ?? ''))
@@ -233,9 +230,19 @@ export class LlmService {
       if (!this.disposed) this.opts.onSummary({ id, ...c })
     }
     const { client, model } = this.chatTarget()
-    const chat: Chat = (messages, onDelta) =>
-      client.chat(model, messages, this.chatOptions(ac.signal, onDelta, 0.3))
-    // 先回傳 id，讓 renderer 能對上之後推送的片段
+    const budget = this.budget()
+    const language = req.language === 'en' ? 'en' : 'zh-TW'
+    // When a summary is split, only the last call is shown on screen, so only check whether that one was cut off
+    let truncated = false
+    const chat: Chat = (messages, onDelta) => {
+      truncated = false
+      return client.chat(
+        model,
+        messages,
+        this.chatOptions(ac.signal, onDelta, 0.3, () => (truncated = true))
+      )
+    }
+    // Return the id first so the renderer can match the chunks pushed afterwards
     setImmediate(() => {
       summarize(
         chat,
@@ -243,9 +250,13 @@ export class LlmService {
         note.title,
         text,
         (delta) => send({ delta, done: false }),
-        req.language === 'en' ? 'en' : 'zh-TW'
+        language,
+        budget
       )
-        .then(() => send({ delta: '', done: true }))
+        .then(() => {
+          if (truncated) send({ delta: TRUNCATED_NOTICE[language], done: false })
+          send({ delta: '', done: true })
+        })
         .catch((e) => {
           if (ac.signal.aborted) send({ delta: '', done: true })
           else send({ delta: '', done: true, error: errorMessage(e) })
@@ -256,7 +267,7 @@ export class LlmService {
     return id
   }
 
-  /** 開始串流回答，回傳 request id；來源與回答經 onAnswer 推送 */
+  /** Starts streaming an answer and returns a request id; sources and the answer are pushed through onAnswer */
   ask(req: AskRequest): string {
     const vault = this.requireVault()
     const question = String(req.question ?? '').trim()
@@ -270,15 +281,21 @@ export class LlmService {
       if (!this.disposed) this.opts.onAnswer({ id, ...c })
     }
     const { client, model } = this.chatTarget()
+    const budget = this.budget()
+    let truncated = false
     const chat: Chat = (messages, onDelta) =>
-      client.chat(model, messages, this.chatOptions(ac.signal, onDelta, 0.2))
+      client.chat(
+        model,
+        messages,
+        this.chatOptions(ac.signal, onDelta, 0.2, () => (truncated = true))
+      )
 
     const run = async (): Promise<number[]> => {
       const plan = planQuery(question, history, req.range, (this.opts.now ?? Date.now)())
       const opts = { limit: ASK_SOURCES, ...(plan.range ?? {}) }
       let hits: RetrieveResult['hits'] = []
       let vector = false
-      // 只有時間、沒有可檢索的內容（「上個月寫了什麼？」）：直接列出範圍內的筆記
+      // Only a time and nothing to retrieve (「上個月寫了什麼？」 "what did I write last month?"): list the notes in the range directly
       if (plan.keywords.length > 0 || !plan.range) {
         const qv = await this.queryVector(vault, plan.vectorText)
         if (ac.signal.aborted) return []
@@ -287,7 +304,7 @@ export class LlmService {
         vector = r.vector
       }
       if (hits.length === 0 && plan.range) hits = notesInRange(vault.db, plan.range)
-      const sources = gatherSources(vault.db, hits)
+      const sources = gatherSources(vault.db, hits, budget.askContext, budget.askChunk)
       send({
         delta: '',
         done: false,
@@ -302,10 +319,11 @@ export class LlmService {
       }
       const messages = askMessages(question, sources, history, plan.range, language)
       const result = await answer(chat, messages, sources, (delta) => send({ delta, done: false }))
+      if (truncated) send({ delta: TRUNCATED_NOTICE[language], done: false })
       return result.cited
     }
 
-    // 先回傳 id，讓 renderer 能對上之後推送的片段
+    // Return the id first so the renderer can match the chunks pushed afterwards
     setImmediate(() => {
       run()
         .then((cited) => send({ delta: '', done: true, cited }))
@@ -319,7 +337,7 @@ export class LlmService {
     return id
   }
 
-  /** 開始執行 agent 任務，回傳 request id；步驟與文字經 onAgent 推送 */
+  /** Starts an agent task and returns a request id; steps and text are pushed through onAgent */
   agent(req: AgentRequest): string {
     const vault = this.requireVault()
     const task = String(req.task ?? '').trim()
@@ -333,10 +351,25 @@ export class LlmService {
       if (!this.disposed) this.opts.onAgent({ id, ...c })
     }
     const { client, model } = this.chatTarget()
+    const budget = this.budget()
     const now = (this.opts.now ?? Date.now)()
-    const ctx: ToolContext = { vault, now, queryVector: (text) => this.queryVector(vault, text) }
-    const chat: ToolChat = (messages, tools, onDelta) =>
-      client.chatTools(model, messages, tools ?? [], this.chatOptions(ac.signal, onDelta, 0.2))
+    const ctx: ToolContext = {
+      vault,
+      now,
+      queryVector: (text) => this.queryVector(vault, text),
+      noteChars: budget.noteChars
+    }
+    // The task ends when the model answers directly (no tool calls), so the last call is the final answer
+    let truncated = false
+    const chat: ToolChat = (messages, tools, onDelta) => {
+      truncated = false
+      return client.chatTools(
+        model,
+        messages,
+        tools ?? [],
+        this.chatOptions(ac.signal, onDelta, 0.2, () => (truncated = true))
+      )
+    }
     const confirm = (step: { index: number }): Promise<AgentDecision> =>
       new Promise((resolve) => {
         const key = `${id}:${step.index}`
@@ -345,7 +378,7 @@ export class LlmService {
           ac.signal.removeEventListener('abort', onAbort)
           resolve(d)
         }
-        // 停止、換 vault、關閉 App：視為拒絕，什麼都不寫
+        // Stopping, switching vaults or closing the app: counts as rejected, nothing is written
         const onAbort = (): void => done({ approved: false })
         if (ac.signal.aborted) return onAbort()
         ac.signal.addEventListener('abort', onAbort)
@@ -364,16 +397,20 @@ export class LlmService {
           },
           emit: (c) => send({ ...c, done: false }),
           confirm,
-          signal: ac.signal
+          signal: ac.signal,
+          budget
         },
         agentMessages(task, history, language, now),
         language
       )
 
-    // 先回傳 id，讓 renderer 能對上之後推送的片段
+    // Return the id first so the renderer can match the chunks pushed afterwards
     setImmediate(() => {
       run()
-        .then(() => send({ delta: '', done: true }))
+        .then(() => {
+          if (truncated) send({ delta: TRUNCATED_NOTICE[language], done: false })
+          send({ delta: '', done: true })
+        })
         .catch((e) => {
           if (ac.signal.aborted) send({ delta: '', done: true })
           else if (isNoToolsError(e) || isCloudNoToolsError(e)) {
@@ -391,7 +428,7 @@ export class LlmService {
     return id
   }
 
-  /** 回覆 agent 的寫入提案；已經沒有在等待（停止、重複回覆）時忽略 */
+  /** Answers an agent write proposal; ignored when nothing is waiting any more (stopped, or answered twice) */
   confirm(id: string, step: number, decision: AgentDecision): void {
     this.confirmations.get(`${id}:${step}`)?.(decision)
   }
@@ -408,7 +445,7 @@ export class LlmService {
     await this.detach()
   }
 
-  // ---- 內部 ----
+  // ---- Internals ----
 
   private async detach(): Promise<void> {
     if (this.retryTimer) clearTimeout(this.retryTimer)
@@ -427,7 +464,7 @@ export class LlmService {
     return this.vault
   }
 
-  /** 查詢向量；離線、向量尚未建好或模型不同時為 null（檢索退回全文） */
+  /** The query vector; null when offline, vectors aren't built yet or the model differs (retrieval falls back to full text) */
   private async queryVector(vault: Vault, text: string): Promise<number[] | null> {
     const vm = vectorModel(vault.db)
     if (
@@ -442,13 +479,13 @@ export class LlmService {
       const [v] = await this.client.embed(this.settings.embedModel, [text.trim()])
       return v
     } catch (e) {
-      // 離線時順便更新狀態
+      // While offline, also update the status
       if (e instanceof OllamaError && e.kind === 'offline') void this.checkOllama()
       return null
     }
   }
 
-  /** 目前對話使用的 client 與模型；雲端服務缺 key、位址或模型時丟出給使用者看的錯誤 */
+  /** The client and model currently used for chat; throws a user-facing error when a cloud provider is missing its key, address or model */
   private chatTarget(): { client: ChatClient; model: string } {
     const s = this.settings
     if (s.provider === 'ollama') return { client: this.client, model: s.chatModel }
@@ -458,7 +495,7 @@ export class LlmService {
     return { client: this.cloud, model: activeChatModel(s) }
   }
 
-  /** 雲端服務缺少的設定（key、custom 位址、模型）；都齊全時為 null */
+  /** What the cloud provider is missing (key, custom address, model); null when everything is set */
   private cloudProblem(): string | null {
     const p = this.settings.provider
     if (p === 'ollama') return null
@@ -475,24 +512,41 @@ export class LlmService {
     const apiKey = this.keys.get(provider) ?? ''
     return this.opts.createCloudClient
       ? this.opts.createCloudClient({ provider, baseUrl, apiKey })
-      : createOpenAiCompatible({ baseUrl, apiKey, label: PROVIDER_LABELS[provider] })
+      : createOpenAiCompatible({
+          baseUrl,
+          apiKey,
+          label: PROVIDER_LABELS[provider],
+          maxTokensParam: provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'
+        })
   }
 
-  /** Ollama 只有在本機時 num_ctx 才有意義；雲端服務不帶 */
+  /** The current provider's character budgets (scaled by the configured context length) */
+  private budget(): ChatBudget {
+    return chatBudget(activeChatLimits(this.settings).contextTokens)
+  }
+
+  /**
+   * The current provider's context length and output limit. num_ctx is sent only to Ollama (the cloud has no such parameter);
+   * summaries, Q&A and the agent use the same value, otherwise Ollama reloads the model and clears its prompt cache.
+   */
   private chatOptions(
     signal: AbortSignal,
     onDelta: ((text: string) => void) | undefined,
-    temperature: number
+    temperature: number,
+    onTruncated: () => void
   ): ChatOptions {
+    const limits = activeChatLimits(this.settings)
     return {
       signal,
       onDelta,
       temperature,
-      ...(this.settings.provider === 'ollama' ? { numCtx: CHAT_NUM_CTX } : {})
+      onTruncated,
+      ...(this.settings.provider === 'ollama' ? { numCtx: limits.contextTokens } : {}),
+      ...(limits.maxOutputTokens === null ? {} : { maxTokens: limits.maxOutputTokens })
     }
   }
 
-  /** 對話失敗時更新連線狀態 */
+  /** Updates the connection status when chat fails */
   private onChatError(e: unknown): void {
     if (!(e instanceof LlmError)) return
     if (this.settings.provider === 'ollama') {
@@ -526,12 +580,12 @@ export class LlmService {
     return embedder
   }
 
-  /** 檢查 Ollama 與目前的雲端服務 */
+  /** Checks Ollama and the current cloud provider */
   private async check(): Promise<void> {
     await Promise.all([this.checkOllama(), this.checkCloud()])
   }
 
-  /** 檢查 Ollama 是否可用、模型是否已下載；可用時恢復 embedding，否則稍後重試 */
+  /** Checks whether Ollama is available and the models are downloaded; resumes embedding when available, otherwise retries later */
   private checkOllama(): Promise<void> {
     this.checking ??= this.checkOllamaNow().finally(() => {
       this.checking = null
@@ -546,7 +600,7 @@ export class LlmService {
       await this.client.version()
       this.models = await this.client.models()
       this.ollamaOnline = true
-      // 雲端模式下 Ollama 只負責 embedding
+      // In cloud mode Ollama only handles embeddings
       const needed =
         this.settings.provider === 'ollama'
           ? [this.settings.embedModel, this.settings.chatModel]
@@ -577,9 +631,9 @@ export class LlmService {
   }
 
   /**
-   * 檢查雲端服務：設定齊全時列出模型（同時確認 key 與連線）。
-   * key 錯誤不重試（使用者要改設定）；連不上、逾時每隔一段時間重試；
-   * 其他錯誤（例如服務沒有 /models）視為可用，只是沒有模型清單。
+   * Checks the cloud provider: when fully configured, lists models (which also confirms the key and connection).
+   * A bad key isn't retried (the user needs to change the settings); unreachable or timed-out providers are retried periodically;
+   * other errors (for example a provider without /models) count as available, just without a model list.
    */
   private async checkCloud(): Promise<void> {
     if (this.cloudRetryTimer) clearTimeout(this.cloudRetryTimer)
@@ -592,7 +646,7 @@ export class LlmService {
       this.cloudModels = []
       return
     }
-    // 缺 key 或位址時不必連線；沒選模型時仍要列出模型讓使用者選
+    // No need to connect without a key or address; without a model, still list models so the user can choose
     const problem = cloudBaseUrl(this.settings, p) && this.keys.get(p) ? null : this.cloudProblem()
     if (problem) {
       this.cloudOnline = false
@@ -612,7 +666,7 @@ export class LlmService {
       retry = kind === 'offline' || kind === 'timeout'
     }
     if (gen !== this.cloudCheck) return
-    // key 與連線都沒問題，但還沒選模型
+    // The key and connection are fine, but no model has been chosen yet
     error ??= this.cloudProblem()
     this.cloudOnline = !error
     this.cloudError = error
@@ -631,7 +685,7 @@ export class LlmService {
   }
 }
 
-/** 雲端模型不支援工具呼叫時的錯誤（各服務的訊息不同） */
+/** The error when a cloud model doesn't support tool calling (each provider words it differently) */
 const isCloudNoToolsError = (e: unknown): boolean =>
   e instanceof LlmError &&
   e.kind === 'http' &&

@@ -1,2 +1,2 @@
-// 時間軸視圖：依事件時間或寫作時間（session）列出筆記
+// Timeline view: lists notes by event date or by written time (sessions)
 export { TimelineView } from './TimelineView'

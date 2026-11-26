@@ -1,18 +1,18 @@
-// Agent 任務的狀態（純函式）：送出任務、取得 request id、套用 main 推送的步驟與文字。
-// 只存在記憶體，換 vault 時清空。
+// Agent task state (pure functions): sending a task, getting the request id, applying the steps and text pushed by main.
+// Kept only in memory and cleared when switching vaults.
 import type { AgentChunk, AgentStep, ChatTurn } from '../../shared/types'
 
-/** 任務過程依到達順序排列：模型的文字與工具步驟交錯 */
+/** The task's progress in order of arrival: model text interleaved with tool steps */
 export type AgentItem = { kind: 'text'; text: string } | { kind: 'step'; step: AgentStep }
 
 export interface AgentTask {
   task: string
-  /** main 回傳的 request id；拿到之前為 null */
+  /** The request id returned by main; null until it arrives */
   id: string | null
   status: 'running' | 'done' | 'stopped' | 'error'
   error: string | null
   items: AgentItem[]
-  /** 拿到 id 之前先收到的片段 */
+  /** Chunks received before the id arrived */
   early: AgentChunk[]
 }
 
@@ -30,7 +30,7 @@ export function isTaskRunning(s: AgentSession): boolean {
   return lastTask(s)?.status === 'running'
 }
 
-/** 正在等待使用者確認的步驟 */
+/** The step waiting for the user's confirmation */
 export function pendingConfirm(s: AgentSession): AgentStep | null {
   const t = lastTask(s)
   if (t?.status !== 'running') return null
@@ -40,7 +40,7 @@ export function pendingConfirm(s: AgentSession): AgentStep | null {
   return null
 }
 
-/** 最後一個步驟之後的文字（最終回答）；之前的是步驟之間的說明 */
+/** Text after the last step (the final answer); text before it explains the steps */
 export function finalText(t: AgentTask): string {
   const i = t.items.findLastIndex((x) => x.kind === 'step')
   return t.items
@@ -49,7 +49,7 @@ export function finalText(t: AgentTask): string {
     .join('')
 }
 
-/** 送給 main 的脈絡：之前的任務與最終回答（不含工具過程） */
+/** Context sent to main: earlier tasks and final answers (without the tool steps) */
 export function agentHistory(s: AgentSession): ChatTurn[] {
   return s.tasks.flatMap((t): ChatTurn[] => {
     const answer = finalText(t).trim()
@@ -73,7 +73,7 @@ function updateLast(s: AgentSession, f: (t: AgentTask) => AgentTask): AgentSessi
   return next === t ? s : { tasks: [...s.tasks.slice(0, -1), next] }
 }
 
-/** 取得 request id，套用之前先收到的片段 */
+/** Takes the request id and applies chunks received before it */
 export function withTaskId(s: AgentSession, id: string): AgentSession {
   return updateLast(s, (t) => {
     if (t.id !== null || t.status !== 'running') return t
@@ -111,7 +111,7 @@ function applyTo(t: AgentTask, c: AgentChunk): AgentTask {
   return { ...next, status: 'done' }
 }
 
-/** 使用者按下停止：之後到達的片段都忽略（等待中的確認由 main 視為拒絕） */
+/** The user clicked Stop: ignore every chunk that arrives afterwards (main treats a pending confirmation as rejected) */
 export function stopTask(s: AgentSession): AgentSession {
   return updateLast(s, (t) => (t.status === 'running' ? { ...t, status: 'stopped' } : t))
 }

@@ -6,7 +6,7 @@ import type { SemanticSettings, TimeSettings } from '../../../shared/types'
 export interface TimeSettingsDialogProps {
   value: TimeSettings
   semantic: SemanticSettings
-  /** 回傳的 Promise 完成後關閉；失敗時由呼叫者顯示錯誤 */
+  /** Closes once the returned Promise resolves; on failure the caller shows the error */
   onSave: (time: TimeSettings, semantic: SemanticSettings) => Promise<void>
   onClose: () => void
 }
@@ -68,7 +68,7 @@ const SEMANTIC_FIELDS: Field[] = [
   }
 ]
 
-/** 時間參數（session 長度等）與 semantic 邊參數，存在 vault 的 .knowmon/settings.json */
+/** Time parameters (session length and so on) and semantic edge parameters, stored in the vault's .knowmon/settings.json */
 export function TimeSettingsDialog({
   value,
   semantic,

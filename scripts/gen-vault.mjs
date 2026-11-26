@@ -1,17 +1,17 @@
-// 產生大型測試 vault（效能測試用；產生的筆記請放在 repo 以外，不要加入 git）
-// 用法：node scripts/gen-vault.mjs <輸出資料夾> [筆記數=1000] [亂數種子=1]
-// 純 JS 腳本無法標註回傳型別
+// Generates a large test vault (for performance tests; put the generated notes outside the repo and don't add them to git)
+// Usage: node scripts/gen-vault.mjs <output folder> [notes=1000] [random seed=1]
+// A plain JS script can't annotate return types
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import fs from 'node:fs'
 import path from 'node:path'
 
 const [out, countArg = '1000', seedArg = '1'] = process.argv.slice(2)
 if (!out) {
-  console.error('用法：node scripts/gen-vault.mjs <輸出資料夾> [筆記數] [亂數種子]')
+  console.error('Usage: node scripts/gen-vault.mjs <output folder> [notes] [random seed]')
   process.exit(1)
 }
 if (fs.existsSync(out) && fs.readdirSync(out).length > 0) {
-  console.error(`輸出資料夾不是空的：${out}`)
+  console.error(`The output folder is not empty: ${out}`)
   process.exit(1)
 }
 const count = Number(countArg)
@@ -19,50 +19,63 @@ let seed = Number(seedArg) || 1
 const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646
 const pick = (list) => list[Math.floor(random() * list.length)]
 
+// About 1 in 5 topics is Chinese, so large vaults keep exercising CJK labels and trigram search
 const topics = [
-  '習慣',
-  '專注',
-  '閱讀',
-  '寫作',
-  '時間管理',
-  '學習',
-  '健康',
-  '投資',
-  '設計',
-  '程式',
-  '旅行',
-  '烹飪',
-  '音樂',
-  '攝影',
-  '心理學',
-  '歷史',
+  'Habits',
+  'Focus',
+  'Reading',
+  'Writing',
+  'Time management',
+  'Learning',
+  'Health',
+  'Investing',
+  'Design',
+  'Programming',
+  'Travel',
+  'Cooking',
+  'Music',
+  'Photography',
+  'Psychology',
+  'History',
   '哲學',
   '科學',
   '工作',
   '家庭'
 ]
-const words =
+const isChinese = (topic) => /[\u4e00-\u9fff]/.test(topic)
+const englishWords = (
+  'notes ideas links matter more than the notes themselves because new thinking happens ' +
+  'between them a little review every day shows patterns that were not visible before ' +
+  'today I wondered how knowledge connects across weeks and projects'
+).split(' ')
+const chineseChars =
   '今天想到一個關於知識管理的問題筆記之間的連結比筆記本身更重要因為想法是在連結中產生的每天花一點時間整理回顧就能看到新的脈絡'.split(
     ''
   )
-const sentence = () =>
-  Array.from({ length: 12 + Math.floor(random() * 30) }, () => pick(words)).join('') + '。'
+const sentence = (chinese) =>
+  chinese
+    ? Array.from({ length: 12 + Math.floor(random() * 30) }, () => pick(chineseChars)).join('') +
+      '。'
+    : (() => {
+        const w = Array.from({ length: 6 + Math.floor(random() * 14) }, () => pick(englishWords))
+        return w[0][0].toUpperCase() + w.join(' ').slice(1) + '.'
+      })()
 
-// 一部分是日記（檔名帶日期），其餘依主題分資料夾
+// Some are journal notes (with a date in the file name); the rest go into folders by topic
 const notes = []
 const journalCount = Math.floor(count * 0.2)
 const start = Date.UTC(2025, 0, 1)
 for (let i = 0; i < journalCount; i++) {
   const d = new Date(start + i * 86400000).toISOString().slice(0, 10)
-  notes.push({ rel: `日記/${d}.md`, title: d, topic: null })
+  notes.push({ rel: `Journal/${d}.md`, title: d, topic: null })
 }
 for (let i = notes.length; i < count; i++) {
   const topic = topics[i % topics.length]
-  const title = `${topic} 筆記 ${i}`
+  const title = isChinese(topic) ? `${topic} 筆記 ${i}` : `${topic} note ${i}`
   notes.push({ rel: `${topic}/${title}.md`, title, topic })
 }
 
-// 連結：多半連到同主題（形成群集），少數跨主題；早期筆記較容易被連（形成樞紐）
+// Links: mostly to the same topic (forming clusters), a few across topics; early notes are more likely to be linked (forming hubs)
 const byTopic = new Map()
 for (const n of notes) if (n.topic) byTopic.set(n.topic, [...(byTopic.get(n.topic) ?? []), n])
 for (const n of notes) {
@@ -79,14 +92,15 @@ for (const n of notes) {
 for (const n of notes) {
   const file = path.join(out, n.rel)
   fs.mkdirSync(path.dirname(file), { recursive: true })
+  const zh = n.topic !== null && isChinese(n.topic)
   const body = [
     `# ${n.title}`,
     '',
-    sentence() + sentence(),
+    sentence(zh) + (zh ? '' : ' ') + sentence(zh),
     '',
-    ...n.links.map((t) => `- 相關：[[${t}]] ${sentence()}`),
+    ...n.links.map((t) => `- ${zh ? '相關：' : 'Related: '}[[${t}]] ${sentence(zh)}`),
     '',
-    sentence()
+    sentence(zh)
   ].join('\n')
   const fm =
     n.topic && random() < 0.3
@@ -95,4 +109,4 @@ for (const n of notes) {
   fs.writeFileSync(file, fm + body)
 }
 const linkCount = notes.reduce((s, n) => s + n.links.length, 0)
-console.log(`已產生 ${notes.length} 篇筆記、${linkCount} 個連結 → ${out}`)
+console.log(`Generated ${notes.length} notes and ${linkCount} links → ${out}`)

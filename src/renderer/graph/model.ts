@@ -1,4 +1,4 @@
-// 圖譜的純函式：鄰接、局部圖、節點大小、初始座標、增量更新。不碰 DOM 與 Cytoscape。
+// Pure functions for the graph: adjacency, local graphs, node size, initial positions, incremental updates. No DOM or Cytoscape.
 import type { GraphData, GraphEdge, LinkType } from '../../shared/types'
 
 export interface Point {
@@ -6,16 +6,16 @@ export interface Point {
   y: number
 }
 
-/** 同一對筆記可能同時有多種類型的邊，所以 id 包含類型 */
+/** A pair of notes may have edges of several types, so the id includes the type */
 export const edgeId = (e: Pick<GraphEdge, 'source' | 'target' | 'type'>): string =>
   `${e.source}\u0000${e.target}\u0000${e.type}`
 
-/** 只保留 types 中的邊（節點不變） */
+/** Keeps only edges in types (nodes unchanged) */
 export function filterEdges(data: GraphData, types: ReadonlySet<LinkType>): GraphData {
   return { nodes: data.nodes, edges: data.edges.filter((e) => types.has(e.type)) }
 }
 
-/** 不分方向的鄰接表（每篇筆記都有一項，孤立筆記為空集合） */
+/** Undirected adjacency lists (one entry per note; an empty set for isolated notes) */
 export function adjacency(data: GraphData): Map<string, Set<string>> {
   const adj = new Map<string, Set<string>>(data.nodes.map((n) => [n.path, new Set<string>()]))
   for (const e of data.edges) {
@@ -25,7 +25,7 @@ export function adjacency(data: GraphData): Map<string, Set<string>> {
   return adj
 }
 
-/** 以 center 為中心、不分方向走 depth 步內的筆記，以及它們之間的邊 */
+/** Notes within depth steps of center (undirected), and the edges between them */
 export function localSubgraph(data: GraphData, center: string, depth: number): GraphData {
   const adj = adjacency(data)
   if (!adj.has(center)) return { nodes: [], edges: [] }
@@ -49,19 +49,19 @@ export function localSubgraph(data: GraphData, center: string, depth: number): G
   }
 }
 
-/** hover 時要高亮的節點：自己與直接相連的筆記 */
+/** Nodes to highlight on hover: the note itself and its direct neighbors */
 export function neighborhood(adj: Map<string, Set<string>>, path: string): Set<string> {
   return new Set([path, ...(adj.get(path) ?? [])])
 }
 
-/** 節點半徑：連結越多越大，但有上限 */
+/** Node radius: more links means larger, up to a limit */
 export function nodeRadius(degree: number): number {
   return Math.min(4 + 2.2 * Math.sqrt(degree), 18)
 }
 
 /**
- * 每個節點的初始座標：已知座標沿用；新節點放在已有座標的鄰居附近，沒有的話散在圓內。
- * 這讓資料更新或重開圖譜時不會整張重排。
+ * Initial position of each node: known positions are kept; new nodes go near neighbors that have positions, or are scattered in a circle otherwise.
+ * This way data updates or reopening the graph don't redo the whole layout.
  */
 export function seedPositions(
   data: GraphData,
@@ -78,7 +78,7 @@ export function seedPositions(
     if (p) out.set(n.path, { ...p })
     else pending.push(n.path)
   }
-  // 兩輪：第二輪讓「鄰居也是新節點」的筆記能靠到第一輪放好的位置
+  // Two rounds: the second lets notes whose neighbors are also new move next to positions placed in the first round
   for (let round = 0; round < 2; round++) {
     for (const path of pending) {
       if (out.has(path)) continue
@@ -93,7 +93,7 @@ export function seedPositions(
         out.set(path, { x: r * Math.cos(a), y: r * Math.sin(a) })
       }
     }
-    // 第一輪沒有任何已知座標可依附時，先放一個節點當錨點
+    // When the first round has no known position to attach to, place one node as an anchor first
     if (round === 0 && out.size === 0 && pending.length) out.set(pending[0], { x: 0, y: 0 })
   }
   return out
@@ -102,15 +102,15 @@ export function seedPositions(
 export interface GraphDiff {
   addNodes: string[]
   removeNodes: string[]
-  /** 標題或日期改變的節點 */
+  /** Nodes whose title or date changed */
   updateNodes: string[]
   addEdges: GraphEdge[]
   removeEdges: string[]
-  /** 權重改變的邊 */
+  /** Edges whose weight changed */
   updateEdges: GraphEdge[]
 }
 
-/** 前後兩份圖譜資料的差異，用來增量更新 Cytoscape */
+/** Differences between two versions of the graph data, for updating Cytoscape incrementally */
 export function diffGraph(prev: GraphData, next: GraphData): GraphDiff {
   const prevNodes = new Map(prev.nodes.map((n) => [n.path, n]))
   const nextNodes = new Map(next.nodes.map((n) => [n.path, n]))

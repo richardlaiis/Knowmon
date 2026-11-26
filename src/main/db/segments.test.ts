@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { clip, findAll, toSegments } from './segments'
 
 describe('toSegments', () => {
-  it('合併重疊與相鄰的範圍', () => {
+  it('merges overlapping and adjacent ranges', () => {
     expect(
       toSegments('abcdefgh', [
         [4, 6],
@@ -16,18 +16,18 @@ describe('toSegments', () => {
     ])
   })
 
-  it('沒有範圍時整段都不是命中，去掉頭尾空白', () => {
+  it('without ranges nothing is a match, and surrounding whitespace is trimmed', () => {
     expect(toSegments('  a  b \n', [])).toEqual([{ text: 'a b', match: false }])
     expect(toSegments('', [])).toEqual([])
   })
 })
 
 describe('clip', () => {
-  it('短文字不截', () => {
+  it('does not cut short text', () => {
     expect(clip('abc', [[1, 2]], 10)).toEqual({ text: 'abc', ranges: [[1, 2]] })
   })
 
-  it('截取命中前後並平移範圍', () => {
+  it('cuts around the match and shifts the ranges', () => {
     const text = '0123456789'.repeat(10)
     const c = clip(text, [[50, 52]], 20, 5)
     expect(c.text).toBe('…' + text.slice(45, 65) + '…')
@@ -35,7 +35,7 @@ describe('clip', () => {
     expect(c.text.slice(6, 8)).toBe('01')
   })
 
-  it('命中靠近結尾時視窗往前移', () => {
+  it('moves the window back when the match is near the end', () => {
     const text = 'x'.repeat(100)
     const c = clip(text, [[98, 100]], 20)
     expect(c.text).toBe('…' + 'x'.repeat(20))
@@ -44,7 +44,7 @@ describe('clip', () => {
 })
 
 describe('findAll', () => {
-  it('不分大小寫找出所有位置', () => {
+  it('finds every position case-insensitively', () => {
     expect(findAll('Deep deep DEEP', 'deep')).toEqual([
       [0, 4],
       [5, 9],

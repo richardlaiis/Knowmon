@@ -8,26 +8,26 @@ import { livePreview, markdownSupport } from './livePreview'
 import { wikilinks } from './wikilinks'
 
 export interface EditorProps {
-  /** 筆記路徑：圖片的相對路徑以它所在的資料夾為基準；改名時改變，不重設內容 */
+  /** Note path: relative image paths are based on its folder; changes on rename without resetting the content */
   path: string
-  /** 換筆記或重新載入時改變，會以 doc 重設編輯器內容（同時清掉 undo 歷史） */
+  /** Changes when switching notes or reloading, resetting the editor content to doc (which also clears undo history) */
   docKey: string
   doc: string
   onChange: (doc: string) => void
   onSave: () => void
-  /** true：即時渲染；false：顯示原始 Markdown */
+  /** true: live rendering; false: raw Markdown */
   livePreview: boolean
-  /** [[ 自動補全用的筆記清單 */
+  /** Note list for [[ autocompletion */
   getNotes: () => Promise<NoteSummary[]>
-  /** Ctrl/Cmd+點擊 wikilink */
+  /** Ctrl/Cmd+click on a wikilink */
   onOpenLink: (target: string, newTab: boolean) => void
-  /** 所在分頁是否為目前的分頁；切回來時取得焦點（隱藏的分頁不搶焦點） */
+  /** Whether this tab is the current one; it takes focus when switched back to (hidden tabs don't steal focus) */
   active?: boolean
-  /** 選取範圍改變（總結選取文字用），沒有選取時為空字串 */
+  /** The selection changed (for summarizing the selection); an empty string when nothing is selected */
   onSelectionChange?: (text: string) => void
-  /** 捲到這一行並把游標放在行首；n 改變時再跳一次（同一行也會跳） */
+  /** Scrolls to this line and puts the cursor at its start; jumps again when n changes (even for the same line) */
   reveal?: { line: number; n: number } | null
-  /** 存入貼上或拖進來的圖片，回傳 vault 相對路徑 */
+  /** Saves a pasted or dropped image and returns its vault-relative path */
   saveAttachment: (notePath: string, fileName: string, data: Uint8Array) => Promise<string>
   onError: (e: unknown) => void
 }
@@ -53,7 +53,7 @@ export function Editor({
 }: EditorProps): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  // 用 ref 存 callback，讓 CodeMirror extension 只建立一次
+  // Keep callbacks in refs so the CodeMirror extension is created only once
   const callbacks = useRef({
     onChange,
     onSave,
@@ -83,13 +83,13 @@ export function Editor({
     }
   })
 
-  // 改名時只更新路徑（圖片重新解析），不重建編輯器
+  // On rename only the path is updated (images re-resolved), without rebuilding the editor
   useEffect(() => {
     pathRef.current = path
     view.current?.dispatch({ effects: pathConf.reconfigure(notePath.of(path)) })
   }, [path])
 
-  // 切換即時渲染／原始碼模式，不重建編輯器（保留游標與 undo 歷史）
+  // Switch between live rendering and source mode without rebuilding the editor (keeping the cursor and undo history)
   useEffect(() => {
     previewRef.current = preview
     view.current?.dispatch({ effects: previewMode.reconfigure(previewExtension(preview)) })
@@ -145,12 +145,12 @@ export function Editor({
       })
     )
     if (activeRef.current) v.focus()
-    // doc 只在 docKey 改變時才套用，打字造成的 doc 變化不重設
+    // doc is applied only when docKey changes; doc changes from typing don't reset it
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey])
 
-  // 跳到指定的行（搜尋結果）；在載入內容的 effect 之後執行，所以第一次開啟筆記時也有效
-  // 外部修改重新載入時（docKey 改變）不再跳回同一個位置
+  // Jump to the given line (search results); runs after the effect that loads content, so it also works when a note first opens
+  // When an external change reloads the note (docKey changes), don't jump back to the same position
   const revealLine = reveal?.line
   const revealN = reveal?.n
   const revealed = useRef<number | null>(null)

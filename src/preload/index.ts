@@ -10,7 +10,7 @@ import type {
   VaultChange
 } from '../shared/types'
 
-/** 訂閱 main 推送的事件，回傳取消訂閱的函式 */
+/** Subscribes to an event pushed from main and returns an unsubscribe function */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   const listener = (_e: Electron.IpcRendererEvent, payload: T): void => cb(payload)
   ipcRenderer.on(channel, listener)

@@ -1,25 +1,25 @@
-// 圖譜的時間範圍篩選（純函式）。只決定哪些節點要隱藏，不影響版面配置。
+// Time range filtering for the graph (pure functions). Only decides which nodes to hide, without affecting layout.
 import { dayNumber } from '../../shared/time'
 import type { GraphData, GraphNode } from '../../shared/types'
 
-/** event：內容講的事何時發生（eventDate）；written：何時寫的（有 create / edit 的日期） */
+/** event: when the events in the content happened (eventDate); written: when it was written (dates with create / edit) */
 export type TimeAxis = 'event' | 'written'
 
 export interface TimeFilter {
   axis: TimeAxis
-  /** 範圍（dayNumber，含兩端）；null 表示不限 */
+  /** The range (dayNumber, inclusive at both ends); null means unlimited */
   range: [number, number] | null
-  /** 是否顯示在這個時間軸上沒有日期的筆記 */
+  /** Whether to show notes with no date on this timeline */
   undated: boolean
 }
 
-/** 節點在這個時間軸上的日期（dayNumber，遞增） */
+/** A node's dates on this timeline (dayNumber, ascending) */
 export function nodeDays(n: GraphNode, axis: TimeAxis): number[] {
   if (axis === 'event') return n.eventDate ? [dayNumber(n.eventDate)] : []
   return n.activeDays.map(dayNumber)
 }
 
-/** 所有節點日期的最小與最大值；沒有任何日期時為 null */
+/** The earliest and latest of all node dates; null when there are none */
 export function timeDomain(data: GraphData, axis: TimeAxis): [number, number] | null {
   let min = Infinity
   let max = -Infinity
@@ -32,7 +32,7 @@ export function timeDomain(data: GraphData, axis: TimeAxis): [number, number] | 
   return min <= max ? [min, max] : null
 }
 
-/** 要隱藏的節點：沒有日期且不顯示未標日期的，或沒有任何日期落在範圍內的 */
+/** Nodes to hide: undated ones when undated notes aren't shown, or ones with no date in range */
 export function hiddenByTime(data: GraphData, f: TimeFilter): Set<string> {
   const hidden = new Set<string>()
   for (const n of data.nodes) {
@@ -48,8 +48,8 @@ export function hiddenByTime(data: GraphData, f: TimeFilter): Set<string> {
 }
 
 /**
- * 雙把手滑桿移動其中一端後的範圍：限制在 domain 內，且起點不超過終點
- * （拖過頭時推著另一端一起走）。
+ * The range after moving one end of the two-handle slider: kept within the domain, with the start never past the end
+ * (dragging too far pushes the other end along).
  */
 export function moveRange(
   range: [number, number],
@@ -61,7 +61,7 @@ export function moveRange(
   return end === 0 ? [v, Math.max(v, range[1])] : [Math.min(v, range[0]), v]
 }
 
-/** 限制在 domain 內（資料更新後範圍可能超出）；與 domain 相同時回傳 null（不限） */
+/** Clamps to the domain (the range may exceed it after a data update); null (unlimited) when it equals the domain */
 export function clampRange(
   range: [number, number] | null,
   domain: [number, number] | null

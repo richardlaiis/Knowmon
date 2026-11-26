@@ -1,4 +1,4 @@
-// IPC channel 名稱，main 與 preload 共用
+// IPC channel names, shared by main and preload
 export const IPC = {
   vaultPick: 'vault:pick',
   vaultGetCurrent: 'vault:getCurrent',

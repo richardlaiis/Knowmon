@@ -21,7 +21,7 @@ import {
 } from '.'
 
 const sample = {
-  path: '日記/2026-10-06.md',
+  path: 'Journal/2026-10-06.md',
   title: '2026-10-06',
   createdAt: 100,
   modifiedAt: 200,
@@ -30,7 +30,7 @@ const sample = {
 }
 
 describe('db', () => {
-  it('upsert 以 path 為鍵，更新時保留 id 與 created_at', () => {
+  it('upsert is keyed by path and keeps id and created_at on update', () => {
     const db = openDb(':memory:')
     const id = upsertNote(db, sample)
     const id2 = upsertNote(db, { ...sample, createdAt: 999, modifiedAt: 300, contentHash: 'h2' })
@@ -43,7 +43,7 @@ describe('db', () => {
     })
   })
 
-  it('事件可查詢，刪除筆記時連帶刪除事件', () => {
+  it('events can be queried and are deleted with their note', () => {
     const db = openDb(':memory:')
     const id = upsertNote(db, sample)
     insertEvent(db, id, 1, 'create')
@@ -59,7 +59,7 @@ describe('db', () => {
     expect(listEvents(db)).toEqual([])
   })
 
-  it('wikilink 未解析時 dst 為 NULL，relink 後補上；刪除目標時變回 NULL', () => {
+  it('an unresolved wikilink has a NULL dst until relink fills it in; deleting the target sets it back to NULL', () => {
     const db = openDb(':memory:')
     const a = upsertNote(db, sample)
     setWikilinks(db, a, [
@@ -70,33 +70,33 @@ describe('db', () => {
       ['B', null, 2],
       ['2026-10-06', a, 1]
     ])
-    const b = upsertNote(db, { ...sample, path: '資料夾/b.md', title: 'b' })
+    const b = upsertNote(db, { ...sample, path: 'Folder/b.md', title: 'b' })
     relinkWikilinks(db)
     expect(listLinks(db, 'wikilink').map((l) => l.dst)).toEqual([b, a])
-    deleteNote(db, '資料夾/b.md')
+    deleteNote(db, 'Folder/b.md')
     expect(listLinks(db).map((l) => l.dst)).toEqual([null, a])
-    // 重新設定會取代舊的
+    // Setting them again replaces the old ones
     setWikilinks(db, a, [])
     expect(listLinks(db)).toEqual([])
   })
 
-  it('刪除來源筆記時連帶刪除連結與全文索引；改名時更新全文索引的標題', () => {
+  it('deleting the source note deletes its links and full-text entry; renaming updates the title in the full-text index', () => {
     const db = openDb(':memory:')
     const a = upsertNote(db, sample)
-    setNoteBody(db, a, sample.title, '內文')
-    setNoteBody(db, a, sample.title, '新內文')
-    expect(getNoteBody(db, a)).toBe('新內文')
-    updateNotePath(db, sample.path, '首頁.md', '首頁')
+    setNoteBody(db, a, sample.title, 'body')
+    setNoteBody(db, a, sample.title, 'new body')
+    expect(getNoteBody(db, a)).toBe('new body')
+    updateNotePath(db, sample.path, 'Home.md', 'Home')
     expect(db.prepare('SELECT title FROM notes_fts WHERE rowid = ?').get(a)).toEqual({
-      title: '首頁'
+      title: 'Home'
     })
     setWikilinks(db, a, [{ target: 'x', count: 1 }])
-    deleteNote(db, '首頁.md')
+    deleteNote(db, 'Home.md')
     expect(listLinks(db)).toEqual([])
     expect(getNoteBody(db, a)).toBeNull()
   })
 
-  it('schema 版本不符時重建資料庫', () => {
+  it('rebuilds the database when the schema version does not match', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'knowmon-db-'))
     const file = path.join(dir, 'index.db')
     try {

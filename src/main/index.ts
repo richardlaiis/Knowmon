@@ -13,17 +13,17 @@ import { ASSET_SCHEME } from '../shared/assets'
 import { closeVault, currentVaultRoot, registerIpc } from './ipc'
 import { assetResponse } from './vault/assets'
 
-// 設定與 localStorage 一律放在 <appData>/knowmon：預設依 productName，打包版會變成 Knowmon，與開發版分開
+// Settings and localStorage always live in <appData>/knowmon: by default this follows productName, which would become Knowmon in the packaged app, separate from the development build
 app.setPath('userData', join(app.getPath('appData'), 'knowmon'))
 
-// 筆記中的圖片經 knowmon-asset://vault/<路徑> 讀取，只提供目前 vault 內的圖片（要在 ready 前註冊）
+// Images in notes are read through knowmon-asset://vault/<path>, serving only images inside the current vault (must be registered before ready)
 protocol.registerSchemesAsPrivileged([
   { scheme: ASSET_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 
 /**
- * 應用程式選單。Electron 預設選單把 Ctrl/Cmd+W 綁成關閉視窗，
- * 這裡自訂選單拿掉它，讓 renderer 用 Ctrl/Cmd+W 關閉分頁。
+ * The application menu. Electron's default menu binds Ctrl/Cmd+W to closing the window;
+ * this custom menu removes it so the renderer can use Ctrl/Cmd+W to close tabs.
  */
 function buildMenu(): Menu {
   const template: MenuItemConstructorOptions[] = [

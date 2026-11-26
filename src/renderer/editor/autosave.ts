@@ -1,10 +1,10 @@
-// 停止輸入一段時間後自動儲存；切換筆記、改名、刪除前要先 flush
+// Autosaves after typing pauses; flush before switching notes, renaming or deleting
 
 export interface Autosave {
   schedule(path: string, content: string): void
-  /** 立即寫出尚未儲存的內容 */
+  /** Writes out unsaved content immediately */
   flush(): Promise<void>
-  /** 放棄尚未儲存的內容（例如筆記已被外部刪除） */
+  /** Discards unsaved content (for example when the note was deleted externally) */
   cancel(): void
   isDirty(path: string): boolean
 }
@@ -28,7 +28,7 @@ export function createAutosave(
     const job = pending
     pending = null
     if (job) {
-      // 依序寫入，避免舊內容比新內容晚寫到磁碟
+      // Write in order so old content never reaches the disk after newer content
       inflight = inflight.then(() => save(job.path, job.content)).catch(onError)
     }
     return inflight

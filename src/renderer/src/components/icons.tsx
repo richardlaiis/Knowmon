@@ -1,8 +1,8 @@
-// 介面圖示：全部手寫 inline SVG（24×24、線條、currentColor），不加圖示套件
+// UI icons: all hand-written inline SVGs (24×24, strokes, currentColor), with no icon package
 import type { ReactNode } from 'react'
 
 export interface IconProps {
-  /** 像素大小，預設 18 */
+  /** Size in pixels, default 18 */
   size?: number
   className?: string
 }
@@ -217,9 +217,9 @@ export function SidebarIcon({
 }
 
 /**
- * Knowmon Logo：節點連成的 K（筆記圖譜），外圈虛線點代表時間脈絡。
- * 與 build/icon.svg 同一個圖形（這裡用單色底，不用漸層，避免多個實例的 id 衝突）。
- * 顏色固定，不跟主題變。
+ * The Knowmon logo: a K made of connected nodes (the note graph), with an outer ring of dotted marks for time context.
+ * The same shapes as build/icon.svg (with a solid background here instead of a gradient, so multiple instances don't clash on ids).
+ * Colors are fixed and don't follow the theme.
  */
 export function Logo({ size = 32, className }: IconProps): React.JSX.Element {
   return (
