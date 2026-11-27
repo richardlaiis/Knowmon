@@ -72,6 +72,62 @@ AI settings also have **Context length** (default 8192 tokens) and **Max output*
 
 Ollama listens on `http://127.0.0.1:11434` by default, which is what Knowmon expects. To use other models, Ollama on another machine, or a cloud chat provider, click **Settings** in the **AI** tab of the right panel; see [Setting up local AI](docs/user-guide/ai-setup.md) and [Using Ollama on a remote machine](docs/user-guide/remote-ollama.md).
 
+## Using AI
+
+Once the sidebar says **AI ready**, these features are available. Shortcuts use `Ctrl`; on macOS use `Cmd`.
+
+| Feature            | How to start                                        | Good for                                                         |
+| ------------------ | --------------------------------------------------- | ---------------------------------------------------------------- |
+| **Hybrid search**  | `Ctrl+Shift+F`, switch to **Hybrid**, press `Enter` | Finding a note when you remember the idea but not the words      |
+| **Semantic links** | Toggle **Semantic** lines in the graph (`Ctrl+G`)   | Spotting related notes that aren't linked yet                    |
+| **Summary**        | `Ctrl+Shift+S` on a note (or on selected text)      | Getting the gist of one long note                                |
+| **Chat**           | `Ctrl+Shift+A`, type a question, press `Enter`      | Answers drawn from many notes, with citations                    |
+| **Agent**          | `Ctrl+Shift+G`, describe a task, press `Enter`      | Multi-step work: reviewing a period, writing a new note, tagging |
+
+### Hybrid search
+
+Describe what you're looking for in your own words, such as `that note about staying focused`. Knowmon combines word matches, meaning (from the embedding model) and graph neighbors, and labels each result with why it was found. Two date fields narrow results to a period. If AI is offline, it falls back to keyword results.
+
+### Semantic links
+
+The graph can draw lines between notes with similar meaning, even if neither links to the other. Each note links to at most its 5 most similar notes above a 0.65 similarity threshold; both can be changed in the graph's **Settings**. Show only Semantic lines to find connections worth turning into a `[[link]]`.
+
+### Summary
+
+Open a note and press `Ctrl+Shift+S` (or click **Summarize**). Select text first to summarize just that part. The summary is a bullet list that keeps the note's `[[links]]`. Use **中文 / EN** to pick the language (Knowmon remembers it), and **Copy** to paste the summary into a note as Markdown.
+
+### Chat
+
+Ask a question about your notes:
+
+```
+What are the main ideas in Deep Work?
+Which books did I read last month, and what did I think of them?
+```
+
+The AI searches your notes, answers only from what it finds, and marks each statement with a citation like **[1]**. Click a citation to jump to the passage. If your notes don't cover the question, it says so instead of guessing.
+
+- **Mention a time** ("last week", "September", `2026-10-04 to 2026-10-06`, 上週 …) to answer only from notes in that period. The detected range shows above the input; click **×** to drop it or **Date range…** to set your own.
+- **Follow up** in the same conversation; click **New chat** to change topics.
+- **Copy** an answer and its citations become `[[Source title]]` links, so a note you paste it into links back to its sources.
+
+### Agent
+
+The Agent works through bigger tasks step by step. It searches, reads notes, follows links and time connections, and lists notes from a period. When needed, it can also **create a note** or **add tags**. Every step is shown as it runs.
+
+```
+What notes did I write last week, and what does each one link to?
+Compare "Atomic Habits" and "Deep Work" in a new note in the "Summaries" folder
+Tag last week's journal entries with "review"
+```
+
+- **Nothing changes without your approval.** Each new note or tag change appears as a card you can edit, then **Apply** or **Reject**. The Agent never edits or deletes the body of an existing note, and never renames, moves or overwrites files.
+- **Write clear tasks:** say the time span ("last week" rather than "recently"), name notes directly, and say what you want back (an answer, a new note in a given folder, or tags).
+- **Keep tasks small.** Each task can use tools at most 5 times, so split large jobs or follow up with "now also…".
+- It needs a chat model that supports tool calling (the default `qwen3:8b` does). On a CPU only, a task takes about 1–4 minutes.
+
+AI answers in the language you write in. Chat and Agent history live only in memory and are cleared when you quit or switch vaults. For details, see [Search](docs/user-guide/search.md#hybrid-search-by-meaning), [Graph](docs/user-guide/graph.md#semantic-links), [Summary and Chat](docs/user-guide/summary-and-chat.md) and [Agent](docs/user-guide/agent.md).
+
 ## Common commands
 
 | Command                      | Purpose                                                                                   |
