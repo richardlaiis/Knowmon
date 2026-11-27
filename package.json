@@ -1,6 +1,6 @@
 {
   "name": "knowmon",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first Markdown notes with time-based links and a local LLM agent",
   "main": "./out/main/index.js",
   "license": "MIT",
