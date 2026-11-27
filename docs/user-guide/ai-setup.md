@@ -1,6 +1,6 @@
 # Setting Up Local AI
 
-All of Knowmon's AI features run **on your own computer**, using open models served by [Ollama](https://ollama.com). Your notes are never sent to a cloud service.
+By default, all of Knowmon's AI features run **on your own computer**, using open models served by [Ollama](https://ollama.com), and your notes are never sent to a cloud service. You can opt in to a [cloud provider](#cloud-providers-optional) for summaries, Chat and the Agent instead.
 
 AI is optional. Without Ollama, editing, links, Keyword search, the graph, and the timeline all work normally.
 
@@ -77,18 +77,80 @@ qwen3:8b · bge-m3 · 40/40 notes indexed
 - Bigger models give better results but run slower. On CPU only, `qwen3:8b` takes about 15–30 seconds to summarize a note and 1–4 minutes for an Agent task; a GPU is much faster.
 - On a modest machine, try a smaller model (such as `qwen3:4b`) at some cost in quality.
 
+### Finding other models
+
+1. Browse the model library at [ollama.com/search](https://ollama.com/search). Use the filters at the top:
+   - **Tools**: chat models that support tool calling, so they work for the Agent as well as Summary and Chat.
+   - **Embedding**: embedding models for Hybrid search and Semantic links. If your notes are not only in English, pick a multilingual one (such as `bge-m3`).
+2. Open a model's page and look at its **tags**. One model usually comes in several sizes, such as `qwen3:4b`, `qwen3:8b` and `qwen3:14b`. The download size listed next to each tag is about how much memory the model needs: choose one that fits in your GPU memory (or RAM if you have no GPU) with a couple of GB to spare.
+3. Download it with the full name and tag, for example:
+
+   ```bash
+   ollama pull qwen3:4b
+   ```
+
+4. Check what you have:
+
+   ```bash
+   ollama list              # every downloaded model and its size
+   ollama show qwen3:4b     # details, including "Capabilities" (look for tools or embedding) and the context length
+   ```
+
+5. In Knowmon, open **Settings** in the AI tab and pick the model from the menu. If it isn't listed yet, click **Retry** in the AI tab first.
+
+> **Privacy:** tags ending in `-cloud` don't run on your computer. Ollama sends the prompt to its own servers, so your note content leaves your machine. Choose a model without `-cloud` to keep everything local.
+
+Remove a model you no longer need with `ollama rm <model>` to free up disk space.
+
 ### Context length and max output
 
-Each chat provider has two more settings. Ollama keeps its own pair, and the cloud providers share one pair, so switching providers doesn't undo your changes.
+These two settings are in AI settings, right below the chat model. Both are measured in **tokens**, the small pieces of text a model reads and writes. A token is roughly 4 characters of English; Chinese text uses more tokens per character.
 
-| Setting        | Default       | Description                                                                                                                                            |
-| -------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Context length | 8192 tokens   | How much the model can read at once. It also sets how much note text Knowmon sends: 32768 sends about 4× more sources and Agent tool results than 8192 |
-| Max output     | Model default | The longest reply the model may write. Leave it blank for no limit                                                                                     |
+Ollama and the cloud providers each keep their own pair, so switching providers doesn't undo your changes.
 
-- **Ollama:** a larger context needs more memory, and on a CPU reading more text takes longer. Changing it reloads the model once. The model can't use more context than it was trained for.
-- **Cloud:** set the context to your model's context window or lower. More text per request costs more.
-- When a reply stops at the max output, it ends with a note saying so. For reasoning models the limit includes thinking, so a very small limit can leave the answer empty.
+| Setting        | Default       | Allowed range  |
+| -------------- | ------------- | -------------- |
+| Context length | 8192 tokens   | 2048 – 1048576 |
+| Max output     | Model default | 256 – 131072   |
+
+#### Context length
+
+The context is everything the model has in front of it for one request: Knowmon's instructions, the note text, the conversation so far, the Agent's tool results, and the reply it is writing. Knowmon uses this setting in two ways:
+
+1. **With Ollama, it sets how much memory the model reserves.** Knowmon always sends it, because Ollama's own default is smaller and would cut off the beginning of long requests.
+2. **It sets how much note text Knowmon sends.** Every limit below grows in proportion: at 16384 tokens they double, at 32768 they are four times as large.
+
+| At 8192 tokens | Knowmon sends                                                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Chat           | Up to 8000 characters of retrieved passages in total, at most 2000 from each one                                             |
+| Summary        | Notes up to 12000 characters are summarized in one go; longer ones are split into 6000-character parts                       |
+| Agent          | Up to 6000 characters of tool results per task, at most 1500 per tool call; reading a note returns 1200 characters at a time |
+
+Some things don't grow with the context: Chat still uses at most 8 notes as sources, and the conversation history and the Agent's number of steps stay the same.
+
+**When to raise it:** your notes are long and summaries get split, Chat answers miss details that are in your notes, or the Agent runs out of room before finishing a task. **What it costs:**
+
+- **Ollama:** more memory, and on a CPU the model takes longer to read the extra text. The first request after a change reloads the model once. A model can't use more context than it was trained for; `ollama show <model>` lists its context length.
+- **Cloud:** set it to your model's context window or lower. More text per request costs more.
+
+**When to lower it:** Ollama runs out of memory or is too slow on your computer.
+
+#### Max output
+
+The longest reply the model may write. Leave it blank to let the model decide; it usually stops on its own when the answer is complete.
+
+- Set a limit to keep cloud costs predictable or to stop a model that rambles.
+- When a reply stops at the limit, it ends with a note saying so.
+- **Reasoning models** (such as `qwen3`) count their thinking toward the limit, so a very small limit can leave the answer empty. Don't go below a few thousand tokens with them.
+- With Ollama, the reply has to fit in the context as well, so max output can't be larger than the context length.
+
+#### Suggested values
+
+| Your setup                                     | Context length                                     | Max output                                 |
+| ---------------------------------------------- | -------------------------------------------------- | ------------------------------------------ |
+| Ollama on a CPU or a computer with 8–16 GB RAM | 8192 (default)                                     | Blank                                      |
+| Ollama on a GPU with memory to spare           | 16384 – 32768                                      | Blank                                      |
+| Cloud provider                                 | Your model's context window, or lower to save cost | Blank, or a cap such as 4096 to limit cost |
 
 ## Status and troubleshooting
 

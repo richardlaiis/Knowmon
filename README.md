@@ -66,6 +66,10 @@ Knowmon works without AI. Hybrid search, semantic links, summaries, Chat and the
 
 3. Open a vault in Knowmon. The bottom of the left sidebar shows "Indexing …" while it builds the semantic index, then **AI ready**.
 
+To try other models, browse [ollama.com/search](https://ollama.com/search) (the **Tools** filter shows chat models the Agent can use, **Embedding** shows embedding models), `ollama pull` the one you want, and pick it in Knowmon's AI settings. Avoid tags ending in `-cloud`: they run on Ollama's servers, not your computer. See [Finding other models](docs/user-guide/ai-setup.md#finding-other-models).
+
+AI settings also have **Context length** (default 8192 tokens) and **Max output** (default: the model decides). Context length is how much the model can read at once; raising it lets Knowmon send more note text to summaries, Chat and the Agent, but uses more memory and runs slower on a CPU. Max output caps how long a reply can be, which mainly helps keep cloud costs down. See [Context length and max output](docs/user-guide/ai-setup.md#context-length-and-max-output).
+
 Ollama listens on `http://127.0.0.1:11434` by default, which is what Knowmon expects. To use other models, Ollama on another machine, or a cloud chat provider, click **Settings** in the **AI** tab of the right panel; see [Setting up local AI](docs/user-guide/ai-setup.md) and [Using Ollama on a remote machine](docs/user-guide/remote-ollama.md).
 
 ## Common commands
