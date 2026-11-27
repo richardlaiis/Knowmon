@@ -30,7 +30,7 @@ An Obsidian-style note-taking app (Electron + React + CodeMirror 6 + SQLite) wit
 
 - For every task, first write a plan in plan mode and save it to `docs/plans/`; implement only after I approve it
 - When done, check off progress in `docs/roadmap.md`; record new design decisions in `docs/architecture.md`
-- When adding or changing a keyboard shortcut, update `docs/user-guide/en/shortcuts.md`
+- When adding or changing a keyboard shortcut, update `docs/user-guide/shortcuts.md`
 - If something conflicts with the "Core design principles" in `docs/roadmap.md`, stop and ask
 - Write documentation, plans, code comments and test titles in English. Chinese belongs only where it is functional (zh-TW prompts, Chinese keyword lists and time phrases, test data that checks Chinese handling, and `test-vault/中文/`)
 

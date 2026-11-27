@@ -147,14 +147,14 @@ The image is saved to an `attachments/` folder at the vault root, and image synt
 
 Knowmon supports only standard Markdown, `![caption](path)`, and the path must be **relative to the folder the note is in**:
 
-| You write                                         | Shown?                                   |
-| ------------------------------------------------- | ---------------------------------------- |
-| `![](attachments/a.png)` (note at the root)       | ✓                                        |
-| `![](../attachments/a.png)` (note in a subfolder) | ✓                                        |
-| `![](<my image.png>)` or `![](my%20image.png)`    | ✓ either works for names with spaces     |
-| `![](https://example.com/a.png)`                  | ✗ web images aren't shown                |
-| `![](/home/me/a.png)`                             | ✗ absolute paths aren't supported        |
-| `![[a.png]]`                                      | ✗ Obsidian-style embeds aren't supported |
+| You write                                         | Shown?                               |
+| ------------------------------------------------- | ------------------------------------ |
+| `![](attachments/a.png)` (note at the root)       | ✓                                    |
+| `![](../attachments/a.png)` (note in a subfolder) | ✓                                    |
+| `![](<my image.png>)` or `![](my%20image.png)`    | ✓ either works for names with spaces |
+| `![](https://example.com/a.png)`                  | ✗ web images aren't shown            |
+| `![](/home/me/a.png)`                             | ✗ absolute paths aren't supported    |
+| `![[a.png]]`                                      | ✗ wikilink embeds aren't supported   |
 
 If the file can't be found, you'll see a red "Image not found".
 

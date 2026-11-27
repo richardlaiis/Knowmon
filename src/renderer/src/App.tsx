@@ -696,7 +696,7 @@ function App(): React.JSX.Element {
     []
   )
 
-  // Global shortcuts (full list in docs/user-guide/en/shortcuts.md)
+  // Global shortcuts (full list in docs/user-guide/shortcuts.md)
   const activeId = tabs.activeId
   useEffect(() => {
     if (!vault) return
